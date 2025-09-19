@@ -7,6 +7,7 @@ from data.collators import (
 )
 from data.unlearn import ForgetRetainDataset
 from data.pretraining import PretrainingDataset, CompletionDataset
+from trainer.unlearn.cir.cir_utils import load_wmdp_simple_set
 
 DATASET_REGISTRY: Dict[str, Any] = {}
 COLLATOR_REGISTRY: Dict[str, Any] = {}
@@ -48,6 +49,11 @@ def get_datasets(dataset_cfgs: Union[Dict, DictConfig], **kwargs):
 
 def get_data(data_cfg: DictConfig, mode="train", **kwargs):
     data = {}
+    if mode == "wmdp_deduped":
+        data["train"], data["retrain"], data["recall"], data["eval"] = (
+            load_wmdp_simple_set(data_cfg, kwargs["tokenizer"])
+        )
+        return data
     data_cfg = dict(data_cfg)
     anchor = data_cfg.pop("anchor", "forget")
     for split, dataset_cfgs in data_cfg.items():

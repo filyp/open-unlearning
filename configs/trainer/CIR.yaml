@@ -1,0 +1,29 @@
+# could load values from finetune.yaml like other trainer configs, but we are too different
+# defaults:
+#   - finetune
+
+handler: CIR
+args:
+  seed: 42
+  output_dir: ${paths.output_dir}
+  do_train: True
+  do_eval: False
+method_args:
+  cfg:
+    cir_niter: 16
+    cut_off_tokens: 1
+    mlp_floor: 0.0
+    act_proj_num: 24
+    grad_proj_num: 36
+    layer_range: [6, 12]
+    retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
+    cb_retaining_layers: [12]
+    cb_retaining_pow: 1.0
+    unlearning_rate: 0.2
+    target_modules:
+      - gate_proj
+      - up_proj
+      - down_proj
+  # gamma: 1.0
+  # alpha: 1.0
+  # retain_loss_type: NLL
