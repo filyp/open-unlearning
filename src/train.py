@@ -44,6 +44,7 @@ def main(cfg: DictConfig):
             template_args=template_args,
             model=model,
             tokenizer=tokenizer,
+            data=data,
         )
 
     trainer, trainer_args = load_trainer(
@@ -78,9 +79,9 @@ def main(cfg: DictConfig):
 
         from evals.wmdp_deduped import WMDPDedupedEvaluator
         import torch as pt
-        from trainer.unlearn.cir.cir_utils import cross_entropy
+        from trainer.unlearn.cir.cir_utils import sanitize_batch
 
-        ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, tokenizer=tokenizer)
+        ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
 
         retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
 
@@ -92,9 +93,8 @@ def main(cfg: DictConfig):
             for batch in data["retrain"]:
                 pt.cuda.empty_cache()
                 model.zero_grad(set_to_none=True)
-                output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
-                loss = cross_entropy(output, batch)
-                loss.backward()
+                output = model(**sanitize_batch(batch))
+                output.loss.backward()
                 retraining_optimizer.step()
 
             # * get metrics

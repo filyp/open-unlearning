@@ -15,8 +15,8 @@ from trainer.unlearn.cir.cir_utils import (
     mlp_breaking_loss,
     scale_grads_,
     trainable_modules,
+    sanitize_batch,
 )
-from trainer.unlearn.cir.wmdp_efficient import eval_on
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,7 +62,7 @@ class CIR(UnlearnTrainer):
                 batch = batch_pair["retain"]
                 with pt.no_grad():
                     with trim_layers(model, self.max_layer):
-                        output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
+                        output = model(**sanitize_batch(batch), output_hidden_states=True)
                 batch["retain_acts"] = {
                     l_num: output.hidden_states[l_num].detach().to("cpu")
                     for l_num in cfg.cb_retaining_layers
@@ -72,7 +72,7 @@ class CIR(UnlearnTrainer):
         for batch_pair in self.train_dataset:
             batch = batch_pair["forget"]
             with pt.no_grad():
-                output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                output = model(**sanitize_batch(batch))
             _mask = batch["attention_mask"].bool().clone()
             _mask[:, : cfg.cut_off_tokens] = False
             batch["org_mlp_out"] = {}
@@ -119,7 +119,7 @@ class CIR(UnlearnTrainer):
         batch = inputs["forget"]
         model.zero_grad(set_to_none=True)
         with trim_layers(model, self.max_layer):
-            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
+            output = model(**sanitize_batch(batch), output_hidden_states=True)
         loss = mlp_breaking_loss(model, batch, self.cfg)
         loss.backward()
 
@@ -156,7 +156,7 @@ class CIR(UnlearnTrainer):
             model.zero_grad(set_to_none=True)
             r_batch = inputs["retain"]
             with trim_layers(model, self.max_layer):
-                output = model(input_ids=r_batch["input_ids"], attention_mask=r_batch["attention_mask"], output_hidden_states=True)
+                output = model(**sanitize_batch(r_batch), output_hidden_states=True)
             loss = cb_retain_loss(output, r_batch, self.cfg)
             loss.backward()
 
@@ -164,3 +164,15 @@ class CIR(UnlearnTrainer):
             self.unit_optimizer.step()  # unit_optimizer has lr=1.0
 
         return 0  # mock training loss
+
+
+# # minimal steps to run:
+# model = AutoModelForCausalLM.from_pretrained(
+#     cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+# )
+# model.config.use_cache = False
+# trainer = CirTrainer(
+#     model=model,
+#     train_dataset=train_dataset,
+# )
+# trainer.train()
