@@ -88,13 +88,9 @@ class CIR(UnlearnTrainer):
         self.acts_list = {n: [] for n, _ in trainable_modules(model)}
         self.grads_list = {n: [] for n, _ in trainable_modules(model)}
 
-        # self.init_res = self.get_metrics(model)
-        # wandb.log(self.init_res)
-
     def train(self):
         model = self.model
-        for epoch in range(3):
-
+        for epoch in range(self.cfg.max_num_epochs):
             # ! one epoch
             model.train()
             for batch_pair in self.train_dataset:
@@ -117,8 +113,6 @@ class CIR(UnlearnTrainer):
             #     "loss_budget", 1.01
             # ):
             #     break
-
-        # wandb.finish()
 
     def training_step(self, model, inputs):
         # ! unlearning loss
@@ -170,22 +164,3 @@ class CIR(UnlearnTrainer):
             self.unit_optimizer.step()  # unit_optimizer has lr=1.0
 
         return 0  # mock training loss
-
-
-# # %%
-# # args = SimpleNamespace(
-# # train_batch_size=cfg.data.train_batch_size,
-# # )
-
-# # * load model
-# model = AutoModelForCausalLM.from_pretrained(
-#     cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-# )
-# model.config.use_cache = False
-
-# trainer = CirTrainer(
-#     model=model,
-#     train_dataset=train_dataset,
-# )
-
-# trainer.train()

@@ -128,7 +128,13 @@ def load_wmdp_simple_set(cfg, tokenizer):
         dict(forget=fb, retain=rb) for fb, rb in zip(training_batches, retain_batches)
     ]
 
-    return train_dataset, retraining_batches, recall_batches, eval_qs
+    return dict(
+        train=train_dataset,
+        retrain=retraining_batches,
+        recall=recall_batches,
+        eval=eval_qs,
+    )
+    
 
 
 ################################ torch utils #################################

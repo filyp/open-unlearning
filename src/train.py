@@ -1,7 +1,8 @@
 import hydra
 from omegaconf import DictConfig
+from transformers import AutoModelForCausalLM
 from data import get_data, get_collators
-from model import get_model
+from model import get_model, get_dtype
 from trainer import load_trainer
 from evals import get_evaluators
 from trainer.utils import seed_everything
@@ -63,6 +64,42 @@ def main(cfg: DictConfig):
 
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
+    
+    relearning_cfg = cfg.get("relearning", None)
+    if relearning_cfg:
+        
+        # unfreeze all parameters
+        for p in model.parameters():
+            p.requires_grad = True
+        # remove all hooks
+        for m in model.modules():
+            m._forward_hooks = {}
+            m._backward_hooks = {}
+
+        from evals.wmdp_deduped import WMDPDedupedEvaluator
+        import torch as pt
+        from trainer.unlearn.cir.cir_utils import cross_entropy
+
+        ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, tokenizer=tokenizer)
+
+        retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
+
+        # * get metrics
+        ev.evaluate(model)
+
+        for epoch in range(relearning_cfg.num_epochs):
+            model.train()
+            for batch in data["retrain"]:
+                pt.cuda.empty_cache()
+                model.zero_grad(set_to_none=True)
+                output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                loss = cross_entropy(output, batch)
+                loss.backward()
+                retraining_optimizer.step()
+
+            # * get metrics
+            ev.evaluate(model)
+
 
 
 if __name__ == "__main__":

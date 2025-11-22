@@ -39,13 +39,16 @@ class WMDPDedupedEvaluator(Evaluator):
             kwargs["tokenizer"](x["text"], **eval_cfg.tokenizer)
             for x in wikitext.shuffle(seed=42).batch(eval_cfg.wikitext_batch_size)
         ]
-        _, _, self.recall_batches, self.eval_qs = load_wmdp_simple_set(
+        data_dict = load_wmdp_simple_set(
             eval_cfg.data, kwargs["tokenizer"]
         )
+        self.recall_batches = data_dict["recall"]
+        self.eval_qs = data_dict["eval"]
 
         wandb.init(
-            project="unlearning|src|CIR.py",
-            name="18.09.2025",
+            project=eval_cfg.wandb.project,
+            name=eval_cfg.wandb.name,
+            group=eval_cfg.wandb.group,
             # config=OmegaConf.to_container(cfg),
         )
 

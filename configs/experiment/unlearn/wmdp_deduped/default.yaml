@@ -21,12 +21,27 @@ data:
   # eval_on_all_questions: true  # best to just use it when not retraining
 
 eval:
-  deduped:
+  deduped: &deduped_eval
     handler: WMDPDedupedEvaluator
     num_eval_batches: 16
     wikitext_batch_size: 16
     tokenizer: ${data.tokenizer}
     data: ${data}
+    wandb:
+      project: unlearning|src|main_runner.py
+      group: nov_test
+      name: ou_regr
+
+relearning:
+  lr: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape
+  num_epochs: 3
+  relearning_eval:
+    <<: *deduped_eval
+    wandb:
+      project: ret_unlearning|src|main_runner.py
+      group: nov_test
+      name: ou_regr
+
 
 # model_id: meta-llama/Llama-3.2-1B
 # model_id: meta-llama/Llama-3.2-3B
