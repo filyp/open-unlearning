@@ -8,18 +8,21 @@ from datasets import concatenate_datasets, load_dataset
 ############## WMDP DEDUPED ##############
 
 
+def _tokenize(text, tokenizer, tokenizer_args):
+    batch = tokenizer(text, **tokenizer_args)
+    batch["labels"] = copy.deepcopy(batch["input_ids"])
+    batch = {k: pt.tensor(v) for k, v in batch.items()}
+    return batch
+
+
 def load_hf(cfg, **kwargs):
     corpus = load_dataset(**cfg.hf_args)
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
-    
-    batches = []
-    for x in corpus.shuffle(seed=42):
-        batch = kwargs["tokenizer"](x["text"], **cfg.tokenizer)
-        batch["labels"] = copy.deepcopy(batch["input_ids"])
-        batch = {k: pt.tensor(v) for k, v in batch.items()} 
-        batches.append(batch)
-
+    batches = [
+        _tokenize(x["text"], kwargs["tokenizer"], cfg.tokenizer)
+        for x in corpus.shuffle(seed=42)
+    ]
     return {cfg.load_as: batches}
 
 
@@ -42,21 +45,10 @@ def wikitext(cfg, **kwargs):
         rb["labels"] = rb["input_ids"].clone()
         rb["labels"][rb["attention_mask"] == 0] = -100
 
-
-
     return {cfg.load_as: batches}
 
 
-def _prepare_non_answer_mask(beginning_batch, full_batch):
-    long_attn = full_batch["attention_mask"]
-    short_attn = beginning_batch["attention_mask"]
-    pad_amount = long_attn.shape[1] - short_attn.shape[1]
-    short_attn_padded = F.pad(short_attn, (0, pad_amount), value=0)
-    non_answer_mask = long_attn == short_attn_padded
-    return non_answer_mask
-
-
-def _load_recall_batches(questions, cfg, tokenizer, batch_size=1):
+def _load_recall_batches(questions, cfg, tokenizer):
     # batch_size 1 if slower but recommended, because it means we will first average
     # loss per answer and then across answers, which is more stable given some answers
     # are shorter than others
@@ -72,36 +64,11 @@ def _load_recall_batches(questions, cfg, tokenizer, batch_size=1):
         fulls.append(full)
 
     batches = []
-    for i in range(0, len(beginnings), batch_size):
-        # calculate the mask
-        b_txt = beginnings[i : i + batch_size]
-        f_txt = fulls[i : i + batch_size]
-        beginning_batch = tokenizer(b_txt, return_tensors="pt", **cfg.tokenizer)
-        batch = tokenizer(f_txt, return_tensors="pt", **cfg.tokenizer)
-        _mask = _prepare_non_answer_mask(beginning_batch, batch)
-
-        # create labels, with -100 for the non-answer tokens
-        batch["labels"] = batch["input_ids"].clone()
-        batch["labels"][_mask] = -100
-        batch["labels"][batch["attention_mask"] == 0] = -100
-
-        batches.append(batch)
-
-    return batches
-
-
-def _load_batches_from_simple_set(dataset, cfg, tokenizer, b_size):
-    texts = []
-    for idx in range(cfg.num_examples_per_question):
-        for q in dataset:
-            texts.append(q["sentences"][idx])
-
-    batches = []
-    for i in range(0, len(texts), b_size):
-        txt = texts[i : i + b_size]
-        batch = tokenizer(txt, return_tensors="pt", **cfg.tokenizer)
-        batch["labels"] = batch["input_ids"].clone()
-        batch["labels"][batch["attention_mask"] == 0] = -100
+    for b_txt, f_txt in zip(beginnings, fulls):
+        batch = _tokenize(f_txt, tokenizer, cfg.tokenizer)
+        beginning_len = len(tokenizer(b_txt, **cfg.tokenizer)["input_ids"])
+        batch["labels"][:beginning_len] = -100
+        batch = {k: v.reshape(1, -1) for k, v in batch.items()}
         batches.append(batch)
 
     return batches
@@ -128,19 +95,19 @@ def wmdp_bio_deduped(cfg, **kwargs):
     eval_qs = V
     logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
-    texts = [q["sentences"][idx] for idx in range(cfg.num_examples_per_question) for q in T_and_V]
-    training_batches = []
-    for txt in texts:
-        batch = tokenizer(txt, **cfg.tokenizer)
-        batch["labels"] = copy.deepcopy(batch["input_ids"])
-        batch = {k: pt.tensor(v) for k, v in batch.items()}
-        training_batches.append(batch)
+    texts = [
+        q["sentences"][idx]
+        for idx in range(cfg.num_examples_per_question)
+        for q in T_and_V
+    ]
+    training_batches = [_tokenize(txt, tokenizer, cfg.tokenizer) for txt in texts]
 
-    # todo, process it into single element batches, and let collator join them
-    # also consolidate with the code above
-    relearning_batches = _load_batches_from_simple_set(T, cfg, tokenizer, cfg.relearn_batch_size)
+    texts = [
+        q["sentences"][idx] for idx in range(cfg.num_examples_per_question) for q in T
+    ]
+    relearning_batches = [_tokenize(txt, tokenizer, cfg.tokenizer) for txt in texts]
 
-    recall_batches = _load_recall_batches(eval_qs, cfg, tokenizer, batch_size=1)
+    recall_batches = _load_recall_batches(eval_qs, cfg, tokenizer)
 
     return dict(
         forget=training_batches,

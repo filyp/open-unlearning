@@ -1,6 +1,7 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=SAMPLE_UNLEARN mode=wmdp_deduped
 import logging
 from contextlib import contextmanager
+from itertools import islice
 
 import hydra
 import torch as pt
@@ -10,12 +11,13 @@ from transformers import AutoTokenizer, Trainer
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_core import *
 from trainer.unlearn.cir.cir_utils import (
+    batched,
     cb_retain_loss,
     get_update_norm,
     mlp_breaking_loss,
+    sanitize_batch,
     scale_grads_,
     trainable_modules,
-    sanitize_batch,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -55,21 +57,21 @@ class CIR(UnlearnTrainer):
 
         for layer_id in range(*cfg.layer_range):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
-        
-        # ! go through whole dataset, to prepare the batches in advance
-        # forget and retain batches must be prepared separately, to support different forget and retain batch sizes
-        self.forget_batches = []
-        for i in range(0, len(self.train_dataset), cfg.train_batch_size):
-            # Get batch_size samples
-            samples = [self.train_dataset[j]["forget"] for j in range(i, min(i + cfg.train_batch_size, len(self.train_dataset)))]
-            # Use collator to create proper batched tensors
-            self.forget_batches.append(self.data_collator(samples))
-        self.retain_batches = []
-        for n in range(len(self.forget_batches)):
-            start = n * cfg.retain_batch_size
-            end = (n + 1) * cfg.retain_batch_size
-            samples = [self.train_dataset[j]["retain"] for j in range(start, end)]
-            self.retain_batches.append(self.data_collator(samples))
+
+        # * go through whole dataset, to prepare the batches in advance
+        # prepare separately forget and retain, to support different batch sizes
+        self.forget_batches = [
+            self.data_collator(samples)
+            for samples in batched(self.train_dataset.forget, cfg.train_batch_size)
+        ]
+        self.retain_batches = [
+            self.data_collator(samples)
+            # Limit retain_batches to match forget_batches length
+            for samples in islice(
+                batched(self.train_dataset.retain, cfg.retain_batch_size),
+                len(self.forget_batches),
+            )
+        ]
         del self.train_dataset
 
         # * cache the activations for circuit breaker retaining
@@ -77,7 +79,9 @@ class CIR(UnlearnTrainer):
             for batch in self.retain_batches:
                 with pt.no_grad():
                     with trim_layers(model, self.max_layer):
-                        output = model(**sanitize_batch(batch), output_hidden_states=True)
+                        output = model(
+                            **sanitize_batch(batch), output_hidden_states=True
+                        )
                 batch["retain_acts"] = {
                     l_num: output.hidden_states[l_num].detach().to("cpu")
                     for l_num in cfg.cb_retaining_layers
@@ -107,8 +111,8 @@ class CIR(UnlearnTrainer):
         for epoch in range(self.cfg.max_num_epochs):
             # ! one epoch
             model.train()
-            for forget_batch, retain_batch in zip(self.forget_batches, self.retain_batches):
-                inputs = dict(forget=forget_batch, retain=retain_batch)
+            for fb, rb in zip(self.forget_batches, self.retain_batches):
+                inputs = dict(forget=fb, retain=rb)
                 self.training_step(model, inputs)
 
             if epoch % self.cfg.get("pca_every_n", 1) == 0:
@@ -142,8 +146,12 @@ class CIR(UnlearnTrainer):
         for name, module in trainable_modules(model):
             if module.weight.grad is None:
                 continue
-            acts = get_last_act(module, batch["attention_mask"], self.cfg.cut_off_tokens)
-            grads = get_last_grad(module, batch["attention_mask"], self.cfg.cut_off_tokens)
+            acts = get_last_act(
+                module, batch["attention_mask"], self.cfg.cut_off_tokens
+            )
+            grads = get_last_grad(
+                module, batch["attention_mask"], self.cfg.cut_off_tokens
+            )
             self.acts_list[name].append(acts.clone().to("cpu"))
             self.grads_list[name].append(grads.clone().to("cpu"))
             assert len(acts.shape) == len(grads.shape) == 2

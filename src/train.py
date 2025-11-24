@@ -79,18 +79,24 @@ def main(cfg: DictConfig):
         from evals.wmdp_deduped import WMDPDedupedEvaluator
         import torch as pt
         from trainer.unlearn.cir.cir_utils import sanitize_batch
+        from torch.utils.data import DataLoader
 
         ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
 
         retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
+        relearn_loader = DataLoader(
+            data["relearn"], 
+            batch_size=relearning_cfg.relearn_batch_size,
+            shuffle=False,
+            collate_fn=collator
+        )
 
         # * get metrics
         ev.evaluate(model)
 
         for epoch in range(relearning_cfg.num_epochs):
             model.train()
-            for batch in data["relearn"]:
-                pt.cuda.empty_cache()
+            for batch in relearn_loader:
                 model.zero_grad(set_to_none=True)
                 output = model(**sanitize_batch(batch))
                 output.loss.backward()

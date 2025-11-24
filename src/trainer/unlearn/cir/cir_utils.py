@@ -1,4 +1,5 @@
 # %%
+from itertools import islice
 import torch as pt
 
 ################################ torch utils #################################
@@ -30,7 +31,6 @@ def scale_grads_(model, factor: float):
             p.grad *= factor
 
 
-
 def sanitize_batch(batch):
     return dict(
         input_ids=batch["input_ids"],
@@ -39,14 +39,20 @@ def sanitize_batch(batch):
     )
 
 
-################################ loss functions #################################
+def batched(iterable, n):
+    """Batch an iterable into chunks of size n."""
+    it = iter(iterable)
+    while batch := list(islice(it, n)):
+        yield batch
 
+
+################################ loss functions #################################
 
 
 def mlp_breaking_loss(model, batch, cfg):
     _mask = batch["attention_mask"] & (batch["labels"] != -100)
     _mask = _mask.bool().clone()
-    _mask[:, :cfg.cut_off_tokens] = False
+    _mask[:, : cfg.cut_off_tokens] = False
 
     loss_acc = 0
     for layer_id in range(*cfg.layer_range):
@@ -58,7 +64,7 @@ def mlp_breaking_loss(model, batch, cfg):
 
         org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
-        dotproducts = dotproducts / org_norm ** 2
+        dotproducts = dotproducts / org_norm**2
         # logging.debug(dotproducts)
         loss_acc += dotproducts.clip(min=cfg.mlp_floor).mean()
         # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
@@ -70,7 +76,7 @@ def cb_retain_loss(output, batch, cfg):
     _mask = batch["attention_mask"] & (batch["labels"] != -100)
     _mask = batch["attention_mask"].bool().clone()
     # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
-    
+
     loss_acc = 0
     for layer_id in cfg.cb_retaining_layers:
         acts = output.hidden_states[layer_id][_mask].float()
@@ -81,6 +87,6 @@ def cb_retain_loss(output, batch, cfg):
         avg_act_norm = org_acts.norm(dim=-1).mean()
         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
 
-        loss_acc += dist ** cfg.cb_retaining_pow
+        loss_acc += dist**cfg.cb_retaining_pow
 
     return loss_acc / len(cfg.cb_retaining_layers)
