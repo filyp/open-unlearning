@@ -7,7 +7,7 @@ from data.collators import (
 )
 from data.unlearn import ForgetRetainDataset
 from data.pretraining import PretrainingDataset, CompletionDataset
-from data.wmdp_deduped import load_wmdp_simple_set
+import data.custom_loaders as custom_loaders
 
 DATASET_REGISTRY: Dict[str, Any] = {}
 COLLATOR_REGISTRY: Dict[str, Any] = {}
@@ -49,20 +49,22 @@ def get_datasets(dataset_cfgs: Union[Dict, DictConfig], **kwargs):
 
 def get_data(data_cfg: DictConfig, mode="train", **kwargs):
     data = {}
-    if mode == "wmdp_deduped":
-        return load_wmdp_simple_set(data_cfg, kwargs["tokenizer"])
     data_cfg = dict(data_cfg)
     anchor = data_cfg.pop("anchor", "forget")
+    custom_loaders_cfg = data_cfg.pop("custom_loaders", {})
     for split, dataset_cfgs in data_cfg.items():
         data[split] = get_datasets(dataset_cfgs, **kwargs)
+    if custom_loaders_cfg:
+        for loader_name, loader_cfg in custom_loaders_cfg.items():
+            fn = getattr(custom_loaders, loader_name)
+            data.update(fn(loader_cfg, **kwargs))
     if mode == "train":
         return data
     elif mode == "unlearn":
-        unlearn_splits = {k: v for k, v in data.items() if k not in ("eval", "test")}
-        unlearn_dataset = ForgetRetainDataset(**unlearn_splits, anchor=anchor)
+        unlearn_dataset = ForgetRetainDataset(data["forget"], data["retain"], anchor=anchor)
         data["train"] = unlearn_dataset
-        for split in unlearn_splits:
-            data.pop(split)
+        data.pop("retain")
+        data.pop("forget")
     return data
 
 

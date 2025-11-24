@@ -55,11 +55,26 @@ class CIR(UnlearnTrainer):
 
         for layer_id in range(*cfg.layer_range):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
+        
+        # ! go through whole dataset, to prepare the batches in advance
+        # forget and retain batches must be prepared separately, to support different forget and retain batch sizes
+        self.forget_batches = []
+        for i in range(0, len(self.train_dataset), cfg.train_batch_size):
+            # Get batch_size samples
+            samples = [self.train_dataset[j]["forget"] for j in range(i, min(i + cfg.train_batch_size, len(self.train_dataset)))]
+            # Use collator to create proper batched tensors
+            self.forget_batches.append(self.data_collator(samples))
+        self.retain_batches = []
+        for n in range(len(self.forget_batches)):
+            start = n * cfg.retain_batch_size
+            end = (n + 1) * cfg.retain_batch_size
+            samples = [self.train_dataset[j]["retain"] for j in range(start, end)]
+            self.retain_batches.append(self.data_collator(samples))
+        del self.train_dataset
 
         # * cache the activations for circuit breaker retaining
         if cfg.get("retaining_rate", 0) > 0:
-            for batch_pair in self.train_dataset:
-                batch = batch_pair["retain"]
+            for batch in self.retain_batches:
                 with pt.no_grad():
                     with trim_layers(model, self.max_layer):
                         output = model(**sanitize_batch(batch), output_hidden_states=True)
@@ -69,8 +84,7 @@ class CIR(UnlearnTrainer):
                 }
 
         # * cache the activations for MLP breaking
-        for batch_pair in self.train_dataset:
-            batch = batch_pair["forget"]
+        for batch in self.forget_batches:
             with pt.no_grad():
                 output = model(**sanitize_batch(batch))
             _mask = batch["attention_mask"].bool().clone()
@@ -93,8 +107,9 @@ class CIR(UnlearnTrainer):
         for epoch in range(self.cfg.max_num_epochs):
             # ! one epoch
             model.train()
-            for batch_pair in self.train_dataset:
-                self.training_step(model, batch_pair)
+            for forget_batch, retain_batch in zip(self.forget_batches, self.retain_batches):
+                inputs = dict(forget=forget_batch, retain=retain_batch)
+                self.training_step(model, inputs)
 
             if epoch % self.cfg.get("pca_every_n", 1) == 0:
                 # ! calculate means and PCA components

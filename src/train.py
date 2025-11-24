@@ -1,8 +1,7 @@
 import hydra
 from omegaconf import DictConfig
-from transformers import AutoModelForCausalLM
 from data import get_data, get_collators
-from model import get_model, get_dtype
+from model import get_model
 from trainer import load_trainer
 from evals import get_evaluators
 from trainer.utils import seed_everything
@@ -90,7 +89,7 @@ def main(cfg: DictConfig):
 
         for epoch in range(relearning_cfg.num_epochs):
             model.train()
-            for batch in data["retrain"]:
+            for batch in data["relearn"]:
                 pt.cuda.empty_cache()
                 model.zero_grad(set_to_none=True)
                 output = model(**sanitize_batch(batch))

@@ -27,6 +27,8 @@ method_args:
       - gate_proj
       - up_proj
       - down_proj
+    train_batch_size: 32
+    retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
   # gamma: 1.0
   # alpha: 1.0
   # retain_loss_type: NLL
