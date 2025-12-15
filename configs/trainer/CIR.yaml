@@ -21,8 +21,7 @@ method_args:
     retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
     cb_retaining_layers: [12]
     cb_retaining_pow: 1.0
-    # unlearning_rate: 0.2
-    unlearning_rate: 0.1
+    unlearning_rate: 0.15
     target_modules:
       - gate_proj
       - up_proj

@@ -40,7 +40,10 @@ def sanitize_batch(batch):
 
 
 def batched(iterable, n):
-    """Batch an iterable into chunks of size n."""
+    """Batch an iterable into chunks of size n.
+    
+    In python>=3.12,  it can be replaced with itertools.batched
+    """
     it = iter(iterable)
     while batch := list(islice(it, n)):
         yield batch

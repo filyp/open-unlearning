@@ -92,7 +92,7 @@ def main(cfg: DictConfig):
         )
 
         # * get metrics
-        ev.evaluate(model)
+        ev.evaluate(model, tokenizer=tokenizer)
 
         for epoch in range(relearning_cfg.num_epochs):
             model.train()
@@ -103,7 +103,7 @@ def main(cfg: DictConfig):
                 retraining_optimizer.step()
 
             # * get metrics
-            ev.evaluate(model)
+            ev.evaluate(model, tokenizer=tokenizer)
 
 
 

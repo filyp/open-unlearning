@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from datasets import concatenate_datasets, load_dataset
 
 ############## WMDP DEDUPED ##############
+# todo they don't support chat templates yet - will need to handle that using data.utils
 
 
 def _tokenize(text, tokenizer, tokenizer_args):
@@ -81,14 +82,14 @@ def wmdp_bio_deduped(cfg, **kwargs):
     T = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}T_corpus_simple.jsonl")
     V = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}V_corpus_simple.jsonl")
 
-    if "filter_model_id" in cfg:
-        filter_model_id = cfg.filter_model_id
-        if filter_model_id in T.column_names:
-            logging.info(f"Filtering out texts with {filter_model_id} score < 0.25")
-            T = T.filter(lambda x: x[filter_model_id] > 0.25)
-            V = V.filter(lambda x: x[filter_model_id] > 0.25)
-        else:
-            logging.info(f"No {filter_model_id} score in the dataset, not filtering")
+    # if "filter_model_id" in cfg:
+    #     filter_model_id = cfg.filter_model_id
+    #     if filter_model_id in T.column_names:
+    #         logging.info(f"Filtering out texts with {filter_model_id} score < 0.25")
+    #         T = T.filter(lambda x: x[filter_model_id] > 0.25)
+    #         V = V.filter(lambda x: x[filter_model_id] > 0.25)
+    #     else:
+    #         logging.info(f"No {filter_model_id} score in the dataset, not filtering")
 
     T_and_V = concatenate_datasets([T, V])
     # eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V

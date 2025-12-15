@@ -1,13 +1,36 @@
 import logging
 
 import torch as pt
+from lm_eval import evaluator
+from lm_eval.models.huggingface import HFLM
+from lm_eval.tasks import TaskManager, get_task_dict
 
 import wandb
 from evals.base import Evaluator
 from trainer.unlearn.cir.cir_utils import sanitize_batch
-from trainer.unlearn.cir.wmdp_efficient import eval_on
+
+pt.set_default_device("cuda")
 
 logger = logging.getLogger("evaluator")
+# Suppress the specific warnings from lm_eval when loading an existing model to HFLM
+logging.getLogger("lm_eval.models.huggingface").setLevel(logging.ERROR)
+# Disable lm_eval spam
+logging.getLogger("lm_eval.api.task").setLevel(logging.WARNING)
+logging.getLogger("lm_eval.evaluator").setLevel(logging.WARNING)
+
+
+# Disable lm_eval progress bars by patching tqdm - there are no other ways to do this
+# todo remove later this because it's too hacky
+import lm_eval.models.huggingface as hf_module
+import lm_eval.api.task as task_module
+from functools import wraps
+_original_tqdm = hf_module.tqdm
+@wraps(_original_tqdm)
+def _disabled_tqdm(*args, **kwargs):
+    kwargs['disable'] = True
+    return _original_tqdm(*args, **kwargs)
+hf_module.tqdm = _disabled_tqdm
+task_module.tqdm = _disabled_tqdm
 
 
 def _get_loss(model, batches):
@@ -19,6 +42,17 @@ def _get_loss(model, batches):
     return loss_acc / len(batches)
 
 
+def _get_temperature_0_accuracy(lm_eval_results):
+    return lm_eval_results["results"]["wmdp_bio"]["acc,none"]
+
+
+def _get_temperature_1_accuracy(lm_eval_results):
+    samples = lm_eval_results["samples"]["wmdp_bio"]
+    target_logprobs = pt.tensor([s["resps"][s["target"]][0][0] for s in samples])
+    target_probs = pt.exp(target_logprobs)
+    return target_probs.mean().item()
+
+
 class WMDPDedupedEvaluator(Evaluator):
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg
@@ -27,6 +61,14 @@ class WMDPDedupedEvaluator(Evaluator):
         self.wikitext = data["wikitext"]
         self.recall_batches = data["recall"]
         self.eval_qs = data["eval_qs"]
+
+        # Get the wmdp_bio task (uses the standard template)
+        task_manager = TaskManager()
+        self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
+        # Modify the wmdp_bio task to use our custom questions
+        task = self.task_dict["wmdp_bio"]
+        # task.config.description = ""  # Prepended description harmed accuracy
+        task.dataset["test"] = data["eval_qs"]  # Replace the dataset with eval_qs
 
         if eval_cfg.get("wandb"):
             # todo, finiching wandb should be handled at training end instead, evaluator will handle this, when deciding whether to terminate the run
@@ -43,7 +85,14 @@ class WMDPDedupedEvaluator(Evaluator):
         model.eval()
 
         # * eval forget acc
-        res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(self.eval_qs, model)
+        lm = HFLM(pretrained=model, tokenizer=kwargs["tokenizer"], batch_size=8)
+        lm_eval_results = evaluator.evaluate(
+            lm=lm,
+            task_dict=self.task_dict,
+            log_samples=True,
+        )
+        res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
+        res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         nb = self.eval_cfg.num_eval_batches
         res["wikitext_loss"] = _get_loss(model, self.wikitext[:nb])

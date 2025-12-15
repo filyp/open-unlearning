@@ -38,6 +38,14 @@ def save_output_hook(module, args, output):
     # install hooks for MLPs
     module.cached_out = output
 
+"""
+Anyway, I'll need to somehow disable trainer collation? Or passthrough to pass these batches more directly
+
+I could also override get_train_dataloader
+
+Where are batch sizes set?
+"""
+
 
 # %%
 class CIR(UnlearnTrainer):
@@ -59,19 +67,16 @@ class CIR(UnlearnTrainer):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
 
         # * go through whole dataset, to prepare the batches in advance
-        # prepare separately forget and retain, to support different batch sizes
-        self.forget_batches = [
-            self.data_collator(samples)
-            for samples in batched(self.train_dataset.forget, cfg.train_batch_size)
-        ]
-        self.retain_batches = [
-            self.data_collator(samples)
-            # Limit retain_batches to match forget_batches length
-            for samples in islice(
-                batched(self.train_dataset.retain, cfg.retain_batch_size),
-                len(self.forget_batches),
-            )
-        ]
+
+        self.forget_batches = []
+        self.retain_batches = []
+        for f, r in zip(
+            # prepare separately forget and retain, to support different batch sizes
+            batched(self.train_dataset.forget, cfg.train_batch_size),
+            batched(self.train_dataset.retain, cfg.retain_batch_size),
+        ):
+            self.forget_batches.append(self.data_collator(f))
+            self.retain_batches.append(self.data_collator(r))
         del self.train_dataset
 
         # * cache the activations for circuit breaker retaining
