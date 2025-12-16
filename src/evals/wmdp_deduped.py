@@ -7,9 +7,7 @@ from lm_eval.tasks import TaskManager, get_task_dict
 
 import wandb
 from evals.base import Evaluator
-from trainer.unlearn.cir.cir_utils import sanitize_batch
-
-pt.set_default_device("cuda")
+from trainer.unlearn.cir.cir_utils import prep_batch
 
 logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
@@ -37,7 +35,7 @@ def _get_loss(model, batches):
     loss_acc = 0
     for batch in batches:
         with pt.no_grad():
-            output = model(**sanitize_batch(batch))
+            output = model(**prep_batch(batch, model.device))
             loss_acc += output.loss.item()
     return loss_acc / len(batches)
 

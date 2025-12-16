@@ -10,23 +10,25 @@ args:
   do_eval: False
 method_args:
   cfg:
-    # max_num_epochs: 9
-    max_num_epochs: 3
+    max_num_epochs: 30
     cir_niter: 16
     cut_off_tokens: 1
     mlp_floor: 0.0
-    act_proj_num: 24
-    grad_proj_num: 36
-    layer_range: [6, 12]
-    retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
-    cb_retaining_layers: [12]
+    act_proj_num: 10
+    grad_proj_num: 0
+    # layer_range: [6, 12]
+    layer_range: [4, 7]
+    # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
+    retaining_rate: 0
+    # cb_retaining_layers: [12]
+    cb_retaining_layers: [7]
     cb_retaining_pow: 1.0
-    unlearning_rate: 0.15
+    unlearning_rate: 0.03
     target_modules:
       - gate_proj
       - up_proj
-      - down_proj
-    train_batch_size: 32
+      # - down_proj
+    train_batch_size: 16
     retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
   # gamma: 1.0
   # alpha: 1.0

@@ -182,3 +182,4 @@ cython_debug/
 
 .vscode/
 src/playground.py
+src/playground2.py

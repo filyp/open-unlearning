@@ -82,31 +82,20 @@ def wmdp_bio_deduped(cfg, **kwargs):
     T = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}T_corpus_simple.jsonl")
     V = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}V_corpus_simple.jsonl")
 
-    # if "filter_model_id" in cfg:
-    #     filter_model_id = cfg.filter_model_id
-    #     if filter_model_id in T.column_names:
-    #         logging.info(f"Filtering out texts with {filter_model_id} score < 0.25")
-    #         T = T.filter(lambda x: x[filter_model_id] > 0.25)
-    #         V = V.filter(lambda x: x[filter_model_id] > 0.25)
-    #     else:
-    #         logging.info(f"No {filter_model_id} score in the dataset, not filtering")
-
     T_and_V = concatenate_datasets([T, V])
-    # eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
-    eval_qs = V
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
     logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
-    texts = [
-        q["sentences"][idx]
+    training_batches = [
+        _tokenize(q["sentences"][idx], tokenizer, cfg.tokenizer)
         for idx in range(cfg.num_examples_per_question)
         for q in T_and_V
     ]
-    training_batches = [_tokenize(txt, tokenizer, cfg.tokenizer) for txt in texts]
 
-    texts = [
-        q["sentences"][idx] for idx in range(cfg.num_examples_per_question) for q in T
+    relearning_batches = [
+        _tokenize(q["sentences"][idx], tokenizer, cfg.tokenizer)
+        for idx in range(cfg.num_examples_per_question) for q in T
     ]
-    relearning_batches = [_tokenize(txt, tokenizer, cfg.tokenizer) for txt in texts]
 
     recall_batches = _load_recall_batches(eval_qs, cfg, tokenizer)
 

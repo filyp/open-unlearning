@@ -12,6 +12,7 @@ from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_core import (
     get_last_act,
     get_last_grad,
+    get_projections,
     install_hooks,
     project_out,
 )
@@ -43,41 +44,13 @@ def save_output_hook(module, args, output):
     # install hooks for MLPs
     module.cached_out = output
 
+"""
+Anyway, I'll need to somehow disable trainer collation? Or passthrough to pass these batches more directly
 
-def get_projections_exact(vector_lists: dict[str, list[pt.Tensor]]):
-    """Compute exact PCA projections (mean + principal components) for each module."""
-    to_collapse = {}
-    eigenvalues_dict = {}
-    for n in list(vector_lists.keys()):
-        pt.cuda.empty_cache()
-        cached_vectors = vector_lists.pop(n)
-        if not cached_vectors:
-            continue
-        v = pt.cat(cached_vectors)
-        v = v.to("cuda").float()
+I could also override get_train_dataloader
 
-        mean = v.mean(axis=0)
-
-        # Compute the PCA components
-        # Center the data
-        v = v - mean
-        # Compute covariance matrix
-        cov = (v.T @ v) / (v.shape[0] - 1)
-        # Compute eigenvalues and eigenvectors
-        eigenvalues, eigenvectors = pt.linalg.eigh(cov)
-        # Sort in descending order
-        idx = eigenvalues.argsort(descending=True)
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
-        pca_components = eigenvectors.T
-
-        # return one tensor of mean and the pca components
-        to_collapse[n] = pt.cat([mean.reshape(1, -1), pca_components], dim=0)
-        eigenvalues_dict[n] = eigenvalues
-
-        del v, mean, cov, eigenvectors, pca_components
-
-    return to_collapse, eigenvalues_dict
+Where are batch sizes set?
+"""
 
 
 # %%
@@ -142,6 +115,7 @@ class CIR(UnlearnTrainer):
                 )
 
         self.acts_list = {n: [] for n, _ in trainable_modules(model)}
+        self.grads_list = {n: [] for n, _ in trainable_modules(model)}
 
     def train(self):
         model = self.model
@@ -153,11 +127,15 @@ class CIR(UnlearnTrainer):
                 self.training_step(model, inputs)
 
             if epoch % self.cfg.get("pca_every_n", 1) == 0:
-                # ! calculate means and PCA components (exact)
-                self.act_projections, self.act_eigenvalues = get_projections_exact(
-                    self.acts_list
+                # ! calculate means and PCA components
+                self.act_to_collapse = get_projections(
+                    self.acts_list, self.cfg.act_proj_num, self.cfg.cir_niter
+                )
+                self.grad_to_collapse = get_projections(
+                    self.grads_list, self.cfg.grad_proj_num, self.cfg.cir_niter
                 )
             self.acts_list = {n: [] for n, _ in trainable_modules(model)}
+            self.grads_list = {n: [] for n, _ in trainable_modules(model)}
 
             # ! get metrics
             res = self.evaluate()
@@ -170,7 +148,6 @@ class CIR(UnlearnTrainer):
         # ! unlearning loss
         batch = inputs["forget"]
         model.zero_grad(set_to_none=True)
-        pt.cuda.empty_cache()
         with trim_layers(model, self.max_layer):
             output = model(**prep_batch(batch, model.device), output_hidden_states=True)
         loss = mlp_breaking_loss(model, batch, self.cfg)
@@ -187,34 +164,21 @@ class CIR(UnlearnTrainer):
                 module, batch["attention_mask"], self.cfg.cut_off_tokens
             )
             self.acts_list[name].append(acts.clone().to("cpu"))
+            self.grads_list[name].append(grads.clone().to("cpu"))
             assert len(acts.shape) == len(grads.shape) == 2
 
-            if not hasattr(self, "act_projections"):
+            if not hasattr(self, "act_to_collapse"):
                 continue  # first epoch
 
-            acts = acts.to(pt.float32)
-            grads = grads.to(pt.float32)
-
-            # ! project out the mean from activations
-            act_mean = self.act_projections[name][0]
-            acts = acts - project_out(acts, act_mean)
-
-            # ! apply masking based on eigenvalues and threshold
-            eigenvectors = self.act_projections[name][1:]
-            pc_projections = eigenvectors @ acts.T
-            eigenvalues = self.act_eigenvalues[name]
-            threshold = self.cfg.get("pca_threshold", 3)
-            epsilon = self.cfg.get("pca_epsilon", 0.03)
-            mask = pc_projections.abs() / (eigenvalues.reshape(-1, 1) + epsilon) > threshold
-            # Keep the first act_proj_num components collapsed (masked out)
-            mask[: self.cfg.act_proj_num, :] = False
-            # mask[self.cfg.act_proj_num :, :] = True
-            acts = (pc_projections * mask).T @ eigenvectors
-
+            # ! proj out the means and PCA components
+            for comp in self.act_to_collapse[name]:
+                acts -= project_out(acts, comp)
+            for comp in self.grad_to_collapse[name]:
+                grads -= project_out(grads, comp)
             # without the projections, this is the equivalent of normal backprop
-            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(module.weight.grad.dtype)
+            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
 
-        if not hasattr(self, "act_projections"):
+        if not hasattr(self, "act_to_collapse"):
             return  # first epoch
 
         # * normalize grads

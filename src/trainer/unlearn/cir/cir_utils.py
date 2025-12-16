@@ -31,11 +31,11 @@ def scale_grads_(model, factor: float):
             p.grad *= factor
 
 
-def sanitize_batch(batch):
+def prep_batch(batch, device):
     return dict(
-        input_ids=batch["input_ids"],
-        attention_mask=batch["attention_mask"],
-        labels=batch["labels"],
+        input_ids=batch["input_ids"].to(device),
+        attention_mask=batch["attention_mask"].to(device),
+        labels=batch["labels"].to(device),
     )
 
 
@@ -47,6 +47,21 @@ def batched(iterable, n):
     it = iter(iterable)
     while batch := list(islice(it, n)):
         yield batch
+
+
+def PCA_gpu(v):
+    # Center the data
+    v = v - v.mean(axis=0)
+    # Compute covariance matrix
+    cov = (v.T @ v) / (v.shape[0] - 1)
+    # Compute eigenvalues and eigenvectors
+    # * pt.linalg.eigh seems to leak memory!!
+    eigenvalues, eigenvectors = pt.linalg.eigh(cov)
+    # Sort in descending order
+    idx = eigenvalues.argsort(descending=True)
+    eigenvalues = eigenvalues[idx]
+    eigenvectors = eigenvectors[:, idx]
+    return eigenvectors.T  # [:n_components]
 
 
 ################################ loss functions #################################

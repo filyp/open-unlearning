@@ -78,7 +78,7 @@ def main(cfg: DictConfig):
 
         from evals.wmdp_deduped import WMDPDedupedEvaluator
         import torch as pt
-        from trainer.unlearn.cir.cir_utils import sanitize_batch
+        from trainer.unlearn.cir.cir_utils import prep_batch
         from torch.utils.data import DataLoader
 
         ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
@@ -98,7 +98,7 @@ def main(cfg: DictConfig):
             model.train()
             for batch in relearn_loader:
                 model.zero_grad(set_to_none=True)
-                output = model(**sanitize_batch(batch))
+                output = model(**prep_batch(batch, model.device))
                 output.loss.backward()
                 retraining_optimizer.step()
 
