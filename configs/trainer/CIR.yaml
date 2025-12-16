@@ -20,10 +20,13 @@ method_args:
     layer_range: [4, 7]
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
     retaining_rate: 0
+    pca_every_n: 1
+    mahal_reg: 1e-3
+    mahal_quantile: 0.
     # cb_retaining_layers: [12]
     cb_retaining_layers: [7]
     cb_retaining_pow: 1.0
-    unlearning_rate: 0.03
+    unlearning_rate: 0.06
     target_modules:
       - gate_proj
       - up_proj

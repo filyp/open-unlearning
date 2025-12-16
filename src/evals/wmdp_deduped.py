@@ -81,6 +81,13 @@ class WMDPDedupedEvaluator(Evaluator):
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         res = {}
         model.eval()
+        model.zero_grad(set_to_none=True)
+        pt.cuda.empty_cache()
+
+        nb = self.eval_cfg.num_eval_batches
+        res["wikitext_loss"] = _get_loss(model, self.wikitext[:nb])
+        res["recall_loss"] = _get_loss(model, self.recall_batches)
+        # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
         # * eval forget acc
         lm = HFLM(pretrained=model, tokenizer=kwargs["tokenizer"], batch_size=8)
@@ -91,11 +98,6 @@ class WMDPDedupedEvaluator(Evaluator):
         )
         res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
         res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
-
-        nb = self.eval_cfg.num_eval_batches
-        res["wikitext_loss"] = _get_loss(model, self.wikitext[:nb])
-        res["recall_loss"] = _get_loss(model, self.recall_batches)
-        # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
         logging.info(res)
         if self.eval_cfg.get("wandb"):

@@ -7,7 +7,6 @@ import hydra
 import torch as pt
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer, Trainer
-from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_core import (
@@ -45,85 +44,40 @@ def save_output_hook(module, args, output):
     module.cached_out = output
 
 
-# def get_projections_exact(vector_lists: dict[str, list[pt.Tensor]]):
-#     """Compute exact PCA projections (mean + principal components) for each module."""
-#     to_collapse = {}
-#     eigenvalues_dict = {}
-#     for n in list(vector_lists.keys()):
-#         pt.cuda.empty_cache()
-#         cached_vectors = vector_lists.pop(n)
-#         if not cached_vectors:
-#             continue
-#         v = pt.cat(cached_vectors)
-#         v = v.to("cuda").float()
-
-#         mean = v.mean(axis=0)
-
-#         # Compute the PCA components
-#         # Center the data
-#         v = v - mean
-#         # Compute covariance matrix
-#         cov = (v.T @ v) / (v.shape[0] - 1)
-#         # Compute eigenvalues and eigenvectors
-#         eigenvalues, eigenvectors = pt.linalg.eigh(cov)
-#         # Sort in descending order
-#         idx = eigenvalues.argsort(descending=True)
-#         eigenvalues = eigenvalues[idx]
-#         eigenvectors = eigenvectors[:, idx]
-#         pca_components = eigenvectors.T
-
-#         # return one tensor of mean and the pca components
-#         to_collapse[n] = pt.cat([mean.reshape(1, -1), pca_components], dim=0)
-#         eigenvalues_dict[n] = eigenvalues
-
-#         del v, mean, cov, eigenvectors, pca_components
-
-#     return to_collapse, eigenvalues_dict
-
-
-def get_precision_matrices_from_online_cov(
-    online_covs: dict[str, OnlineCovariance], reg: float = 1e-6
-):
-    """Compute precision matrices (inverse covariance) and means from OnlineCovariance objects."""
-    precisions = {}
-    means = {}
-    for n, online_cov in online_covs.items():
+def get_projections_exact(vector_lists: dict[str, list[pt.Tensor]]):
+    """Compute exact PCA projections (mean + principal components) for each module."""
+    to_collapse = {}
+    eigenvalues_dict = {}
+    for n in list(vector_lists.keys()):
         pt.cuda.empty_cache()
-        if online_cov.mean is None:
+        cached_vectors = vector_lists.pop(n)
+        if not cached_vectors:
             continue
+        v = pt.cat(cached_vectors)
+        v = v.to("cuda").float()
 
-        mean = online_cov.mean.float()
-        cov = online_cov.cov.float()
+        mean = v.mean(axis=0)
 
-        # Add regularization and invert
-        cov_reg = cov + reg * pt.eye(cov.shape[0], device=cov.device)
-        precision = pt.linalg.inv(cov_reg)
+        # Compute the PCA components
+        # Center the data
+        v = v - mean
+        # Compute covariance matrix
+        cov = (v.T @ v) / (v.shape[0] - 1)
+        # Compute eigenvalues and eigenvectors
+        eigenvalues, eigenvectors = pt.linalg.eigh(cov)
+        # Sort in descending order
+        idx = eigenvalues.argsort(descending=True)
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+        pca_components = eigenvectors.T
 
-        precisions[n] = precision
-        means[n] = mean
+        # return one tensor of mean and the pca components
+        to_collapse[n] = pt.cat([mean.reshape(1, -1), pca_components], dim=0)
+        eigenvalues_dict[n] = eigenvalues
 
-        del mean, cov, cov_reg, precision
+        del v, mean, cov, eigenvectors, pca_components
 
-    return precisions, means
-
-
-def get_mahalanobis_directions(
-    activations: pt.Tensor, precision: pt.Tensor, mean: pt.Tensor
-):
-    """
-    Compute Mahalanobis directions for a batch of activations.
-
-    Args:
-        activations: (N, D) tensor of activation vectors
-        precision: (D, D) precision matrix (inverse covariance)
-        mean: (D,) mean vector
-
-    Returns:
-        directions: (N, D) Mahalanobis directions for each activation
-    """
-    centered = activations - mean  # (N, D)
-    directions = centered @ precision.T  # (N, D)
-    return directions
+    return to_collapse, eigenvalues_dict
 
 
 # %%
@@ -187,9 +141,7 @@ class CIR(UnlearnTrainer):
                     out.float().norm(dim=-1).mean().cpu()
                 )
 
-        self.acts_online_cov = {
-            n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
-        }
+        self.acts_list = {n: [] for n, _ in trainable_modules(model)}
 
     def train(self):
         model = self.model
@@ -201,18 +153,11 @@ class CIR(UnlearnTrainer):
                 self.training_step(model, inputs)
 
             if epoch % self.cfg.get("pca_every_n", 1) == 0:
-                # ! calculate precision matrices for Mahalanobis distance
-                reg = self.cfg.get("mahal_reg", 1e-2)
-                self.act_precisions, self.act_means = (
-                    get_precision_matrices_from_online_cov(
-                        self.acts_online_cov, reg=reg
-                    )
+                # ! calculate means and PCA components (exact)
+                self.act_projections, self.act_eigenvalues = get_projections_exact(
+                    self.acts_list
                 )
-
-            # Reset online covariance for next epoch
-            self.acts_online_cov = {
-                n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
-            }
+            self.acts_list = {n: [] for n, _ in trainable_modules(model)}
 
             # ! get metrics
             res = self.evaluate()
@@ -241,36 +186,35 @@ class CIR(UnlearnTrainer):
             grads = get_last_grad(
                 module, batch["attention_mask"], self.cfg.cut_off_tokens
             )
-            self.acts_online_cov[name].add_all(acts.float())
+            self.acts_list[name].append(acts.clone().to("cpu"))
             assert len(acts.shape) == len(grads.shape) == 2
 
-            if not hasattr(self, "act_precisions"):
+            if not hasattr(self, "act_projections"):
                 continue  # first epoch
 
             acts = acts.to(pt.float32)
             grads = grads.to(pt.float32)
 
-            # ! Compute Mahalanobis directions and filter by distance
-            precision = self.act_precisions[name]
-            mean = self.act_means[name]
-            centered = acts - mean
-            mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
+            # ! project out the mean from activations
+            act_mean = self.act_projections[name][0]
+            acts = acts - project_out(acts, act_mean)
 
-            # Apply mask based on Mahalanobis distance quantile
-            mahal_dists_sq = (centered * mahal_dirs).sum(dim=1)
-            quantile = self.cfg.get("mahal_quantile", 0.2)
-            thresh = mahal_dists_sq.quantile(quantile)
-            mask = mahal_dists_sq > thresh
-
-            # Use Mahalanobis directions as the modified activations
-            acts = mahal_dirs[mask]
-            grads = grads[mask]
-            del precision, mean, centered, mahal_dirs, mahal_dists_sq
+            # ! apply masking based on eigenvalues and threshold
+            eigenvectors = self.act_projections[name][1:]
+            pc_projections = eigenvectors @ acts.T
+            eigenvalues = self.act_eigenvalues[name]
+            threshold = self.cfg.get("pca_threshold", 3)
+            epsilon = self.cfg.get("pca_epsilon", 0.03)
+            mask = pc_projections.abs() / (eigenvalues.reshape(-1, 1) + epsilon) > threshold
+            # Keep the first act_proj_num components collapsed (masked out)
+            mask[: self.cfg.act_proj_num, :] = False
+            # mask[self.cfg.act_proj_num :, :] = True
+            acts = (pc_projections * mask).T @ eigenvectors
 
             # without the projections, this is the equivalent of normal backprop
-            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to("cuda")
+            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(module.weight.grad.dtype)
 
-        if not hasattr(self, "act_precisions"):
+        if not hasattr(self, "act_projections"):
             return  # first epoch
 
         # * normalize grads
@@ -278,14 +222,11 @@ class CIR(UnlearnTrainer):
         scale_grads_(model, self.cfg.unlearning_rate / norm)
         self.unit_optimizer.step()  # unit_optimizer has lr=1.0
 
-        # ! retain pass
         if self.cfg.get("retaining_rate", 0) > 0:
             model.zero_grad(set_to_none=True)
             r_batch = inputs["retain"]
             with trim_layers(model, self.max_layer):
-                output = model(
-                    **prep_batch(r_batch, model.device), output_hidden_states=True
-                )
+                output = model(**prep_batch(r_batch, model.device), output_hidden_states=True)
             loss = cb_retain_loss(output, r_batch, self.cfg)
             loss.backward()
 

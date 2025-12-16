@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import torch as pt
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
+from welford_torch import OnlineCovariance
 
 from data import get_collators, get_data
 from evals import get_evaluators
@@ -31,6 +32,8 @@ with initialize_config_dir(version_base=None, config_dir=config_path):
             "data.custom_loaders.wmdp_bio_deduped.use_dev_split=true",
             "data.custom_loaders.wmdp_bio_deduped.eval_on_all_questions=true",
             "task_name=LAB",
+            "trainer.method_args.cfg.target_modules=[gate_proj]",
+            "trainer.method_args.cfg.layer_range=[0, 13]",
         ],
     )
 
@@ -96,12 +99,59 @@ def get_update_from_batches(batches: list[dict]) -> dict:
     return update
 
 
+def get_precision_matrices_from_online_cov(
+    online_covs: dict[str, OnlineCovariance], reg: float = 1e-6
+):
+    """Compute precision matrices (inverse covariance) and means from OnlineCovariance objects."""
+    precisions = {}
+    means = {}
+    for n, online_cov in online_covs.items():
+        pt.cuda.empty_cache()
+        if online_cov.mean is None:
+            continue
+
+        mean = online_cov.mean.to("cuda").float()
+        cov = online_cov.cov.to("cuda").float()
+
+        # Add regularization and invert
+        cov_reg = cov + reg * pt.eye(cov.shape[0], device=cov.device)
+        precision = pt.linalg.inv(cov_reg)
+
+        precisions[n] = precision.cpu()
+        means[n] = mean.cpu()
+
+        del mean, cov, cov_reg, precision
+
+    return precisions, means
+
+
+# Mahalanobis direction computation
+# Given an activation vector x and precision matrix P (inverse covariance) from the forget distribution,
+# the Mahalanobis direction is: P @ (x - mu)
+# This direction indicates how "unusual" the activation is relative to the forget distribution.
+def get_mahalanobis_directions(activations: pt.Tensor, precision: pt.Tensor, mean: pt.Tensor):
+    """
+    Compute Mahalanobis directions for a batch of activations.
+
+    Args:
+        activations: (N, D) tensor of activation vectors
+        precision: (D, D) precision matrix (inverse covariance)
+        mean: (D,) mean vector
+
+    Returns:
+        directions: (N, D) Mahalanobis directions for each activation
+    """
+    centered = activations - mean  # (N, D)
+    directions = centered @ precision.T  # (N, D)
+    return directions
+
+
 def save_output_hook(module, args, output):
     """Hook to cache MLP outputs for mlp_breaking_loss."""
     module.cached_out = output
 
 
-# %% compute the retain and recall updates, for later reference
+# ! compute the retain and recall updates, for later reference
 # wikitext_update = get_update_from_batches(data["wikitext"][:50])
 # bad = -dotproduct(unlearning_update, wikitext_update)
 recall_update = get_update_from_batches(data["recall"])
@@ -116,13 +166,13 @@ forget_batches = [collator(f) for f in batched(data["train"].forget, 12)]
 #     unlearning_update[k] *= -1
 
 
-# %%
 def get_ratio(unlearning_update):
     neg_unlearning_update = {k: -v for k, v in unlearning_update.items()}
     # we negate dotproducts, because unlearning_update is negated:
     # values are positive when they improve forget performance
     # while in other updates, values are positive when break performance (increase CE loss)
     bad = dotproduct_abs(neg_unlearning_update, retain_update)
+    # bad = dotproduct(neg_unlearning_update, retain_update)
     good = dotproduct(neg_unlearning_update, recall_update)
     ratio = bad / good
     print(f"ratio: {ratio:.3f}, bad: {bad:.3f}, good: {good:.3f}")
@@ -147,89 +197,47 @@ for batch in forget_batches:
         batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
 
 
-def get_projections_exact(vector_lists: dict[str, list[pt.Tensor]]):
-    # vectors can be either acts or grads
-    to_collapse = {}
-    eigenvalues_dict = {}
-    for n in list(vector_lists.keys()):
-        pt.cuda.empty_cache()
-        cached_vectors = vector_lists.pop(n)
-        if not cached_vectors:
-            continue
-        v = pt.cat(cached_vectors)
-        v = v.to("cuda").float()
-
-        mean = v.mean(axis=0)
-
-        # * compute the PCA components
-        # Center the data
-        v = v - mean
-        # Compute covariance matrix
-        cov = (v.T @ v) / (v.shape[0] - 1)
-        # Compute eigenvalues and eigenvectors
-        # * pt.linalg.eigh seems to leak memory!!
-        eigenvalues, eigenvectors = pt.linalg.eigh(cov)
-        # Sort in descending order
-        idx = eigenvalues.argsort(descending=True)
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
-        pca_components = eigenvectors.T  # [:n_components]
-
-        # return one tensor of mean and the pca components
-        to_collapse[n] = pt.cat([mean.reshape(1, -1), pca_components], dim=0)
-        eigenvalues_dict[n] = eigenvalues
-
-        del v, mean, cov, eigenvalues, eigenvectors, pca_components
-
-    return to_collapse, eigenvalues_dict
-
-
 # %% compute the PCA projections
-from trainer.unlearn.cir.cir_core import (
-    get_last_act,
-    get_last_grad,
-    install_hooks,
-    project_out,
-)
+from trainer.unlearn.cir.cir_core import get_last_act, get_last_grad, install_hooks
 
 # Install hooks to capture activations and gradients
 install_hooks(model)
 
 start_time = time.time()
-# Initialize lists to accumulate acts/grads for each trainable module
-acts_list = {n: [] for n, _ in trainable_modules(model)}
-grads_list = {n: [] for n, _ in trainable_modules(model)}
+# Initialize online covariance objects for each trainable module
+acts_online_cov = {n: OnlineCovariance() for n, _ in trainable_modules(model)}
 
-# Go through forget batches and collect activations/gradients
+# Go through forget batches and collect activations (online)
 for batch in forget_batches:
     model.zero_grad()
     output = model(**prep_batch(batch, model.device))
-    loss = -output.loss
+    # loss = -output.loss
     # loss = mlp_breaking_loss(model, batch, mcfg)
-    loss.backward()
+    # loss.backward()
 
     for name, module in trainable_modules(model):
         acts = get_last_act(module, batch["attention_mask"])
-        grads = get_last_grad(module, batch["attention_mask"])
-        acts_list[name].append(acts.clone().cpu())
-        grads_list[name].append(grads.clone().cpu())
+        acts_online_cov[name].add_all(acts.cpu().float())
 
 model.zero_grad()
 pt.cuda.empty_cache()
 
-# Compute PCA projections (mean + principal components)
-act_projections, act_eigenvalues_dict = get_projections_exact(acts_list)
+# Compute precision matrices (inverse covariance) and means from online covariance
+reg = 1e-2
+act_precisions, act_means = get_precision_matrices_from_online_cov(acts_online_cov, reg=reg)
 # grad_projections, grad_eigenvalues_dict = get_projections_exact(grads_list)
-print(f"Time taken to compute PCA projections: {time.time() - start_time:.2f} seconds")
+print(f"Time taken to compute precision matrices: {time.time() - start_time:.2f} seconds")
+
 
 # %% eval the collapse of PCs
 # Number of components to collapse (row 0 = mean, rows 1:n = PCA components)
 # act_n_collapse = 20
 # grad_n_collapse = 0
 
-threshold = 1.
+# threshold = 1.5
 # epsilon = 0.03
-epsilon = 0.0
+
+# quantile = 0.2
 
 # Accumulate collapsed updates - use module names
 collapsed_update = {
@@ -247,17 +255,24 @@ for batch in forget_batches:
         acts = get_last_act(module, batch["attention_mask"]).to(pt.float32)
         grads = get_last_grad(module, batch["attention_mask"]).to(pt.float32)
 
-        # collapse the mean
-        act_mean = act_projections[name][0]
-        acts = acts - project_out(acts, act_mean)
+        # # ! Compute Mahalanobis directions
+        # precision = act_precisions[name].to("cuda")
+        # mean = act_means[name].to("cuda")
+        # centered = acts - mean
+        # mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
+        # acts = mahal_dirs
 
-        eigenvectors = act_projections[name][1:]
-        pc_projections = (eigenvectors @ acts.T)
-        eigenvalues = act_eigenvalues_dict[name]
-        mask = pc_projections.abs() / (eigenvalues.reshape(-1,1) + epsilon) > threshold
-        mask[:20, :] = False
-        acts = (pc_projections * mask).T @ eigenvectors
+        # # ! cherry-picking PCs
+        # act_mean = act_projections[name][0]
+        # acts = acts - project_out(acts, act_mean)
+        # eigenvectors = act_projections[name][1:]
+        # pc_projections = (eigenvectors @ acts.T)
+        # eigenvalues = act_eigenvalues_dict[name]
+        # mask = pc_projections.abs() / (eigenvalues.reshape(-1,1) + epsilon) > threshold
+        # mask[:20, :] = False
+        # acts = (pc_projections * mask).T @ eigenvectors
 
+        # # ! top PCs collapsing
         # for comp in act_projections[name][:act_n_collapse]:
         #     acts = acts - project_out(acts, comp)
         # for comp in grad_projections[name][:grad_n_collapse]:
@@ -271,62 +286,71 @@ for batch in forget_batches:
 # normalize(collapsed_update)
 
 # print(f"{act_n_collapse= }   {grad_n_collapse= }   ", end="")
-print(f"{threshold= }   {epsilon= }   ", end="")
+# print(f"{threshold= }   {epsilon= }   ", end="")
+print(f"{reg=:.0e}   ", end="")
 get_ratio(collapsed_update)
 
-# # %%
-# name = "model.layers.8.mlp.gate_proj"
-# module = model.get_submodule(name)
-# # %%
-# act_projections[name].shape
 # %%
 
 # %%
 
-# for n, m in trainable_modules(model):
-#     # print(eigenvalues_dict[n])
-
-#     eig = act_eigenvalues_dict[n].to("cpu").numpy()
-
-#     plt.plot(eig)
-#     plt.xlim(left=0.0)
-#     plt.ylim(bottom=0.0)
-#     plt.show()
-
 # %%
-name = "model.layers.7.mlp.gate_proj"
+
+# %% Example usage: get Mahalanobis directions for activations from a batch
+name = "model.layers.2.mlp.gate_proj"
 module = model.get_submodule(name)
+
+# Get activations from a batch
+batch = forget_batches[0]
+model.zero_grad()
+output = model(**prep_batch(batch, model.device))
 acts = get_last_act(module, batch["attention_mask"]).to(pt.float32)
 
-act_mean = act_projections[name][0]
-acts = acts - project_out(acts, act_mean)
 # %%
 
-eigenvectors = act_projections[name][1:]
+# Compute Mahalanobis directions
+precision = act_precisions[name].to("cuda")
+mean = act_means[name].to("cuda")
+mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
+print(mahal_dirs.norm(dim=1))
+mahal_dirs /= mahal_dirs.norm(dim=1, keepdim=True)
+proj_strenghts = (mahal_dirs * acts).sum(dim=1, keepdim=True)
+acts = proj_strenghts * mahal_dirs
+
+final_dists = get_mahalanobis_directions(acts, precision, mean).norm(dim=1)
+quantile = 0.2
+thresh_mah_dist = final_dists.quantile(quantile)
+mask = final_dists > thresh_mah_dist
+acts[mask].shape
+
+# %%
+# Get eigenvalues/eigenvectors from online covariance (eig_val is ascending order)
+eigenvalues = acts_online_cov[name].eig_val.to("cuda").float()
+eigenvectors = acts_online_cov[name].eig_vec.to("cuda").float().T  # transpose to match old format
+# Reverse to get descending order (like get_projections_exact)
+eigenvalues = eigenvalues.flip(0)
+eigenvectors = eigenvectors.flip(0)
 pc_projections = (eigenvectors @ acts.T)
-eigenvalues = act_eigenvalues_dict[name]
 
-threshold = 1.5
-epsilon = 0  # 0.03
-mask = pc_projections.abs() / (eigenvalues.reshape(-1,1) + epsilon) > threshold
+# threshold = 1.5
+# epsilon = 0  # 0.03
+# mask = pc_projections.abs() / (eigenvalues.reshape(-1,1) + epsilon) > threshold
 
-projslice = pc_projections.abs()[:,8].to("cpu").numpy()
-maskslice = mask[:,8].to("cpu").numpy()
+idx = 10
+projslice = pc_projections.abs()[:,idx].to("cpu").numpy()
+# maskslice = mask[:,idx].to("cpu").numpy()
 plt.scatter(
     range(len(projslice)), 
     projslice, 
-    c=["red" if m else "blue" for m in maskslice], 
+    # c=["red" if m else "blue" for m in maskslice], 
+    c="red",
     s=1
 )
 plt.plot(eigenvalues.to("cpu").numpy())
 plt.xlim(left=0.0, right=900)
 plt.ylim(bottom=0.0)
 plt.show()
+
+
 # %%
-pc_projections.shape
-# %%
-eigenvalues.shape
-# %%
-# (eigenvectors.T @ pc_projections).shape
-# %%
-acts = (pc_projections * mask).T @ eigenvectors
+projslice
