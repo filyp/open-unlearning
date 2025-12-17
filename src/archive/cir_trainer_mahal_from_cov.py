@@ -43,34 +43,43 @@ def save_output_hook(module, args, output):
     module.cached_out = output
 
 
-def compute_and_cache_eigen(online_covs: dict[str, OnlineCovariance]):
-    """Trigger eigendecomposition computation and cache it in OnlineCovariance objects."""
-    for online_cov in online_covs.values():
-        if online_cov.mean is not None:
-            # Force computation and caching (uses internal count-based caching)
-            online_cov._OnlineCovariance__compute_eig()
+def get_precision_matrices_from_online_cov(
+    online_covs: dict[str, OnlineCovariance], reg: float = 1e-6
+):
+    """Compute precision matrices (inverse covariance) and means from OnlineCovariance objects."""
+    precisions = {}
+    means = {}
+    for n, online_cov in online_covs.items():
+        if online_cov.mean is None:
+            continue
+
+        cov = online_cov.cov
+
+        # Add regularization
+        cov_reg = cov + reg * pt.eye(cov.shape[0], device=cov.device)
+
+        precisions[n] = pt.linalg.inv(cov_reg)  # Invert
+        means[n] = online_cov.mean
+
+    return precisions, means
 
 
-def get_mahalanobis_directions_eigen(
-    activations: pt.Tensor,
-    online_cov: OnlineCovariance,
-    reg: float = 1e-2,
+def get_mahalanobis_directions(
+    activations: pt.Tensor, precision: pt.Tensor, mean: pt.Tensor
 ):
     """
-    Compute Mahalanobis directions using cached eigendecomposition.
+    Compute Mahalanobis directions for a batch of activations.
 
-    Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
+    Args:
+        activations: (N, D) tensor of activation vectors
+        precision: (D, D) precision matrix (inverse covariance)
+        mean: (D,) mean vector
+
+    Returns:
+        directions: (N, D) Mahalanobis directions for each activation
     """
-    centered = activations - online_cov.mean  # (N, D)
-
-    # Access cached eigen (access them directly to avoid triggering recalculation)
-    eigenvectors = online_cov._OnlineCovariance__eig_vectors
-    eigenvalues = online_cov._OnlineCovariance__eig_values
-
-    # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-    projected = centered @ eigenvectors  # (N, D)
-    directions = (projected / (eigenvalues + reg)) @ eigenvectors.T  # (N, D)
-
+    centered = activations - mean  # (N, D)
+    directions = centered @ precision.T  # (N, D)
     return directions
 
 
@@ -148,20 +157,25 @@ class CIR(UnlearnTrainer):
                 inputs = dict(forget=fb, retain=rb)
                 self.training_step(model, inputs)
 
-            # ! calculate eigendecomposition (cached in OnlineCovariance objects)
-            compute_and_cache_eigen(self.acts_online_cov)
-            self.eigen_ready = True
+            # ! calculate precision matrices for Mahalanobis distance
+            reg = self.cfg.get("mahal_reg", 1e-2)
+            self.act_precisions, self.act_means = (
+                get_precision_matrices_from_online_cov(
+                    self.acts_online_cov, reg=reg
+                )
+            )
 
             # ! Reset online covariance for next epoch
-            self.acts_online_cov_prev = self.acts_online_cov
             self.acts_online_cov = {
                 n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
             }
 
             # ! get metrics
             res = self.evaluate()
-            if self.control.should_training_stop:
-                break
+            # if res["wikitext_loss"] > self.init_res["wikitext_loss"] * self.cfg.get(
+            #     "loss_budget", 1.01
+            # ):
+            #     break
 
     def training_step(self, model, inputs):
         # ! unlearning loss
@@ -186,17 +200,17 @@ class CIR(UnlearnTrainer):
             self.acts_online_cov[name].add_all(acts.float())
             assert len(acts.shape) == len(grads.shape) == 2
 
-            if not getattr(self, "eigen_ready", False):
+            if not hasattr(self, "act_precisions"):
                 continue  # first epoch
 
             acts = acts.to(pt.float32)
             grads = grads.to(pt.float32)
 
-            # ! Compute Mahalanobis directions using eigendecomposition
-            online_cov = self.acts_online_cov_prev[name]
-            reg = self.cfg.get("mahal_reg", 1e-2)
-            centered = acts - online_cov.mean
-            mahal_dirs = get_mahalanobis_directions_eigen(acts, online_cov, reg)
+            # ! Compute Mahalanobis directions and filter by distance
+            precision = self.act_precisions[name]
+            mean = self.act_means[name]
+            centered = acts - mean
+            mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
             proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
             acts = proj_strenghts * mahal_dirs_norm
@@ -209,23 +223,24 @@ class CIR(UnlearnTrainer):
             # dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
 
             dists = (centered * mahal_dirs_norm).sum(dim=1)
-
+            
+            # # get Mahalanobis distance (squared) of mahal_dirs_norm
+            # dists = ((mahal_dirs_norm @ precision.T) * mahal_dirs_norm).sum(dim=1)
+            
             # dists = (centered * mahal_dirs).sum(dim=1)
 
             # dists = (centered_norm * mahal_dirs).sum(dim=1)
-
-            # # get Mahalanobis distance (squared) using eigendecomposition
-            # projected = mahal_dirs_norm @ eigenvectors
-            # dists = (projected ** 2 / eigenvalues).sum(dim=1)
 
             mask = dists > dists.quantile(self.cfg.mahal_quantile)
             acts = acts[mask]
             grads = grads[mask]
 
+            # del precision, mean, centered, mahal_dirs, mahal_dists_sq
+
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(module.weight.grad.dtype)
 
-        if not getattr(self, "eigen_ready", False):
+        if not hasattr(self, "act_precisions"):
             return  # first epoch
 
         # * normalize grads

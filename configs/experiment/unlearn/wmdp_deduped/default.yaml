@@ -49,6 +49,7 @@ eval:
   deduped:
     handler: WMDPDedupedEvaluator
     num_eval_batches: 16
+    disr_budget: 1.002
     # * uncomment to use wandb:
     wandb:
       project: unlearning|src|main_runner.py

@@ -67,10 +67,10 @@ class WMDPDedupedEvaluator(Evaluator):
         task = self.task_dict["wmdp_bio"]
         # task.config.description = ""  # Prepended description harmed accuracy
         task.dataset["test"] = data["eval_qs"]  # Replace the dataset with eval_qs
+        
+        self.init_wikitext_loss = None
 
         if eval_cfg.get("wandb"):
-            # todo, finiching wandb should be handled at training end instead, evaluator will handle this, when deciding whether to terminate the run
-            wandb.finish()  # finish any existing wandb run
             wandb.init(
                 project=eval_cfg.wandb.project,
                 name=eval_cfg.wandb.name,
@@ -83,7 +83,7 @@ class WMDPDedupedEvaluator(Evaluator):
         model.eval()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-
+        
         nb = self.eval_cfg.num_eval_batches
         res["wikitext_loss"] = _get_loss(model, self.wikitext[:nb])
         res["recall_loss"] = _get_loss(model, self.recall_batches)
@@ -102,4 +102,11 @@ class WMDPDedupedEvaluator(Evaluator):
         logging.info(res)
         if self.eval_cfg.get("wandb"):
             wandb.log(res)
+
+        if self.init_wikitext_loss is None:
+            self.init_wikitext_loss = res["wikitext_loss"]
+        if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
+            logging.info(f"Wikitext loss exceeded the disruption budget")
+            kwargs["trainer"].control.should_training_stop = True
+
         return res

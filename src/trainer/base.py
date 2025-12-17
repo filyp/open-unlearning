@@ -43,6 +43,7 @@ class FinetuneTrainer(Trainer):
                             "template_args": self.template_args,
                             "model": self.model,
                             "tokenizer": self.tokenizer,
+                            "trainer": self,
                         }
                         eval_metrics.update(evaluator.evaluate(**eval_args))
                     self.log(eval_metrics)

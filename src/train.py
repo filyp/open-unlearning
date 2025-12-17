@@ -60,7 +60,8 @@ def main(cfg: DictConfig):
     if trainer_args.do_train:
         trainer.train()
         trainer.save_state()
-        trainer.save_model(trainer_args.output_dir)
+        # todo option for saving each epoch instead of at the end, so when model broken, dont save
+        # trainer.save_model(trainer_args.output_dir)
 
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")

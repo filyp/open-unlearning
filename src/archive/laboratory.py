@@ -223,7 +223,7 @@ model.zero_grad()
 pt.cuda.empty_cache()
 
 # Compute precision matrices (inverse covariance) and means from online covariance
-reg = 1e-2
+reg = 1e-1
 act_precisions, act_means = get_precision_matrices_from_online_cov(acts_online_cov, reg=reg)
 # grad_projections, grad_eigenvalues_dict = get_projections_exact(grads_list)
 print(f"Time taken to compute precision matrices: {time.time() - start_time:.2f} seconds")
@@ -255,12 +255,26 @@ for batch in forget_batches:
         acts = get_last_act(module, batch["attention_mask"]).to(pt.float32)
         grads = get_last_grad(module, batch["attention_mask"]).to(pt.float32)
 
-        # # ! Compute Mahalanobis directions
-        # precision = act_precisions[name].to("cuda")
-        # mean = act_means[name].to("cuda")
-        # centered = acts - mean
-        # mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
-        # acts = mahal_dirs
+        # ! Compute Mahalanobis directions
+        precision = act_precisions[name].to("cuda")
+        mean = act_means[name].to("cuda")
+        centered = acts - mean
+        mahal_dirs = get_mahalanobis_directions(acts, precision, mean)
+        mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+        proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+        acts = proj_strenghts * mahal_dirs_norm
+
+        # Apply mask based on Mahalanobis distance quantile
+        # ! note: once, using centered worked better than centered_norm, so investigate it
+        centered_norm = centered / centered.norm(dim=1, keepdim=True)
+        # rot = (centered_norm * mahal_dirs_norm).sum(dim=1)
+        rot = (centered * mahal_dirs_norm).sum(dim=1)
+        quantile = 0.8
+        thresh = rot.quantile(quantile)
+        mask = rot > thresh
+        # Use Mahalanobis directions as the modified activations
+        acts = acts[mask]
+        grads = grads[mask]
 
         # # ! cherry-picking PCs
         # act_mean = act_projections[name][0]

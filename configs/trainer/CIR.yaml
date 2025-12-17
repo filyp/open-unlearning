@@ -10,7 +10,7 @@ args:
   do_eval: False
 method_args:
   cfg:
-    max_num_epochs: 30
+    max_num_epochs: 20
     cir_niter: 16
     cut_off_tokens: 1
     mlp_floor: 0.0
@@ -18,21 +18,25 @@ method_args:
     grad_proj_num: 0
     # layer_range: [6, 12]
     layer_range: [4, 7]
-    # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
-    retaining_rate: 0
-    pca_every_n: 1
+    # pca_every_n: 1
     mahal_reg: 1e-3
-    mahal_quantile: 0.
-    # cb_retaining_layers: [12]
-    cb_retaining_layers: [7]
-    cb_retaining_pow: 1.0
-    unlearning_rate: 0.06
+    mahal_quantile: 0.8
+
+    unlearning_rate: 0.8
+    # unlearning_rate: 0.01
     target_modules:
       - gate_proj
       - up_proj
       # - down_proj
-    train_batch_size: 16
+    train_batch_size: 22
     retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
+
+    # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
+    retaining_rate: 0
+    # cb_retaining_layers: [12]
+    cb_retaining_layers: [7]
+    cb_retaining_pow: 1.0
+
   # gamma: 1.0
   # alpha: 1.0
   # retain_loss_type: NLL
