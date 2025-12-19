@@ -1,4 +1,5 @@
 # %%
+from contextlib import contextmanager
 from itertools import islice
 import torch as pt
 
@@ -13,16 +14,16 @@ def trainable_modules(model):
     ]
 
 
-def get_update_norm(model):
-    """L2 norm of weight.grad, computed across all the trainable weights."""
-    return (
-        sum(
-            m.weight.grad.to(pt.float32).norm() ** 2
-            for _, m in trainable_modules(model)
-            if m.weight.grad is not None
-        )
-        ** 0.5
-    )
+# def get_update_norm(model):
+#     """L2 norm of weight.grad, computed across all the trainable weights."""
+#     return (
+#         sum(
+#             m.weight.grad.to(pt.float32).norm() ** 2
+#             for _, m in trainable_modules(model)
+#             if m.weight.grad is not None
+#         )
+#         ** 0.5
+#     )
 
 
 def scale_grads_(model, factor: float):
@@ -62,6 +63,17 @@ def PCA_gpu(v):
     eigenvalues = eigenvalues[idx]
     eigenvectors = eigenvectors[:, idx]
     return eigenvectors.T  # [:n_components]
+
+
+@contextmanager
+def trim_layers(model, max_layer):
+    """Temporarily tell the model to use only the first max_layer layers."""            
+    all_layers = model.model.layers
+    model.model.layers = model.model.layers[:max_layer]
+    try:
+        yield
+    finally:
+        model.model.layers = all_layers
 
 
 ################################ loss functions #################################
@@ -108,3 +120,36 @@ def cb_retain_loss(output, batch, cfg):
         loss_acc += dist**cfg.cb_retaining_pow
 
     return loss_acc / len(cfg.cb_retaining_layers)
+
+
+################################ loss helpers #################################
+
+
+def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
+    for batch in batches:
+        with pt.no_grad():
+            output = model(**prep_batch(batch, model.device))
+        _mask = batch["attention_mask"].bool().clone()
+        _mask[:, : cfg.cut_off_tokens] = False
+        batch["org_mlp_out"] = {}
+        batch["org_mlp_out_norm"] = {}
+        for layer_id in range(*cfg.layer_range):
+            mlp = model.model.layers[layer_id].mlp
+            out = mlp.cached_out.detach()[_mask]
+            batch["org_mlp_out"][layer_id] = out.cpu()
+            batch["org_mlp_out_norm"][layer_id] = (
+                out.float().norm(dim=-1).mean().cpu()
+            )
+
+
+def cache_activations_for_cb_retain_loss(model, batches, cfg):
+    for batch in batches:
+        with pt.no_grad():
+            with trim_layers(model, max(cfg.cb_retaining_layers) + 1):
+                output = model(
+                    **prep_batch(batch, model.device), output_hidden_states=True
+                )
+        batch["retain_acts"] = {
+            l_num: output.hidden_states[l_num].detach().to("cpu")
+            for l_num in cfg.cb_retaining_layers
+        }

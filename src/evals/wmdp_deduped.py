@@ -1,6 +1,7 @@
 import logging
 
 import torch as pt
+import lm_eval.tasks
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
@@ -61,13 +62,14 @@ class WMDPDedupedEvaluator(Evaluator):
         self.eval_qs = data["eval_qs"]
 
         # Get the wmdp_bio task (uses the standard template)
-        task_manager = TaskManager()
+        # Use include_defaults=False and only include wmdp tasks for a much faster init
+        wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
+        task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
         self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
         # Modify the wmdp_bio task to use our custom questions
         task = self.task_dict["wmdp_bio"]
-        # task.config.description = ""  # Prepended description harmed accuracy
-        task.dataset["test"] = data["eval_qs"]  # Replace the dataset with eval_qs
-        
+        task.dataset["test"] = data["eval_qs"]
+
         self.init_wikitext_loss = None
 
         if eval_cfg.get("wandb"):
@@ -84,8 +86,7 @@ class WMDPDedupedEvaluator(Evaluator):
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
         
-        nb = self.eval_cfg.num_eval_batches
-        res["wikitext_loss"] = _get_loss(model, self.wikitext[:nb])
+        res["wikitext_loss"] = _get_loss(model, self.wikitext)
         res["recall_loss"] = _get_loss(model, self.recall_batches)
         # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
@@ -105,8 +106,15 @@ class WMDPDedupedEvaluator(Evaluator):
 
         if self.init_wikitext_loss is None:
             self.init_wikitext_loss = res["wikitext_loss"]
+            
+        # * check condition to stop training
         if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
             logging.info(f"Wikitext loss exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
+        else:
+            self.last_valid_res = res
 
         return res
+
+    def final_score(self):
+        return self.last_valid_res["recall_loss"]

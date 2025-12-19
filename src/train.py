@@ -66,46 +66,52 @@ def main(cfg: DictConfig):
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
     
-    relearning_cfg = cfg.get("relearning", None)
-    if relearning_cfg:
+    # relearning_cfg = cfg.get("relearning", None)
+    # if relearning_cfg:
         
-        # unfreeze all parameters
-        for p in model.parameters():
-            p.requires_grad = True
-        # remove all hooks
-        for m in model.modules():
-            m._forward_hooks = {}
-            m._backward_hooks = {}
+    #     # unfreeze all parameters
+    #     for p in model.parameters():
+    #         p.requires_grad = True
+    #     # remove all hooks
+    #     for m in model.modules():
+    #         m._forward_hooks = {}
+    #         m._backward_hooks = {}
 
-        from evals.wmdp_deduped import WMDPDedupedEvaluator
-        import torch as pt
-        from trainer.unlearn.cir.cir_utils import prep_batch
-        from torch.utils.data import DataLoader
+    #     from evals.wmdp_deduped import WMDPDedupedEvaluator
+    #     import torch as pt
+    #     from trainer.unlearn.cir.cir_utils import prep_batch
+    #     from torch.utils.data import DataLoader
 
-        ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
+    #     ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
 
-        retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
-        relearn_loader = DataLoader(
-            data["relearn"], 
-            batch_size=relearning_cfg.relearn_batch_size,
-            shuffle=False,
-            collate_fn=collator
-        )
+    #     retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
+    #     relearn_loader = DataLoader(
+    #         data["relearn"], 
+    #         batch_size=relearning_cfg.relearn_batch_size,
+    #         shuffle=False,
+    #         collate_fn=collator
+    #     )
 
-        # * get metrics
-        ev.evaluate(model, tokenizer=tokenizer)
+    #     # * get metrics
+    #     ev.evaluate(model, tokenizer=tokenizer)
 
-        for epoch in range(relearning_cfg.num_epochs):
-            model.train()
-            for batch in relearn_loader:
-                model.zero_grad(set_to_none=True)
-                output = model(**prep_batch(batch, model.device))
-                output.loss.backward()
-                retraining_optimizer.step()
+    #     for epoch in range(relearning_cfg.num_epochs):
+    #         model.train()
+    #         for batch in relearn_loader:
+    #             model.zero_grad(set_to_none=True)
+    #             output = model(**prep_batch(batch, model.device))
+    #             output.loss.backward()
+    #             retraining_optimizer.step()
 
-            # * get metrics
-            ev.evaluate(model, tokenizer=tokenizer)
+    #         # * get metrics
+    #         ev.evaluate(model, tokenizer=tokenizer)
 
+    # * get the final score (if defined), and return for potential Optuna optimization
+    for evaluator in evaluators.values():
+        if hasattr(evaluator, "final_score"):
+            final_score = evaluator.final_score()
+            print(f"Final score for {evaluator.__class__.__name__}: {final_score}")
+            return final_score
 
 
 if __name__ == "__main__":

@@ -1,11 +1,9 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=SAMPLE_UNLEARN mode=wmdp_deduped
+from dataclasses import dataclass
 import logging
 from contextlib import contextmanager
 
-import hydra
 import torch as pt
-from omegaconf import OmegaConf
-from transformers import AutoTokenizer, Trainer
 from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
@@ -16,26 +14,17 @@ from trainer.unlearn.cir.cir_core import (
 )
 from trainer.unlearn.cir.cir_utils import (
     batched,
+    cache_activations_for_cb_retain_loss,
+    cache_activations_for_mlp_breaking_loss,
     cb_retain_loss,
-    get_update_norm,
     mlp_breaking_loss,
     prep_batch,
     scale_grads_,
     trainable_modules,
+    trim_layers,
 )
 
 logging.basicConfig(level=logging.INFO)
-
-
-@contextmanager
-def trim_layers(model, max_layer):
-    """Temporarily tell the model to use only the first max_layer layers."""
-    all_layers = model.model.layers
-    model.model.layers = model.model.layers[:max_layer]
-    try:
-        yield
-    finally:
-        model.model.layers = all_layers
 
 
 def save_output_hook(module, args, output):
@@ -43,17 +32,16 @@ def save_output_hook(module, args, output):
     module.cached_out = output
 
 
-def compute_and_cache_eigen(online_covs: dict[str, OnlineCovariance]):
-    """Trigger eigendecomposition computation and cache it in OnlineCovariance objects."""
-    for online_cov in online_covs.values():
-        if online_cov.mean is not None:
-            # Force computation and caching (uses internal count-based caching)
-            online_cov._OnlineCovariance__compute_eig()
+@dataclass
+class DistributionStats:
+    mean: pt.Tensor
+    eigenvalues: pt.Tensor
+    eigenvectors: pt.Tensor
 
 
 def get_mahalanobis_directions_eigen(
     activations: pt.Tensor,
-    online_cov: OnlineCovariance,
+    stats: DistributionStats,
     reg: float = 1e-2,
 ):
     """
@@ -61,20 +49,15 @@ def get_mahalanobis_directions_eigen(
 
     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
     """
-    centered = activations - online_cov.mean  # (N, D)
-
-    # Access cached eigen (access them directly to avoid triggering recalculation)
-    eigenvectors = online_cov._OnlineCovariance__eig_vectors
-    eigenvalues = online_cov._OnlineCovariance__eig_values
+    centered = activations - stats.mean  # (N, D)
 
     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-    projected = centered @ eigenvectors  # (N, D)
-    directions = (projected / (eigenvalues + reg)) @ eigenvectors.T  # (N, D)
+    projected = centered @ stats.eigenvectors  # (N, D)
+    directions = (projected / (stats.eigenvalues + reg)) @ stats.eigenvectors.T
 
     return directions
 
 
-# %%
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -89,7 +72,6 @@ class CIR(UnlearnTrainer):
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
         install_hooks(model)
-
         for layer_id in range(*cfg.layer_range):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
 
@@ -106,34 +88,9 @@ class CIR(UnlearnTrainer):
             self.retain_batches.append(self.data_collator(r))
         del self.train_dataset
 
-        # * cache the activations for circuit breaker retaining
+        cache_activations_for_mlp_breaking_loss(model, self.forget_batches, cfg)
         if cfg.get("retaining_rate", 0) > 0:
-            for batch in self.retain_batches:
-                with pt.no_grad():
-                    with trim_layers(model, self.max_layer):
-                        output = model(
-                            **prep_batch(batch, model.device), output_hidden_states=True
-                        )
-                batch["retain_acts"] = {
-                    l_num: output.hidden_states[l_num].detach().to("cpu")
-                    for l_num in cfg.cb_retaining_layers
-                }
-
-        # * cache the activations for MLP breaking
-        for batch in self.forget_batches:
-            with pt.no_grad():
-                output = model(**prep_batch(batch, model.device))
-            _mask = batch["attention_mask"].bool().clone()
-            _mask[:, : cfg.cut_off_tokens] = False
-            batch["org_mlp_out"] = {}
-            batch["org_mlp_out_norm"] = {}
-            for layer_id in range(*cfg.layer_range):
-                mlp = model.model.layers[layer_id].mlp
-                out = mlp.cached_out.detach()[_mask]
-                batch["org_mlp_out"][layer_id] = out.cpu()
-                batch["org_mlp_out_norm"][layer_id] = (
-                    out.float().norm(dim=-1).mean().cpu()
-                )
+            cache_activations_for_cb_retain_loss(model, self.retain_batches, cfg)
 
         self.acts_online_cov = {
             n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
@@ -148,12 +105,12 @@ class CIR(UnlearnTrainer):
                 inputs = dict(forget=fb, retain=rb)
                 self.training_step(model, inputs)
 
-            # ! calculate eigendecomposition (cached in OnlineCovariance objects)
-            compute_and_cache_eigen(self.acts_online_cov)
-            self.eigen_ready = True
-
-            # ! Reset online covariance for next epoch
-            self.acts_online_cov_prev = self.acts_online_cov
+            # ! Extract distribution stats and reset online covariance for next epoch
+            self.distribution_stats = {
+                name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
+                for name, oc in self.acts_online_cov.items()
+                if oc.mean is not None
+            }
             self.acts_online_cov = {
                 n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
             }
@@ -186,17 +143,17 @@ class CIR(UnlearnTrainer):
             self.acts_online_cov[name].add_all(acts.float())
             assert len(acts.shape) == len(grads.shape) == 2
 
-            if not getattr(self, "eigen_ready", False):
+            if not getattr(self, "distribution_stats", None):
                 continue  # first epoch
 
             acts = acts.to(pt.float32)
             grads = grads.to(pt.float32)
 
             # ! Compute Mahalanobis directions using eigendecomposition
-            online_cov = self.acts_online_cov_prev[name]
+            stats = self.distribution_stats[name]
             reg = self.cfg.get("mahal_reg", 1e-2)
-            centered = acts - online_cov.mean
-            mahal_dirs = get_mahalanobis_directions_eigen(acts, online_cov, reg)
+            centered = acts - stats.mean
+            mahal_dirs = get_mahalanobis_directions_eigen(acts, stats, reg)
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
             proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
             acts = proj_strenghts * mahal_dirs_norm
@@ -223,9 +180,9 @@ class CIR(UnlearnTrainer):
             grads = grads[mask]
 
             # without the projections, this is the equivalent of normal backprop
-            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(module.weight.grad.dtype)
+            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
 
-        if not getattr(self, "eigen_ready", False):
+        if not getattr(self, "distribution_stats", None):
             return  # first epoch
 
         # * normalize grads

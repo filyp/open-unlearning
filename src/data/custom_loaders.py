@@ -17,13 +17,22 @@ def _tokenize(text, tokenizer, tokenizer_args):
 
 
 def load_hf(cfg, **kwargs):
-    corpus = load_dataset(**cfg.hf_args)
+    import os
+    from datasets import load_from_disk
+
+    # Check for local_cache_path for faster loading from pre-cached Arrow files
+    local_cache = cfg.get("local_cache_path")
+    if local_cache and os.path.exists(local_cache):
+        corpus = load_from_disk(local_cache)
+    else:
+        corpus = load_dataset(**cfg.hf_args)
+        if local_cache:
+            corpus.save_to_disk(local_cache)
+
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
-    batches = [
-        _tokenize(x["text"], kwargs["tokenizer"], cfg.tokenizer)
-        for x in corpus.shuffle(seed=42)
-    ]
+    corpus = corpus.shuffle(seed=42)
+    batches = [_tokenize(x["text"], kwargs["tokenizer"], cfg.tokenizer) for x in corpus]
     return {cfg.load_as: batches}
 
 
@@ -40,7 +49,7 @@ def wikitext(cfg, **kwargs):
     wikitext = _load_from_repo("wikitext_16k.jsonl")
     batches = [
         kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
-        for x in wikitext.shuffle(seed=42).batch(cfg.wikitext_batch_size)
+        for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
     ]
     for rb in batches:
         rb["labels"] = rb["input_ids"].clone()
