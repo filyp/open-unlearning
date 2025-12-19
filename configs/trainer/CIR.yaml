@@ -1,6 +1,7 @@
 # could load values from finetune.yaml like other trainer configs, but we are too different
-# defaults:
-#   - finetune
+defaults:
+  # - finetune
+  - /sweep: CIR  # Load CIR-specific sweep params (used with --multirun)
 
 handler: CIR
 args:
@@ -8,19 +9,22 @@ args:
   output_dir: ${paths.output_dir}
   do_train: True
   do_eval: False
+  eval_on_start: True
 method_args:
   cfg:
-    max_num_epochs: 20
+    max_num_epochs: 8
     cir_niter: 16
     cut_off_tokens: 1
     mlp_floor: 0.0
-    act_proj_num: 10
-    grad_proj_num: 0
+    # act_proj_num: 10
+    # grad_proj_num: 0
     # layer_range: [6, 12]
     layer_range: [4, 7]
     # pca_every_n: 1
     mahal_reg: 1e-3
     mahal_quantile: 0.8
+    mahal_pow: 1.0
+    act_norm_pow: 0.0
 
     unlearning_rate: 0.8
     # unlearning_rate: 0.01
@@ -37,6 +41,3 @@ method_args:
     cb_retaining_layers: [7]
     cb_retaining_pow: 1.0
 
-  # gamma: 1.0
-  # alpha: 1.0
-  # retain_loss_type: NLL

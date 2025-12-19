@@ -8,6 +8,7 @@ defaults:
   - override /data/datasets@data.forget: null
   - override /data/datasets@data.retain: null
   - override /eval: null  # This disables the default TOFU evaluation
+  - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
 # mode: wmdp_deduped  # needs to be overriden with CLI
 
@@ -33,8 +34,8 @@ data:
       tokenizer: ${tokenizer_cfg}
     wikitext:
       load_as: wikitext
-      batch_size: 16
-      num_batches: 16
+      batch_size: 16  # for 16 batches of 16 examples each, eval takes 3s
+      num_batches: 8  # todo use 16 or even 32 for final evals
       tokenizer: ${tokenizer_cfg}
     load_hf:  # fineweb bio dataset
       load_as: retain
@@ -56,9 +57,30 @@ eval:
     disr_budget: 1.001
     # * uncomment to use wandb:
     wandb:
-      project: unlearning|src|main_runner.py
-      group: nov_test
+      project: open-unlearning-optuna
+      group: ${task_name}
       name: ${task_name}
+      # name based on unlearning_rate
+      # name: ur=${trainer.method_args.cfg.unlearning_rate}
+
+# Optuna sweeper config (activate with --multirun flag)
+hydra:
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    storage: ${oc.env:OPTUNA_STORAGE_URL}
+    study_name: ${task_name}
+    direction: maximize
+    n_trials: 1000
+    n_jobs: 1
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${trainer.args.seed}
+    # params loaded from /sweep config group (see defaults)
+ 
+# model_id: meta-llama/Llama-3.2-1B
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.1-8B
+
 
 # relearning:
 #   lr: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape
@@ -72,14 +94,3 @@ eval:
 #       project: ret_unlearning|src|main_runner.py
 #       group: nov_test
 #       name: ${task_name}
-
-
-# model_id: meta-llama/Llama-3.2-1B
-# model_id: meta-llama/Llama-3.2-3B
-# model_id: meta-llama/Llama-3.1-8B
-
-# default experiment config
-# loss_budget: 1.001
-# max_num_epochs: 200
-
-# retraining_rate: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape

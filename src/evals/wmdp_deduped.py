@@ -99,22 +99,30 @@ class WMDPDedupedEvaluator(Evaluator):
         )
         res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
         res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
+        
+        # ! finished evaluating, now handle the results
 
         logging.info(res)
-        if self.eval_cfg.get("wandb"):
-            wandb.log(res)
-
+        
+        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
         if self.init_wikitext_loss is None:
+            # this is the first evaluation, before training
             self.init_wikitext_loss = res["wikitext_loss"]
             
         # * check condition to stop training
         if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
             logging.info(f"Wikitext loss exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
-        else:
-            self.last_valid_res = res
+            return res
+
+        self.last_valid_res = res
+
+        if self.eval_cfg.get("wandb"):
+            wandb.log(res)
 
         return res
 
     def final_score(self):
+        if self.eval_cfg.get("wandb") and wandb.run is not None:
+            wandb.finish()
         return self.last_valid_res["recall_loss"]

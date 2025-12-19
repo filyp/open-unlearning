@@ -1,17 +1,12 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=SAMPLE_UNLEARN mode=wmdp_deduped
-from dataclasses import dataclass
 import logging
-from contextlib import contextmanager
+from dataclasses import dataclass
 
 import torch as pt
 from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_core import (
-    get_last_act,
-    get_last_grad,
-    install_hooks,
-)
+from trainer.unlearn.cir.cir_core import get_last_act, get_last_grad, install_hooks
 from trainer.unlearn.cir.cir_utils import (
     batched,
     cache_activations_for_cb_retain_loss,
@@ -43,6 +38,7 @@ def get_mahalanobis_directions_eigen(
     activations: pt.Tensor,
     stats: DistributionStats,
     reg: float = 1e-2,
+    mahal_pow: float = 1.0,
 ):
     """
     Compute Mahalanobis directions using cached eigendecomposition.
@@ -53,7 +49,9 @@ def get_mahalanobis_directions_eigen(
 
     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
     projected = centered @ stats.eigenvectors  # (N, D)
-    directions = (projected / (stats.eigenvalues + reg)) @ stats.eigenvectors.T
+    directions = (
+        projected / (stats.eigenvalues + reg) ** mahal_pow
+    ) @ stats.eigenvectors.T
 
     return directions
 
@@ -98,6 +96,10 @@ class CIR(UnlearnTrainer):
 
     def train(self):
         model = self.model
+
+        if self.args.eval_on_start:
+            self.evaluate()
+
         for epoch in range(self.cfg.max_num_epochs):
             # ! one epoch
             model.train()
@@ -116,7 +118,7 @@ class CIR(UnlearnTrainer):
             }
 
             # ! get metrics
-            res = self.evaluate()
+            self.evaluate()
             if self.control.should_training_stop:
                 break
 
@@ -151,21 +153,27 @@ class CIR(UnlearnTrainer):
 
             # ! Compute Mahalanobis directions using eigendecomposition
             stats = self.distribution_stats[name]
-            reg = self.cfg.get("mahal_reg", 1e-2)
             centered = acts - stats.mean
-            mahal_dirs = get_mahalanobis_directions_eigen(acts, stats, reg)
+            mahal_dirs = get_mahalanobis_directions_eigen(
+                acts, stats, self.cfg.mahal_reg, self.cfg.mahal_pow
+            )
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
             proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
             acts = proj_strenghts * mahal_dirs_norm
             # acts = mahal_dirs
+            
+            
+            act_norms = centered.norm(dim=1, keepdim=True)
+            rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
+            dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
 
             # Apply mask based on Mahalanobis distance quantile
             # ! note: once, using centered worked better than centered_norm, so investigate it
-            centered_norm = centered / centered.norm(dim=1, keepdim=True)
+            # centered_norm = centered / centered.norm(dim=1, keepdim=True)
 
             # dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
 
-            dists = (centered * mahal_dirs_norm).sum(dim=1)
+            # dists = (centered * mahal_dirs_norm).sum(dim=1)
 
             # dists = (centered * mahal_dirs).sum(dim=1)
 

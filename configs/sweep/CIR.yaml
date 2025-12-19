@@ -1,0 +1,8 @@
+# @package hydra.sweeper
+# Optuna sweep params for CIR trainer (used only with --multirun)
+params:
+  trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.4, 1.0))"
+  trainer.method_args.cfg.mahal_quantile: "range(0.3, 0.9)"
+  trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-4, 1e-2))"
+  trainer.method_args.cfg.mahal_pow: "range(0.5, 1.5)"
+  trainer.method_args.cfg.act_norm_pow: "range(-0.5, 0.5)"
