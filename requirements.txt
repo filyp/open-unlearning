@@ -14,4 +14,5 @@ scikit-learn==1.5.2
 deepspeed==0.15.4
 welford-torch==0.2.5
 psycopg2-binary==2.9.11
+wandb==0.21.4
 hydra-optuna-sweeper @ git+https://github.com/dahlem/hydra.git@feature/upgrade-optuna-4.2.1#subdirectory=plugins/hydra_optuna_sweeper

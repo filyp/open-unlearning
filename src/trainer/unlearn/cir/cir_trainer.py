@@ -186,7 +186,7 @@ class CIR(UnlearnTrainer):
             # projected = mahal_dirs_norm @ eigenvectors
             # dists = (projected ** 2 / eigenvalues).sum(dim=1)
 
-            mask = dists > dists.quantile(self.cfg.mahal_quantile)
+            mask = dists > dists.quantile(self.cfg.quantile)
             acts = filtered_acts[mask]
             grads = grads[mask]
 
