@@ -18,12 +18,33 @@
 #   trainer.method_args.cfg.filter_reg: "tag(log, interval(3e-4, 3e-2))"
 #   trainer.method_args.cfg.filter_pow: "interval(0.1, 1.0)"
 
-# decoupled_reg
-# pow and reg params seem overdetermined, so set pow to 1
+# # decoupled_reg
+# # pow and reg params seem overdetermined (kinda), so set pow to 1
+# params: 
+#   # trainer.method_args.cfg.mahal_pow: "interval(0.1, 2.0)"
+#   trainer.method_args.cfg.mahal_reg: "tag(log, interval(3e-4, 3e-2))"
+#   # trainer.method_args.cfg.filter_pow: "interval(0.1, 1.0)"
+#   trainer.method_args.cfg.filter_reg: "tag(log, interval(3e-4, 3e-2))"
+#   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
+#   trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.2, 1.0))"
+
+# # top_collapse
+# # pow and reg params seem overdetermined (kinda), so set pow to 1
+# params: 
+#   # trainer.method_args.cfg.mahal_pow: "interval(0.1, 2.0)"
+#   # trainer.method_args.cfg.mahal_reg: "tag(log, interval(3e-4, 3e-2))"
+#   trainer.method_args.cfg.filter_pow: "interval(-0.1, 1.0)"
+#   trainer.method_args.cfg.act_collapse: "range(0, 30)"
+#   trainer.method_args.cfg.filter_reg: "tag(log, interval(3e-4, 3e-2))"
+#   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
+#   trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.2, 1.0))"
+
+# no_project_to_mahal
 params: 
-  # trainer.method_args.cfg.mahal_pow: "interval(0.1, 2.0)"
+  trainer.method_args.cfg.mahal_pow: "interval(0.1, 2.0)"
   trainer.method_args.cfg.mahal_reg: "tag(log, interval(3e-4, 3e-2))"
-  # trainer.method_args.cfg.filter_pow: "interval(0.1, 1.0)"
+  trainer.method_args.cfg.filter_pow: "interval(0.5, 1.0)"
   trainer.method_args.cfg.filter_reg: "tag(log, interval(3e-4, 3e-2))"
   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
-  trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.2, 1.0))"
+  # trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.2, 1.0))"
+  trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.01, 0.2))"

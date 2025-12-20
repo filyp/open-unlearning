@@ -28,6 +28,10 @@ method_args:
     filter_pow: 1.0
     # act_norm_pow: 0.0
 
+    # act_collapse: 0
+    project_to_mahal: False
+    filter: True
+
     unlearning_rate: 0.8
     # unlearning_rate: 0.01
     target_modules:
