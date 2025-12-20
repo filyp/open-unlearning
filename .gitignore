@@ -181,7 +181,8 @@ cython_debug/
 .idea/
 
 .vscode/
-src/playground.py
-src/playground2.py
+
 multirun/
 CLAUDE.md
+slurm-*.out
+job.sh

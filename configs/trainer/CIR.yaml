@@ -12,8 +12,8 @@ args:
   eval_on_start: True
 method_args:
   cfg:
-    max_num_epochs: 8
-    cir_niter: 16
+    max_num_epochs: 16
+    # cir_niter: 16
     cut_off_tokens: 1
     mlp_floor: 0.0
     # act_proj_num: 10
@@ -24,7 +24,9 @@ method_args:
     mahal_reg: 1e-3
     mahal_quantile: 0.8
     mahal_pow: 1.0
-    act_norm_pow: 0.0
+    filter_reg: 1e-3
+    filter_pow: 1.0
+    # act_norm_pow: 0.0
 
     unlearning_rate: 0.8
     # unlearning_rate: 0.01

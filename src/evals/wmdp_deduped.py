@@ -19,7 +19,6 @@ logging.getLogger("lm_eval.evaluator").setLevel(logging.WARNING)
 
 
 # Disable lm_eval progress bars by patching tqdm - there are no other ways to do this
-# todo remove later this because it's too hacky
 import lm_eval.models.huggingface as hf_module
 import lm_eval.api.task as task_module
 from functools import wraps

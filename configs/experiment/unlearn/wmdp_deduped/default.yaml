@@ -35,7 +35,7 @@ data:
     wikitext:
       load_as: wikitext
       batch_size: 16  # for 16 batches of 16 examples each, eval takes 3s
-      num_batches: 8  # todo use 16 or even 32 for final evals
+      num_batches: 16
       tokenizer: ${tokenizer_cfg}
     load_hf:  # fineweb bio dataset
       load_as: retain
@@ -59,7 +59,7 @@ eval:
     wandb:
       project: open-unlearning-optuna
       group: ${task_name}
-      name: ${task_name}
+      name: ${task_name}-trial=${hydra:job.num}
       # name based on unlearning_rate
       # name: ur=${trainer.method_args.cfg.unlearning_rate}
 

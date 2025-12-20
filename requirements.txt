@@ -13,11 +13,5 @@ tensorboard==2.18.0
 scikit-learn==1.5.2
 deepspeed==0.15.4
 welford-torch==0.2.5
-optuna==4.6.0
 psycopg2-binary==2.9.11
-
-# todo:
-# hydra-optuna-sweeper==1.2.0
-# need to separately run:
-# pip install hydra-optuna-sweeper==1.2.0 --no-deps
-# or maybe on fresh db, test if old optuna also would work?
+hydra-optuna-sweeper @ git+https://github.com/dahlem/hydra.git@feature/upgrade-optuna-4.2.1#subdirectory=plugins/hydra_optuna_sweeper

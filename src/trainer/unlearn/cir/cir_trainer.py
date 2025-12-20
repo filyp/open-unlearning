@@ -34,25 +34,21 @@ class DistributionStats:
     eigenvectors: pt.Tensor
 
 
-def get_mahalanobis_directions_eigen(
-    activations: pt.Tensor,
+def get_mahalanobis_directions(
+    centered_vecs: pt.Tensor,
     stats: DistributionStats,
     reg: float = 1e-2,
     mahal_pow: float = 1.0,
 ):
-    """
-    Compute Mahalanobis directions using cached eigendecomposition.
+    """ Compute Mahalanobis directions using cached eigendecomposition.
 
     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
     """
-    centered = activations - stats.mean  # (N, D)
-
     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-    projected = centered @ stats.eigenvectors  # (N, D)
+    projected = centered_vecs @ stats.eigenvectors  # (N, D)
     directions = (
         projected / (stats.eigenvalues + reg) ** mahal_pow
     ) @ stats.eigenvectors.T
-
     return directions
 
 
@@ -154,18 +150,25 @@ class CIR(UnlearnTrainer):
             # ! Compute Mahalanobis directions using eigendecomposition
             stats = self.distribution_stats[name]
             centered = acts - stats.mean
-            mahal_dirs = get_mahalanobis_directions_eigen(
-                acts, stats, self.cfg.mahal_reg, self.cfg.mahal_pow
+            mahal_dirs = get_mahalanobis_directions(
+                centered, stats, self.cfg.mahal_reg, self.cfg.mahal_pow
             )
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
             proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-            acts = proj_strenghts * mahal_dirs_norm
+            filtered_acts = proj_strenghts * mahal_dirs_norm
             # acts = mahal_dirs
             
-            
-            act_norms = centered.norm(dim=1, keepdim=True)
-            rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
-            dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
+            # act_norms = centered.norm(dim=1, keepdim=True)
+            # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
+            for_filtering = get_mahalanobis_directions(
+                centered, stats, self.cfg.filter_reg, self.cfg.filter_pow
+            )
+            for_filtering_normed = for_filtering / for_filtering.norm(dim=1, keepdim=True)
+            dists = (for_filtering_normed * centered).sum(dim=1)
+
+            # act_norms = centered.norm(dim=1, keepdim=True)
+            # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
+            # dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
 
             # Apply mask based on Mahalanobis distance quantile
             # ! note: once, using centered worked better than centered_norm, so investigate it
@@ -184,7 +187,7 @@ class CIR(UnlearnTrainer):
             # dists = (projected ** 2 / eigenvalues).sum(dim=1)
 
             mask = dists > dists.quantile(self.cfg.mahal_quantile)
-            acts = acts[mask]
+            acts = filtered_acts[mask]
             grads = grads[mask]
 
             # without the projections, this is the equivalent of normal backprop
