@@ -26,10 +26,11 @@ method_args:
     mahal_pow: 1.0
     filter_reg: 1e-3
     filter_pow: 1.0
-    # act_norm_pow: 0.0
+    
+    train_from_layer: 0
 
     # act_collapse: 0
-    project_to_mahal: False
+    project_to_mahal: True
     filter: True
 
     unlearning_rate: 0.8

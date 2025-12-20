@@ -34,22 +34,22 @@ class DistributionStats:
     eigenvectors: pt.Tensor
 
 
-def get_mahalanobis_directions(
-    centered_vecs: pt.Tensor,
-    stats: DistributionStats,
-    reg: float = 1e-2,
-    mahal_pow: float = 1.0,
-):
-    """Compute Mahalanobis directions using cached eigendecomposition.
+# def get_mahalanobis_directions(
+#     centered_vecs: pt.Tensor,
+#     stats: DistributionStats,
+#     reg: float = 1e-2,
+#     mahal_pow: float = 1.0,
+# ):
+#     """Compute Mahalanobis directions using cached eigendecomposition.
 
-    Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
-    """
-    # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-    projected = centered_vecs @ stats.eigenvectors  # (N, D)
-    directions = (
-        projected / (stats.eigenvalues + reg) ** mahal_pow
-    ) @ stats.eigenvectors.T
-    return directions
+#     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
+#     """
+#     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
+#     projected = centered_vecs @ stats.eigenvectors  # (N, D)
+#     directions = (
+#         projected / (stats.eigenvalues + reg) ** mahal_pow
+#     ) @ stats.eigenvectors.T
+#     return directions
 
 
 class CIR(UnlearnTrainer):
@@ -64,6 +64,10 @@ class CIR(UnlearnTrainer):
         # * set trainable params
         for n, p in model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
+            if p.requires_grad:
+                layer_num = int(n.split(".")[2])
+                if layer_num < cfg.train_from_layer:
+                    p.requires_grad = False
 
         install_hooks(model)
         for layer_id in range(*cfg.layer_range):
@@ -173,9 +177,13 @@ class CIR(UnlearnTrainer):
             if self.cfg.filter:
                 # act_norms = centered.norm(dim=1, keepdim=True)
                 # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
-                for_filtering = get_mahalanobis_directions(
-                    centered, stats, self.cfg.filter_reg, self.cfg.filter_pow
-                )
+
+                # get mahalanobis directions
+                for_filtering = (
+                    projected
+                    / (stats.eigenvalues + self.cfg.filter_reg) ** self.cfg.filter_pow
+                ) @ stats.eigenvectors.T
+
                 for_filtering_normed = for_filtering / for_filtering.norm(
                     dim=1, keepdim=True
                 )
