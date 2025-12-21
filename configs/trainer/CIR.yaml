@@ -15,10 +15,11 @@ method_args:
     max_num_epochs: 16
     mlp_floor: 0.0
     layer_range: [4, 7]  # for 8B use [6, 12]
-    quantile: 0.92
+    quantile: 0.93
 
-    mahal_reg: 2e-3
-    filter_reg: 5  # 1-10 works fine
+    mahal_reg: 3e-3
+    filter_reg: 3  # 1-10 works fine
+    mlp_reg: 3e-3
 
     project_to_mahal: True
     filter: True

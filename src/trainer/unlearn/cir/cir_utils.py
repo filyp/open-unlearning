@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from itertools import islice
 import torch as pt
+from welford_torch import OnlineCovariance
 
 ################################ torch utils #################################
 
@@ -101,6 +102,31 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             batch["org_mlp_out_norm"][layer_id] = (
                 out.float().norm(dim=-1).mean().cpu()
             )
+
+    if cfg.get("mlp_reg", None) is None:
+        return
+
+    # Compute covariance statistics per layer using all batches
+    online_covs = {layer_id: OnlineCovariance(device="cuda") for layer_id in range(*cfg.layer_range)}
+    for batch in batches:
+        for layer_id in range(*cfg.layer_range):
+            online_covs[layer_id].add_all(batch["org_mlp_out"][layer_id].to("cuda").float())
+
+    # Extract eigendecomposition and apply mahalanobis projection
+    for layer_id in range(*cfg.layer_range):
+        oc = online_covs[layer_id]
+        mean = oc.mean
+        eigenvalues = oc.eig_val
+        eigenvectors = oc.eig_vec
+
+        for batch in batches:
+            out = batch["org_mlp_out"][layer_id].to("cuda").float()
+            centered = out - mean
+            projected = centered @ eigenvectors
+            mahal_dirs = (projected / (eigenvalues + cfg.mlp_reg)) @ eigenvectors.T
+            mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+            proj_strengths = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+            batch["org_mlp_out"][layer_id] = (proj_strengths * mahal_dirs_norm).cpu()
 
 
 def cache_activations_for_cb_retain_loss(model, batches, cfg):

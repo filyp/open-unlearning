@@ -66,9 +66,17 @@
 #   trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.3, 1.0))"
 #   trainer.method_args.cfg.train_from_layer: "range(0, 3)"
 
-# per_text_quantile
+# # per_text_quantile
+# params: 
+#   trainer.method_args.cfg.filter_reg: "tag(log, interval(1, 10))"
+#   trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-3, 1e-2))"
+#   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
+#   trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.4, 1.0))"
+
+# mlp_proj
 params: 
-  trainer.method_args.cfg.filter_reg: "tag(log, interval(0.01, 10))"
-  trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-4, 1e-2))"
-  trainer.method_args.cfg.quantile: "interval(0.6, 1)"
-  trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.2, 1.0))"
+  trainer.method_args.cfg.filter_reg: "tag(log, interval(1, 10))"
+  trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-3, 1e-2))"
+  trainer.method_args.cfg.mlp_reg: "tag(log, interval(1e-4, 1e-1))"
+  trainer.method_args.cfg.quantile: "interval(0.8, 1)"
+  trainer.method_args.cfg.unlearning_rate: "tag(log, interval(0.4, 8.0))"
