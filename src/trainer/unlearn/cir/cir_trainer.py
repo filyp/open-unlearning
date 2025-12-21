@@ -136,8 +136,9 @@ class CIR(UnlearnTrainer):
             # filtered_acts = projected @ stats.eigenvectors.T  # skip any mahalanobis
 
             # ! Compute Mahalanobis directions using eigendecomposition
+            # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
             mahal_dirs = (
-                projected / (stats.eigenvalues + self.cfg.mahal_reg)
+                projected / (stats.eigenvalues + self.cfg.mahal_reg * stats.eigenvalues[-1])
             ) @ stats.eigenvectors.T
 
             if self.cfg.project_to_mahal:
@@ -152,8 +153,9 @@ class CIR(UnlearnTrainer):
                 # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
 
                 # get mahalanobis directions
+                # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
                 for_filtering = (
-                    projected / (stats.eigenvalues + self.cfg.filter_reg)
+                    projected / (stats.eigenvalues + self.cfg.filter_reg * stats.eigenvalues[-1])
                 ) @ stats.eigenvectors.T
 
                 for_filtering_normed = for_filtering / for_filtering.norm(

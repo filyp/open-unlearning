@@ -59,9 +59,7 @@ def mlp_breaking_loss(model, batch, cfg):
         org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
         dotproducts = dotproducts / org_norm**2
-        # logging.debug(dotproducts)
         loss_acc += dotproducts.clip(min=cfg.mlp_floor).mean()
-        # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
 
     return loss_acc / len(range(*cfg.layer_range))
 
@@ -123,10 +121,12 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             out = batch["org_mlp_out"][layer_id].to("cuda").float()
             centered = out - mean
             projected = centered @ eigenvectors
-            mahal_dirs = (projected / (eigenvalues + cfg.mlp_reg)) @ eigenvectors.T
+            # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
+            mahal_dirs = (projected / (eigenvalues + cfg.mlp_reg * eigenvalues[-1])) @ eigenvectors.T
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-            proj_strengths = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-            batch["org_mlp_out"][layer_id] = (proj_strengths * mahal_dirs_norm).cpu()
+            batch["org_mlp_out"][layer_id] = mahal_dirs_norm.cpu()
+            # proj_strengths = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+            # batch["org_mlp_out"][layer_id] = (proj_strengths * mahal_dirs_norm).cpu()
 
 
 def cache_activations_for_cb_retain_loss(model, batches, cfg):
