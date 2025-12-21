@@ -6,18 +6,8 @@ import torch as pt
 from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_core import get_last_act, get_last_grad, install_hooks
-from trainer.unlearn.cir.cir_utils import (
-    batched,
-    cache_activations_for_cb_retain_loss,
-    cache_activations_for_mlp_breaking_loss,
-    cb_retain_loss,
-    mlp_breaking_loss,
-    prep_batch,
-    scale_grads_,
-    trainable_modules,
-    trim_layers,
-)
+from trainer.unlearn.cir.cir_core import install_hooks
+from trainer.unlearn.cir.cir_utils import *
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,24 +24,6 @@ class DistributionStats:
     eigenvectors: pt.Tensor
 
 
-# def get_mahalanobis_directions(
-#     centered_vecs: pt.Tensor,
-#     stats: DistributionStats,
-#     reg: float = 1e-2,
-#     mahal_pow: float = 1.0,
-# ):
-#     """Compute Mahalanobis directions using cached eigendecomposition.
-
-#     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
-#     """
-#     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-#     projected = centered_vecs @ stats.eigenvectors  # (N, D)
-#     directions = (
-#         projected / (stats.eigenvalues + reg) ** mahal_pow
-#     ) @ stats.eigenvectors.T
-#     return directions
-
-
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -59,15 +31,15 @@ class CIR(UnlearnTrainer):
 
         model = self.model
         self.max_layer = max(max(cfg.layer_range), max(cfg.cb_retaining_layers)) + 1
-        self.unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
+        self.optimizer = pt.optim.SGD(model.parameters(), lr=cfg.unlearning_rate)
 
         # * set trainable params
         for n, p in model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
-            if p.requires_grad:
-                layer_num = int(n.split(".")[2])
-                if layer_num < cfg.train_from_layer:
-                    p.requires_grad = False
+            # if p.requires_grad:  # * not training first n layers
+            #     layer_num = int(n.split(".")[2])
+            #     if layer_num < cfg.train_from_layer:
+            #         p.requires_grad = False
 
         install_hooks(model)
         for layer_id in range(*cfg.layer_range):
@@ -89,9 +61,13 @@ class CIR(UnlearnTrainer):
         cache_activations_for_mlp_breaking_loss(model, self.forget_batches, cfg)
         if cfg.get("retaining_rate", 0) > 0:
             cache_activations_for_cb_retain_loss(model, self.retain_batches, cfg)
+            self.ret_optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retaining_rate)
 
+        # todo if using only gate and up proj, use just one distr per MLP
         self.acts_online_cov = {
-            n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
+            n: OnlineCovariance(device="cuda")
+            for n, m in model.named_modules()
+            if hasattr(m, "weight") and m.weight.requires_grad
         }
 
     def train(self):
@@ -100,7 +76,7 @@ class CIR(UnlearnTrainer):
         if self.args.eval_on_start:
             self.evaluate()
 
-        for epoch in range(self.cfg.max_num_epochs):
+        for _ in range(self.cfg.max_num_epochs):
             # ! one epoch
             model.train()
             for fb, rb in zip(self.forget_batches, self.retain_batches):
@@ -113,9 +89,11 @@ class CIR(UnlearnTrainer):
                 for name, oc in self.acts_online_cov.items()
                 if oc.mean is not None
             }
-            self.acts_online_cov = {
-                n: OnlineCovariance(device="cuda") for n, _ in trainable_modules(model)
-            }
+
+            # reset online covariance accumulators for the next epoch
+            for name in self.acts_online_cov:
+                # todo, for multi-GPU, maybe use weigth's device?
+                self.acts_online_cov[name] = OnlineCovariance(device="cuda")
 
             # ! get metrics
             self.evaluate()
@@ -133,23 +111,19 @@ class CIR(UnlearnTrainer):
         loss.backward()
 
         # ! here we modify the grad
-        for name, module in trainable_modules(model):
-            if module.weight.grad is None:
+        for name, module in model.named_modules():
+            if not hasattr(module, "weight") or module.weight.grad is None:
                 continue
-            acts = get_last_act(
-                module, batch["attention_mask"], self.cfg.cut_off_tokens
-            )
-            grads = get_last_grad(
-                module, batch["attention_mask"], self.cfg.cut_off_tokens
-            )  # todo rename to bos_len
-            self.acts_online_cov[name].add_all(acts.float())
+
+            token_mask = get_token_mask(batch)
+            acts = module.last_act_full[token_mask].to(pt.float32)
+            grads = module.last_grad_full[token_mask].to(pt.float32)
             assert len(acts.shape) == len(grads.shape) == 2
 
-            if not getattr(self, "distribution_stats", None):
-                continue  # first epoch
+            self.acts_online_cov[name].add_all(acts)
 
-            acts = acts.to(pt.float32)
-            grads = grads.to(pt.float32)
+            if not getattr(self, "distribution_stats", None):
+                continue  # first epoch, so only collect activations and not train
 
             stats = self.distribution_stats[name]
             centered = acts - stats.mean
@@ -163,8 +137,7 @@ class CIR(UnlearnTrainer):
 
             # ! Compute Mahalanobis directions using eigendecomposition
             mahal_dirs = (
-                projected
-                / (stats.eigenvalues + self.cfg.mahal_reg) ** self.cfg.mahal_pow
+                projected / (stats.eigenvalues + self.cfg.mahal_reg)
             ) @ stats.eigenvectors.T
 
             if self.cfg.project_to_mahal:
@@ -180,8 +153,7 @@ class CIR(UnlearnTrainer):
 
                 # get mahalanobis directions
                 for_filtering = (
-                    projected
-                    / (stats.eigenvalues + self.cfg.filter_reg) ** self.cfg.filter_pow
+                    projected / (stats.eigenvalues + self.cfg.filter_reg)
                 ) @ stats.eigenvectors.T
 
                 for_filtering_normed = for_filtering / for_filtering.norm(
@@ -189,42 +161,26 @@ class CIR(UnlearnTrainer):
                 )
                 dists = (for_filtering_normed * centered).sum(dim=1)
 
-                # act_norms = centered.norm(dim=1, keepdim=True)
-                # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
-                # dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
+                # compute quantile threshold per text in batch
+                batch_indices = pt.nonzero(token_mask)[:, 0]  # which text each token belongs to
+                act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
+                for text_idx in batch_indices.unique():
+                    text_mask = batch_indices == text_idx
+                    text_dists = dists[text_mask]
+                    threshold = text_dists.quantile(self.cfg.quantile)
+                    act_relev_mask[text_mask] = text_dists > threshold
 
-                # Apply mask based on Mahalanobis distance quantile
-                # ! note: once, using centered worked better than centered_norm, so investigate it
-                # centered_norm = centered / centered.norm(dim=1, keepdim=True)
-
-                # dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
-
-                # dists = (centered * mahal_dirs_norm).sum(dim=1)
-
-                # dists = (centered * mahal_dirs).sum(dim=1)
-
-                # dists = (centered_norm * mahal_dirs).sum(dim=1)
-
-                # # get Mahalanobis distance (squared) using eigendecomposition
-                # projected = mahal_dirs_norm @ eigenvectors
-                # dists = (projected ** 2 / eigenvalues).sum(dim=1)
-
-                mask = dists > dists.quantile(self.cfg.quantile)
-                acts = filtered_acts[mask]
-                grads = grads[mask]
+                acts = filtered_acts[act_relev_mask]
+                grads = grads[act_relev_mask]
 
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
 
         if not getattr(self, "distribution_stats", None):
-            return  # first epoch
+            return  # first epoch, so only collect activations and not train
 
-        # * normalize grads
-        # norm = get_update_norm(model)
-        # scale_grads_(model, self.cfg.unlearning_rate / norm)
-        # print(self.cfg.unlearning_rate / norm)
-        scale_grads_(model, self.cfg.unlearning_rate)
-        self.unit_optimizer.step()  # unit_optimizer has lr=1.0
+        # print(self.cfg.unlearning_rate / get_update_norm(model))
+        self.optimizer.step()
 
         # ! retain pass
         if self.cfg.get("retaining_rate", 0) > 0:
@@ -236,9 +192,7 @@ class CIR(UnlearnTrainer):
                 )
             loss = cb_retain_loss(output, r_batch, self.cfg)
             loss.backward()
-
-            scale_grads_(model, self.cfg.retaining_rate)  # apply intended lr
-            self.unit_optimizer.step()  # unit_optimizer has lr=1.0
+            self.ret_optimizer.step()
 
         return 0  # mock training loss
 
@@ -253,3 +207,43 @@ class CIR(UnlearnTrainer):
 #     train_dataset=train_dataset,
 # )
 # trainer.train()
+
+
+# * old ways of filtering:
+# act_norms = centered.norm(dim=1, keepdim=True)
+# rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
+# dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
+
+# Apply mask based on Mahalanobis distance quantile
+# ! note: once, using centered worked better than centered_norm, so investigate it
+# centered_norm = centered / centered.norm(dim=1, keepdim=True)
+
+# dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
+
+# dists = (centered * mahal_dirs_norm).sum(dim=1)
+
+# dists = (centered * mahal_dirs).sum(dim=1)
+
+# dists = (centered_norm * mahal_dirs).sum(dim=1)
+
+# # get Mahalanobis distance (squared) using eigendecomposition
+# projected = mahal_dirs_norm @ eigenvectors
+# dists = (projected ** 2 / eigenvalues).sum(dim=1)
+
+
+# def get_mahalanobis_directions(
+#     centered_vecs: pt.Tensor,
+#     stats: DistributionStats,
+#     reg: float = 1e-2,
+#     mahal_pow: float = 1.0,
+# ):
+#     """Compute Mahalanobis directions using cached eigendecomposition.
+
+#     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
+#     """
+#     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
+#     projected = centered_vecs @ stats.eigenvectors  # (N, D)
+#     directions = (
+#         projected / (stats.eigenvalues + reg) ** mahal_pow
+#     ) @ stats.eigenvectors.T
+#     return directions

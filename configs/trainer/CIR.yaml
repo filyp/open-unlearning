@@ -13,28 +13,17 @@ args:
 method_args:
   cfg:
     max_num_epochs: 16
-    # cir_niter: 16
-    cut_off_tokens: 1
     mlp_floor: 0.0
-    # act_proj_num: 10
-    # grad_proj_num: 0
-    # layer_range: [6, 12]
-    layer_range: [4, 7]
-    # pca_every_n: 1
-    mahal_reg: 1e-3
-    quantile: 0.9
-    mahal_pow: 1.0
-    filter_reg: 1e-3
-    filter_pow: 1.0
-    
-    train_from_layer: 0
+    layer_range: [4, 7]  # for 8B use [6, 12]
+    quantile: 0.92
 
-    # act_collapse: 0
+    mahal_reg: 2e-3
+    filter_reg: 5  # 1-10 works fine
+
     project_to_mahal: True
     filter: True
 
-    unlearning_rate: 0.8
-    # unlearning_rate: 0.01
+    unlearning_rate: 0.6
     target_modules:
       - gate_proj
       - up_proj
@@ -42,9 +31,19 @@ method_args:
     train_batch_size: 22
     retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
 
+    # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
     retaining_rate: 0
-    # cb_retaining_layers: [12]
-    cb_retaining_layers: [7]
+    cb_retaining_layers: [7]  # for 8B use [12]
     cb_retaining_pow: 1.0
-
+    
+    # ! legacy params
+    # cir_niter: 16
+    # cut_off_tokens: 1
+    # pca_every_n: 1
+    # act_proj_num: 10
+    # grad_proj_num: 0
+    # train_from_layer: 0
+    # mahal_pow: 1.0
+    # filter_pow: 1.0
+    # act_collapse: 0

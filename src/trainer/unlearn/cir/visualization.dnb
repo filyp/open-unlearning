@@ -1,0 +1,14 @@
+{
+  "cells": [
+    {
+      "language": "python",
+      "value": "import webbrowser\nimport tempfile\nimport os\n\nfrom IPython.display import HTML, display\n\n\ndef highlight_tokens(tokenizer, input_ids, mask_indices, batch_idx):\n    \"\"\"Highlight specific tokens in a sequence.\"\"\"\n    # Get indices for this batch item\n    batch_mask = mask_indices[:, 0] == batch_idx\n    token_positions = mask_indices[batch_mask, 1].tolist()\n    \n    tokens = input_ids[batch_idx].tolist()\n    html_parts = []\n    \n    for i, tok_id in enumerate(tokens):\n        token_str = tokenizer.decode([tok_id])\n        # Escape HTML special chars\n        token_str = token_str.replace(\"&\", \"&amp;\").replace(\"<\", \"&lt;\").replace(\">\", \"&gt;\")\n        token_str = token_str.replace(\" \", \"&nbsp;\")\n        \n        if i in token_positions:\n            html_parts.append(f'<span style=\"background-color: #ffff00;\">{token_str}</span>')\n        else:\n            html_parts.append(token_str)\n    \n    return \"\".join(html_parts)",
+      "kind": 2
+    },
+    {
+      "language": "python",
+      "value": "# Usage:\nind = pt.nonzero(token_mask)[act_relev_mask.cpu()]  # your mask indices (N, 2) tensor\ninput_ids = batch[\"input_ids\"]  # your input ids\ntokenizer = self.tokenizer\n\nhtml_output = f\"<h1>{name}</h1>\"\nfor batch_idx in range(input_ids.shape[0]):\n    highlighted = highlight_tokens(tokenizer, input_ids, ind, batch_idx)\n    html_output += f'<div style=\"font-family: monospace; margin: 10px 0; padding: 10px; border: 1px solid #ccc;\">'\n    html_output += f'<b>Sample {batch_idx}:</b><br>{highlighted}</div>'\n\n# display(HTML(html_output))\n\n# Save to temp file\nwith tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f:\n    f.write(html_output)\n    filepath = f.name\n\n# Open in browser\nwebbrowser.open('file://' + filepath)",
+      "kind": 2
+    }
+  ]
+}

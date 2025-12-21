@@ -6,32 +6,6 @@ import torch as pt
 ################################ torch utils #################################
 
 
-def trainable_modules(model):
-    return [
-        (n, m)
-        for n, m in model.named_modules()
-        if "_proj" in n and m.weight.requires_grad
-    ]
-
-
-# def get_update_norm(model):
-#     """L2 norm of weight.grad, computed across all the trainable weights."""
-#     return (
-#         sum(
-#             m.weight.grad.to(pt.float32).norm() ** 2
-#             for _, m in trainable_modules(model)
-#             if m.weight.grad is not None
-#         )
-#         ** 0.5
-#     )
-
-
-def scale_grads_(model, factor: float):
-    for p in model.parameters():
-        if p.grad is not None:
-            p.grad *= factor
-
-
 def prep_batch(batch, device):
     return dict(
         input_ids=batch["input_ids"].to(device),
@@ -50,21 +24,6 @@ def batched(iterable, n):
         yield batch
 
 
-def PCA_gpu(v):
-    # Center the data
-    v = v - v.mean(axis=0)
-    # Compute covariance matrix
-    cov = (v.T @ v) / (v.shape[0] - 1)
-    # Compute eigenvalues and eigenvectors
-    # * pt.linalg.eigh seems to leak memory!!
-    eigenvalues, eigenvectors = pt.linalg.eigh(cov)
-    # Sort in descending order
-    idx = eigenvalues.argsort(descending=True)
-    eigenvalues = eigenvalues[idx]
-    eigenvectors = eigenvectors[:, idx]
-    return eigenvectors.T  # [:n_components]
-
-
 @contextmanager
 def trim_layers(model, max_layer):
     """Temporarily tell the model to use only the first max_layer layers."""            
@@ -76,13 +35,17 @@ def trim_layers(model, max_layer):
         model.model.layers = all_layers
 
 
+def get_token_mask(batch):
+    token_mask = batch["labels"] != -100
+    token_mask[:, 0] = False  # ignore BOS token
+    return token_mask
+
+
 ################################ loss functions #################################
 
 
 def mlp_breaking_loss(model, batch, cfg):
-    _mask = batch["attention_mask"] & (batch["labels"] != -100)
-    _mask = _mask.bool().clone()
-    _mask[:, : cfg.cut_off_tokens] = False
+    _mask = get_token_mask(batch)
 
     loss_acc = 0
     for layer_id in range(*cfg.layer_range):
@@ -103,9 +66,8 @@ def mlp_breaking_loss(model, batch, cfg):
 
 
 def cb_retain_loss(output, batch, cfg):
-    _mask = batch["attention_mask"] & (batch["labels"] != -100)
-    _mask = batch["attention_mask"].bool().clone()
-    # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
+    # _mask = get_token_mask(batch)  # retains only on meaningful tokens
+    _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
 
     loss_acc = 0
     for layer_id in cfg.cb_retaining_layers:
@@ -128,9 +90,8 @@ def cb_retain_loss(output, batch, cfg):
 def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
     for batch in batches:
         with pt.no_grad():
-            output = model(**prep_batch(batch, model.device))
-        _mask = batch["attention_mask"].bool().clone()
-        _mask[:, : cfg.cut_off_tokens] = False
+            model(**prep_batch(batch, model.device))
+        _mask = get_token_mask(batch)
         batch["org_mlp_out"] = {}
         batch["org_mlp_out_norm"] = {}
         for layer_id in range(*cfg.layer_range):
@@ -153,3 +114,45 @@ def cache_activations_for_cb_retain_loss(model, batches, cfg):
             l_num: output.hidden_states[l_num].detach().to("cpu")
             for l_num in cfg.cb_retaining_layers
         }
+
+
+# def get_update_norm(model):
+#     """L2 norm of weight.grad, computed across all the trainable weights."""
+#     return (
+#         sum(
+#             m.weight.grad.to(pt.float32).norm() ** 2
+#             for _, m in trainable_modules(model)
+#             if m.weight.grad is not None
+#         )
+#         ** 0.5
+#     )
+
+
+# def scale_grads_(model, factor: float):
+#     for p in model.parameters():
+#         if p.grad is not None:
+#             p.grad *= factor
+
+
+# def PCA_gpu(v):
+#     # Center the data
+#     v = v - v.mean(axis=0)
+#     # Compute covariance matrix
+#     cov = (v.T @ v) / (v.shape[0] - 1)
+#     # Compute eigenvalues and eigenvectors
+#     # * pt.linalg.eigh seems to leak memory!!
+#     eigenvalues, eigenvectors = pt.linalg.eigh(cov)
+#     # Sort in descending order
+#     idx = eigenvalues.argsort(descending=True)
+#     eigenvalues = eigenvalues[idx]
+#     eigenvectors = eigenvectors[:, idx]
+#     return eigenvectors.T  # [:n_components]
+
+
+# def trainable_modules(model):
+#     return [
+#         (n, m)
+#         for n, m in model.named_modules()
+#         if "_proj" in n and m.weight.requires_grad
+#     ]
+
