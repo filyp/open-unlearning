@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import lm_eval.tasks
@@ -42,6 +43,62 @@ def _get_loss(model, batches):
     return loss_acc / len(batches)
 
 
+def _cache_last_hidden_states(model, batches):
+    """Cache last hidden states for each batch to compute KL divergence later."""
+    for batch in batches:
+        with pt.no_grad():
+            output = model(**prep_batch(batch, model.device), output_hidden_states=True)
+            batch["cached_last_hidden"] = output.hidden_states[-1].detach()
+
+
+def _get_loss_and_kl(model, batches, cached_lm_head):
+    """Compute loss and KL divergence in a single pass.
+
+    KL(P || Q) where P is the original model (cached) and Q is the current model.
+    KL is averaged across all tokens (where labels != -100).
+    """
+    total_kl = 0.0
+    total_tokens = 0
+    loss_acc = 0.0
+
+    for batch in batches:
+        with pt.no_grad():
+            output = model(**prep_batch(batch, model.device))
+            loss_acc += output.loss.item()
+
+            current_logits = output.logits  # (batch, seq, vocab)
+
+            # Reconstruct original logits from cached hidden states and lm_head
+            cached_hidden = batch["cached_last_hidden"]
+            cached_logits = cached_lm_head(cached_hidden)
+            assert current_logits.shape == cached_logits.shape
+
+            # Get mask for valid tokens (labels != -100)
+            labels = batch["labels"].to(model.device)
+            token_mask = labels != -100
+            assert token_mask.shape == current_logits.shape[:2]
+
+            # Compute log probabilities (softmax over vocab dimension)
+            log_p = pt.nn.functional.log_softmax(cached_logits, dim=-1)
+            log_q = pt.nn.functional.log_softmax(current_logits, dim=-1)
+
+            # KL(P || Q) using kl_div (expects log_q as input, p as target)
+            # Mask before reduction to only include valid tokens
+            log_q_masked = log_q[token_mask]  # (n_valid_tokens, vocab)
+            log_p_masked = log_p[token_mask]
+            assert log_q_masked.shape == log_p_masked.shape
+            assert log_q_masked.ndim == 2  # (n_valid_tokens, vocab)
+
+            total_kl += pt.nn.functional.kl_div(
+                log_q_masked, log_p_masked, reduction="sum", log_target=True
+            ).item()
+            total_tokens += token_mask.sum().item()
+
+    avg_loss = loss_acc / len(batches)
+    avg_kl = total_kl / total_tokens if total_tokens > 0 else 0.0
+    return avg_loss, avg_kl
+
+
 def _get_temperature_0_accuracy(lm_eval_results):
     return lm_eval_results["results"]["wmdp_bio"]["acc,none"]
 
@@ -71,8 +128,6 @@ class WMDPDedupedEvaluator(Evaluator):
         task = self.task_dict["wmdp_bio"]
         task.dataset["test"] = data["eval_qs"]
 
-        self.init_wikitext_loss = None
-
         if eval_cfg.get("wandb"):
             wandb.init(
                 project=eval_cfg.wandb.project,
@@ -82,12 +137,22 @@ class WMDPDedupedEvaluator(Evaluator):
             )
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
-        res = {}
         model.eval()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
 
-        res["wikitext_loss"] = _get_loss(model, self.wikitext)
+        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
+        if not hasattr(self, "cached_lm_head"):
+            # ! First evaluation, before training, so:
+            # Cache last hidden states for wikitext KL divergence computation
+            _cache_last_hidden_states(model, self.wikitext)
+            # Clone lm_head in case it changes during training
+            self.cached_lm_head = copy.deepcopy(model.lm_head)
+
+        res = {}
+        res["wikitext_loss"], res["wikitext_kl"] = _get_loss_and_kl(
+            model, self.wikitext, self.cached_lm_head
+        )
         res["recall_loss"] = _get_loss(model, self.recall_batches)
         # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
@@ -103,22 +168,15 @@ class WMDPDedupedEvaluator(Evaluator):
 
         # ! finished evaluating, now handle the results
 
-        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
-        if self.init_wikitext_loss is None:
-            # this is the first evaluation, before training
-            self.init_wikitext_loss = res["wikitext_loss"]
-
         # * check condition to stop training
-        if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
+        if res["wikitext_kl"] > self.eval_cfg.disr_budget:
             logging.info("Wikitext loss exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
             return res
 
         self.last_valid_res = res
-
         if self.eval_cfg.get("wandb"):
             wandb.log(res)
-
         return res
 
     def final_score(self):
