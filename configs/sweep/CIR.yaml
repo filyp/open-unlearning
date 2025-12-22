@@ -107,4 +107,4 @@ params:
   trainer.method_args.cfg.mlp_reg: "tag(log, interval(3e-3, 3))"
   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
   trainer.method_args.cfg.mlp_quantile: "interval(0.0, 1)"
-  trainer.args.learning_rate: "tag(log, interval(0.1, 10))"
+  trainer.args.learning_rate: "tag(log, interval(1, 50))"
