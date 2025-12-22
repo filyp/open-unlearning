@@ -2,7 +2,6 @@ import copy
 import logging
 
 import torch as pt
-import torch.nn.functional as F
 from datasets import concatenate_datasets, load_dataset
 
 ############## WMDP DEDUPED ##############
@@ -103,7 +102,8 @@ def wmdp_bio_deduped(cfg, **kwargs):
 
     relearning_batches = [
         _tokenize(q["sentences"][idx], tokenizer, cfg.tokenizer)
-        for idx in range(cfg.num_examples_per_question) for q in T
+        for idx in range(cfg.num_examples_per_question)
+        for q in T
     ]
 
     recall_batches = _load_recall_batches(eval_qs, cfg, tokenizer)

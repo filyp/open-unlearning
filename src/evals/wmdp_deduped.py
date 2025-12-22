@@ -1,7 +1,7 @@
 import logging
 
-import torch as pt
 import lm_eval.tasks
+import torch as pt
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
@@ -19,16 +19,18 @@ logging.getLogger("lm_eval.evaluator").setLevel(logging.WARNING)
 
 
 # Disable lm_eval progress bars by patching tqdm - there are no other ways to do this
-import lm_eval.models.huggingface as hf_module
-import lm_eval.api.task as task_module
-from functools import wraps
+# fmt: off
+from functools import wraps  # noqa
+import lm_eval.api.task as task_module  # noqa
+import lm_eval.models.huggingface as hf_module  # noqa
 _original_tqdm = hf_module.tqdm
 @wraps(_original_tqdm)
 def _disabled_tqdm(*args, **kwargs):
-    kwargs['disable'] = True
+    kwargs["disable"] = True
     return _original_tqdm(*args, **kwargs)
 hf_module.tqdm = _disabled_tqdm
 task_module.tqdm = _disabled_tqdm
+# fmt: on
 
 
 def _get_loss(model, batches):
@@ -84,7 +86,7 @@ class WMDPDedupedEvaluator(Evaluator):
         model.eval()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-        
+
         res["wikitext_loss"] = _get_loss(model, self.wikitext)
         res["recall_loss"] = _get_loss(model, self.recall_batches)
         # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
@@ -98,14 +100,14 @@ class WMDPDedupedEvaluator(Evaluator):
         )
         res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
         res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
-        
+
         # ! finished evaluating, now handle the results
-        
+
         assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
         if self.init_wikitext_loss is None:
             # this is the first evaluation, before training
             self.init_wikitext_loss = res["wikitext_loss"]
-            
+
         # * check condition to stop training
         if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
             logging.info("Wikitext loss exceeded the disruption budget")

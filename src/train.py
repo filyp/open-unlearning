@@ -65,10 +65,10 @@ def main(cfg: DictConfig):
 
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
-    
+
     # relearning_cfg = cfg.get("relearning", None)
     # if relearning_cfg:
-        
+
     #     # unfreeze all parameters
     #     for p in model.parameters():
     #         p.requires_grad = True
@@ -86,7 +86,7 @@ def main(cfg: DictConfig):
 
     #     retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
     #     relearn_loader = DataLoader(
-    #         data["relearn"], 
+    #         data["relearn"],
     #         batch_size=relearning_cfg.relearn_batch_size,
     #         shuffle=False,
     #         collate_fn=collator

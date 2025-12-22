@@ -61,7 +61,9 @@ def get_data(data_cfg: DictConfig, mode="train", **kwargs):
     if mode == "train":
         return data
     elif mode == "unlearn":
-        unlearn_dataset = ForgetRetainDataset(data["forget"], data["retain"], anchor=anchor)
+        unlearn_dataset = ForgetRetainDataset(
+            data["forget"], data["retain"], anchor=anchor
+        )
         data["train"] = unlearn_dataset
         data.pop("retain")
         data.pop("forget")

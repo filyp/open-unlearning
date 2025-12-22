@@ -17,7 +17,7 @@ def prep_batch(batch, device):
 
 def batched(iterable, n):
     """Batch an iterable into chunks of size n.
-    
+
     In python>=3.12,  it can be replaced with itertools.batched
     """
     it = iter(iterable)
@@ -27,7 +27,7 @@ def batched(iterable, n):
 
 @contextmanager
 def trim_layers(model, max_layer):
-    """Temporarily tell the model to use only the first max_layer layers."""            
+    """Temporarily tell the model to use only the first max_layer layers."""
     all_layers = model.model.layers
     model.model.layers = model.model.layers[:max_layer]
     try:
@@ -97,18 +97,21 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             mlp = model.model.layers[layer_id].mlp
             out = mlp.cached_out.detach()[_mask]
             batch["org_mlp_out"][layer_id] = out.cpu()
-            batch["org_mlp_out_norm"][layer_id] = (
-                out.float().norm(dim=-1).mean().cpu()
-            )
+            batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
 
     if cfg.get("mlp_reg", None) is None:
         return
 
     # Compute covariance statistics per layer using all batches
-    online_covs = {layer_id: OnlineCovariance(device="cuda") for layer_id in range(*cfg.layer_range)}
+    online_covs = {
+        layer_id: OnlineCovariance(device="cuda")
+        for layer_id in range(*cfg.layer_range)
+    }
     for batch in batches:
         for layer_id in range(*cfg.layer_range):
-            online_covs[layer_id].add_all(batch["org_mlp_out"][layer_id].to("cuda").float())
+            online_covs[layer_id].add_all(
+                batch["org_mlp_out"][layer_id].to("cuda").float()
+            )
 
     # Extract eigendecomposition and apply mahalanobis projection
     for layer_id in range(*cfg.layer_range):
@@ -122,13 +125,17 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             centered = out - mean
             projected = centered @ eigenvectors
             # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-            mahal_dirs = (projected / (eigenvalues + cfg.mlp_reg * eigenvalues[-1])) @ eigenvectors.T
+            _reg = cfg.mlp_reg * eigenvalues[-1]
+            mahal_dirs = (projected / (eigenvalues + _reg)) @ eigenvectors.T
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
 
             # MLP output filtering: zero out low-distance outputs per text
             if cfg.get("mlp_quantile") is not None:
-                for_filtering = (projected / (eigenvalues + cfg.mlp_filter_reg * eigenvalues[-1])) @ eigenvectors.T
-                for_filtering_normed = for_filtering / for_filtering.norm(dim=1, keepdim=True)
+                _reg = cfg.mlp_filter_reg * eigenvalues[-1]
+                for_filtering = (projected / (eigenvalues + _reg)) @ eigenvectors.T
+                for_filtering_normed = for_filtering / for_filtering.norm(
+                    dim=1, keepdim=True
+                )
                 dists = (for_filtering_normed * centered).sum(dim=1)
 
                 # Compute quantile threshold per text in batch
@@ -198,4 +205,3 @@ def cache_activations_for_cb_retain_loss(model, batches, cfg):
 #         for n, m in model.named_modules()
 #         if "_proj" in n and m.weight.requires_grad
 #     ]
-
