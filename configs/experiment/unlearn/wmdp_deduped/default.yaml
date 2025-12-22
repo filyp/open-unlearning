@@ -74,7 +74,8 @@ hydra:
     n_jobs: 1
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: ${trainer.args.seed}
+      seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
+      # seed: ${trainer.args.seed}  # deterministic
     # params loaded from /sweep config group (see defaults)
  
 # model_id: meta-llama/Llama-3.2-1B

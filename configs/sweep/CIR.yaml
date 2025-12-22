@@ -91,10 +91,10 @@
 
 # mlp_filter
 params: 
-  trainer.method_args.cfg.filter_reg: "tag(log, interval(0.03, 10))"
-  trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-5, 1e-3))"
-  trainer.method_args.cfg.mlp_reg: "tag(log, interval(3e-4, 0.3))"
-  trainer.method_args.cfg.mlp_filter_reg: "tag(log, interval(0.01, 10))"
+  trainer.method_args.cfg.filter_reg: "tag(log, interval(0.1, 10))"
+  trainer.method_args.cfg.mahal_reg: "tag(log, interval(1e-4, 3e-3))"
+  trainer.method_args.cfg.mlp_filter_reg: "tag(log, interval(0.01, 50))"
+  trainer.method_args.cfg.mlp_reg: "tag(log, interval(3e-2, 3))"
   trainer.method_args.cfg.quantile: "interval(0.8, 1)"
-  trainer.method_args.cfg.mlp_quantile: "interval(0.5, 1)"
+  trainer.method_args.cfg.mlp_quantile: "interval(0.4, 1)"
   trainer.method_args.cfg.unlearning_rate: "tag(log, interval(1, 100))"
