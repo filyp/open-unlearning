@@ -124,6 +124,23 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
             mahal_dirs = (projected / (eigenvalues + cfg.mlp_reg * eigenvalues[-1])) @ eigenvectors.T
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+
+            # MLP output filtering: zero out low-distance outputs per text
+            if cfg.get("mlp_quantile") is not None:
+                for_filtering = (projected / (eigenvalues + cfg.mlp_filter_reg * eigenvalues[-1])) @ eigenvectors.T
+                for_filtering_normed = for_filtering / for_filtering.norm(dim=1, keepdim=True)
+                dists = (for_filtering_normed * centered).sum(dim=1)
+
+                # Compute quantile threshold per text in batch
+                token_mask = get_token_mask(batch)
+                batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
+                for text_idx in batch_indices.unique():
+                    text_mask = batch_indices == text_idx
+                    text_dists = dists[text_mask]
+                    threshold = text_dists.quantile(cfg.mlp_quantile)
+                    # Zero out filtered outputs so they don't contribute to loss
+                    mahal_dirs_norm[text_mask & (dists <= threshold)] = 0
+
             batch["org_mlp_out"][layer_id] = mahal_dirs_norm.cpu()
             # proj_strengths = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
             # batch["org_mlp_out"][layer_id] = (proj_strengths * mahal_dirs_norm).cpu()

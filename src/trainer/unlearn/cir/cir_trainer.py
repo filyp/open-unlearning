@@ -36,17 +36,12 @@ class CIR(UnlearnTrainer):
         # * set trainable params
         for n, p in model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
-            # if p.requires_grad:  # * not training first n layers
-            #     layer_num = int(n.split(".")[2])
-            #     if layer_num < cfg.train_from_layer:
-            #         p.requires_grad = False
 
         install_hooks(model)
         for layer_id in range(*cfg.layer_range):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
 
         # * go through whole dataset, to prepare the batches in advance
-
         self.forget_batches = []
         self.retain_batches = []
         for f, r in zip(

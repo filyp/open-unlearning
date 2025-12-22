@@ -16,16 +16,17 @@ method_args:
     mlp_floor: 0.0
     layer_range: [4, 7]  # for 8B use [6, 12]
     quantile: 0.93
+    mlp_quantile: 0.9
 
-    mahal_reg: 1e-3
-    filter_reg: 5  # 1-10 works fine
-    mlp_reg: 0.2
+    mahal_reg: 2e-3
+    filter_reg: 3  # 1-10 works fine
+    mlp_reg: 3
+    mlp_filter_reg: 1
 
     project_to_mahal: True
     filter: True
 
-    # unlearning_rate: 0.6
-    unlearning_rate: 3
+    unlearning_rate: 2
     target_modules:
       - gate_proj
       - up_proj
