@@ -10,13 +10,18 @@ args:
   do_train: True
   do_eval: False
   eval_on_start: True
+  eval_strategy: epoch
+  optim: sgd
+  learning_rate: 5
+  lr_scheduler_type: constant
+  num_train_epochs: 16
+
 method_args:
   cfg:
-    max_num_epochs: 16
     mlp_floor: 0.0
     layer_range: [4, 7]  # for 8B use [6, 12]
     quantile: 0.93
-    mlp_quantile: 0.9
+    mlp_quantile: 0.4
 
     mahal_reg: 1e-3
     filter_reg: 1  # 1-10 works fine
@@ -26,13 +31,12 @@ method_args:
     project_to_mahal: True
     filter: True
 
-    unlearning_rate: 5
     target_modules:
       - gate_proj
       - up_proj
       # - down_proj
-    train_batch_size: 22
-    retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
+    train_batch_size: 22  # todo 32
+    retain_batch_size: 12
 
     # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow

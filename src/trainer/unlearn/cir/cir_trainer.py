@@ -3,11 +3,21 @@ import logging
 from dataclasses import dataclass
 
 import torch as pt
+from transformers import TrainerCallback
 from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_core import install_hooks
-from trainer.unlearn.cir.cir_utils import *
+from trainer.unlearn.cir.cir_utils import (
+    batched,
+    cache_activations_for_cb_retain_loss,
+    cache_activations_for_mlp_breaking_loss,
+    cb_retain_loss,
+    get_token_mask,
+    mlp_breaking_loss,
+    prep_batch,
+    trim_layers,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,6 +34,24 @@ class DistributionStats:
     eigenvectors: pt.Tensor
 
 
+class CIRCallback(TrainerCallback):
+    """Callback to extract distribution stats at epoch end."""
+
+    def __init__(self, trainer):
+        self.trainer = trainer
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        # Extract distribution stats from online covariance
+        self.trainer.distribution_stats = {
+            name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
+            for name, oc in self.trainer.acts_online_cov.items()
+            if oc.mean is not None
+        }
+        # Reset online covariance for next epoch
+        for name in self.trainer.acts_online_cov:
+            self.trainer.acts_online_cov[name] = OnlineCovariance(device="cuda")
+
+
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -31,7 +59,6 @@ class CIR(UnlearnTrainer):
 
         model = self.model
         self.max_layer = max(max(cfg.layer_range), max(cfg.cb_retaining_layers)) + 1
-        self.optimizer = pt.optim.SGD(model.parameters(), lr=cfg.unlearning_rate)
 
         # * set trainable params
         for n, p in model.named_parameters():
@@ -56,7 +83,6 @@ class CIR(UnlearnTrainer):
         cache_activations_for_mlp_breaking_loss(model, self.forget_batches, cfg)
         if cfg.get("retaining_rate", 0) > 0:
             cache_activations_for_cb_retain_loss(model, self.retain_batches, cfg)
-            self.ret_optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retaining_rate)
 
         # todo if using only gate and up proj, use just one distr per MLP
         self.acts_online_cov = {
@@ -65,45 +91,36 @@ class CIR(UnlearnTrainer):
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
-    def train(self):
-        model = self.model
+        self.add_callback(CIRCallback(self))
 
-        if self.args.eval_on_start:
-            self.evaluate()
+    def get_train_dataloader(self):
+        """Return dataloader over pre-batched forget/retain pairs."""
 
-        for _ in range(self.cfg.max_num_epochs):
-            # ! one epoch
-            model.train()
-            for fb, rb in zip(self.forget_batches, self.retain_batches):
-                inputs = dict(forget=fb, retain=rb)
-                self.training_step(model, inputs)
+        class CIRDataLoader:
+            def __init__(self, forget_batches, retain_batches):
+                self.forget_batches = forget_batches
+                self.retain_batches = retain_batches
 
-            # ! Extract distribution stats and reset online covariance for next epoch
-            self.distribution_stats = {
-                name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
-                for name, oc in self.acts_online_cov.items()
-                if oc.mean is not None
-            }
+            def __iter__(self):
+                for fb, rb in zip(self.forget_batches, self.retain_batches):
+                    yield {"forget": fb, "retain": rb}
 
-            # reset online covariance accumulators for the next epoch
-            for name in self.acts_online_cov:
-                # todo, for multi-GPU, maybe use weigth's device?
-                self.acts_online_cov[name] = OnlineCovariance(device="cuda")
+            def __len__(self):
+                return len(self.forget_batches)
 
-            # ! get metrics
-            self.evaluate()
-            if self.control.should_training_stop:
-                break
+        return CIRDataLoader(self.forget_batches, self.retain_batches)
 
     def training_step(self, model, inputs):
+        # note that we may lose some functionality from the original trainer.training_step
+        model.train()
         # ! unlearning loss
         batch = inputs["forget"]
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
         with trim_layers(model, self.max_layer):
             output = model(**prep_batch(batch, model.device), output_hidden_states=True)
-        loss = mlp_breaking_loss(model, batch, self.cfg)
-        loss.backward()
+        forget_loss = mlp_breaking_loss(model, batch, self.cfg)
+        forget_loss.backward()
 
         # ! here we modify the grad
         for name, module in model.named_modules():
@@ -117,7 +134,7 @@ class CIR(UnlearnTrainer):
 
             self.acts_online_cov[name].add_all(acts)
 
-            if not getattr(self, "distribution_stats", None):
+            if not hasattr(self, "distribution_stats"):
                 continue  # first epoch, so only collect activations and not train
 
             stats = self.distribution_stats[name]
@@ -133,7 +150,8 @@ class CIR(UnlearnTrainer):
             # ! Compute Mahalanobis directions using eigendecomposition
             # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
             mahal_dirs = (
-                projected / (stats.eigenvalues + self.cfg.mahal_reg * stats.eigenvalues[-1])
+                projected
+                / (stats.eigenvalues + self.cfg.mahal_reg * stats.eigenvalues[-1])
             ) @ stats.eigenvectors.T
 
             if self.cfg.project_to_mahal:
@@ -150,7 +168,8 @@ class CIR(UnlearnTrainer):
                 # get mahalanobis directions
                 # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
                 for_filtering = (
-                    projected / (stats.eigenvalues + self.cfg.filter_reg * stats.eigenvalues[-1])
+                    projected
+                    / (stats.eigenvalues + self.cfg.filter_reg * stats.eigenvalues[-1])
                 ) @ stats.eigenvectors.T
 
                 for_filtering_normed = for_filtering / for_filtering.norm(
@@ -159,8 +178,11 @@ class CIR(UnlearnTrainer):
                 dists = (for_filtering_normed * centered).sum(dim=1)
 
                 # compute quantile threshold per text in batch
-                batch_indices = pt.nonzero(token_mask)[:, 0]  # which text each token belongs to
-                act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
+                # which text each token belongs to:
+                batch_indices = pt.nonzero(token_mask)[:, 0]
+                act_relev_mask = pt.zeros(
+                    len(dists), dtype=pt.bool, device=dists.device
+                )
                 for text_idx in batch_indices.unique():
                     text_mask = batch_indices == text_idx
                     text_dists = dists[text_mask]
@@ -173,12 +195,6 @@ class CIR(UnlearnTrainer):
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
 
-        if not getattr(self, "distribution_stats", None):
-            return  # first epoch, so only collect activations and not train
-
-        # print(self.cfg.unlearning_rate / get_update_norm(model))
-        self.optimizer.step()
-
         # ! retain pass
         if self.cfg.get("retaining_rate", 0) > 0:
             model.zero_grad(set_to_none=True)
@@ -187,11 +203,15 @@ class CIR(UnlearnTrainer):
                 output = model(
                     **prep_batch(r_batch, model.device), output_hidden_states=True
                 )
-            loss = cb_retain_loss(output, r_batch, self.cfg)
-            loss.backward()
-            self.ret_optimizer.step()
+            retain_loss = cb_retain_loss(output, r_batch, self.cfg)
+            retain_loss *= self.cfg.retaining_rate
+            retain_loss.backward()
 
-        return 0  # mock training loss
+        if not hasattr(self, "distribution_stats"):
+            # First epoch: zero gradients so optimizer.step() is no-op
+            model.zero_grad()
+
+        return forget_loss.detach()
 
 
 # # minimal steps to run:
@@ -244,3 +264,33 @@ class CIR(UnlearnTrainer):
 #         projected / (stats.eigenvalues + reg) ** mahal_pow
 #     ) @ stats.eigenvectors.T
 #     return directions
+
+# def train(self):
+#     model = self.model
+
+#     if self.args.eval_on_start:
+#         self.evaluate()
+
+#     for _ in range(self.cfg.max_num_epochs):
+#         # ! one epoch
+#         model.train()
+#         for fb, rb in zip(self.forget_batches, self.retain_batches):
+#             inputs = dict(forget=fb, retain=rb)
+#             self.training_step(model, inputs)
+
+#         # ! Extract distribution stats and reset online covariance for next epoch
+#         self.distribution_stats = {
+#             name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
+#             for name, oc in self.acts_online_cov.items()
+#             if oc.mean is not None
+#         }
+
+#         # reset online covariance accumulators for the next epoch
+#         for name in self.acts_online_cov:
+#             # todo, for multi-GPU, maybe use weigth's device?
+#             self.acts_online_cov[name] = OnlineCovariance(device="cuda")
+
+#         # ! get metrics
+#         self.evaluate()
+#         if self.control.should_training_stop:
+#             break

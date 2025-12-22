@@ -100,8 +100,6 @@ class WMDPDedupedEvaluator(Evaluator):
         res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
         
         # ! finished evaluating, now handle the results
-
-        logging.info(res)
         
         assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
         if self.init_wikitext_loss is None:
@@ -110,7 +108,7 @@ class WMDPDedupedEvaluator(Evaluator):
             
         # * check condition to stop training
         if res["wikitext_loss"] > self.init_wikitext_loss * self.eval_cfg.disr_budget:
-            logging.info(f"Wikitext loss exceeded the disruption budget")
+            logging.info("Wikitext loss exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
             return res
 
