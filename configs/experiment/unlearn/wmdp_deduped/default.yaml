@@ -34,8 +34,8 @@ data:
       tokenizer: ${tokenizer_cfg}
     wikitext:
       load_as: wikitext
-      batch_size: 16  # for 16 batches of 16 examples each, eval takes 3s
-      num_batches: 16
+      batch_size: 8  # for 16 batches of 16 examples each, eval takes 3s
+      num_batches: 24
       tokenizer: ${tokenizer_cfg}
     load_hf:  # fineweb bio dataset
       load_as: retain

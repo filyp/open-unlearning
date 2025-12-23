@@ -1,8 +1,27 @@
 # %%
 from contextlib import contextmanager
 from itertools import islice
+
 import torch as pt
 from welford_torch import OnlineCovariance
+
+###################### hooks for caching acts and grads #######################
+
+
+def _save_act_hook(module, args):
+    module.last_act_full = args[0].detach().clone()
+
+
+def _save_grad_hook(module, args):
+    module.last_grad_full = args[0].detach().clone()
+
+
+def install_hooks(model):
+    for _, module in model.named_modules():
+        if hasattr(module, "weight") and module.weight.requires_grad:
+            module.register_forward_pre_hook(_save_act_hook)
+            module.register_full_backward_pre_hook(_save_grad_hook)
+
 
 ################################ torch utils #################################
 
@@ -42,6 +61,29 @@ def get_token_mask(batch):
     return token_mask
 
 
+def compute_per_text_quantile_mask(
+    dists: pt.Tensor, token_mask: pt.Tensor, quantile: float
+) -> pt.Tensor:
+    """Compute quantile threshold per text in batch and return relevance mask.
+
+    Args:
+        dists: Distance values for each token (1D tensor of length N where N is number of True values in token_mask)
+        token_mask: Boolean mask indicating which tokens are valid (as in labels != -100) (2D tensor of shape [batch_size, seq_len])
+        quantile: Quantile threshold (0-1) for filtering
+
+    Returns:
+        Boolean mask of same length as dists, True for tokens above their text's quantile threshold
+    """
+    batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
+    act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
+    for text_idx in batch_indices.unique():
+        text_mask = batch_indices == text_idx
+        text_dists = dists[text_mask]
+        threshold = text_dists.quantile(quantile)
+        act_relev_mask[text_mask] = text_dists > threshold
+    return act_relev_mask
+
+
 ################################ loss functions #################################
 
 
@@ -59,7 +101,7 @@ def mlp_breaking_loss(model, batch, cfg):
         org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
         dotproducts = dotproducts / org_norm**2
-        loss_acc += dotproducts.clip(min=cfg.mlp_floor).mean()
+        loss_acc += dotproducts.clip(min=0).mean()
 
     return loss_acc / len(range(*cfg.layer_range))
 
@@ -99,58 +141,37 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             batch["org_mlp_out"][layer_id] = out.cpu()
             batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
 
-    if cfg.get("mlp_reg", None) is None:
+    if cfg.get("mlp_reg") is None:
+        assert not hasattr(cfg, "mlp_quantile"), "not supported"
         return
-
-    # Compute covariance statistics per layer using all batches
-    online_covs = {
-        layer_id: OnlineCovariance(device="cuda")
-        for layer_id in range(*cfg.layer_range)
-    }
-    for batch in batches:
-        for layer_id in range(*cfg.layer_range):
-            online_covs[layer_id].add_all(
-                batch["org_mlp_out"][layer_id].to("cuda").float()
-            )
 
     # Extract eigendecomposition and apply mahalanobis projection
     for layer_id in range(*cfg.layer_range):
-        oc = online_covs[layer_id]
-        mean = oc.mean
-        eigenvalues = oc.eig_val
-        eigenvectors = oc.eig_vec
+        # Compute covariance statistics per layer using all batches
+        oc = OnlineCovariance(device="cuda")
+        for batch in batches:
+            oc.add_all(batch["org_mlp_out"][layer_id].to("cuda").float())
 
         for batch in batches:
             out = batch["org_mlp_out"][layer_id].to("cuda").float()
-            centered = out - mean
-            projected = centered @ eigenvectors
+            centered = out - oc.mean
+            projected = centered @ oc.eig_vec
             # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-            _reg = cfg.mlp_reg * eigenvalues[-1]
-            mahal_dirs = (projected / (eigenvalues + _reg)) @ eigenvectors.T
+            _reg = cfg.mlp_reg * oc.eig_val[-1]
+            mahal_dirs = (projected / (oc.eig_val + _reg)) @ oc.eig_vec.T
             mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
 
             # MLP output filtering: zero out low-distance outputs per text
-            if cfg.get("mlp_quantile") is not None:
-                _reg = cfg.mlp_filter_reg * eigenvalues[-1]
-                for_filtering = (projected / (eigenvalues + _reg)) @ eigenvectors.T
-                for_filtering_normed = for_filtering / for_filtering.norm(
-                    dim=1, keepdim=True
+            # can be useful for recall_loss breaking, on late layers
+            if cfg.get("mlp_quantile", 0) > 0:
+                dists = centered.norm(dim=1)
+                quantile_mask = compute_per_text_quantile_mask(
+                    dists, get_token_mask(batch), cfg.mlp_quantile
                 )
-                dists = (for_filtering_normed * centered).sum(dim=1)
-
-                # Compute quantile threshold per text in batch
-                token_mask = get_token_mask(batch)
-                batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
-                for text_idx in batch_indices.unique():
-                    text_mask = batch_indices == text_idx
-                    text_dists = dists[text_mask]
-                    threshold = text_dists.quantile(cfg.mlp_quantile)
-                    # Zero out filtered outputs so they don't contribute to loss
-                    mahal_dirs_norm[text_mask & (dists <= threshold)] = 0
+                # Zero out filtered outputs so they don't contribute to loss
+                mahal_dirs_norm[~quantile_mask] = 0
 
             batch["org_mlp_out"][layer_id] = mahal_dirs_norm.cpu()
-            # proj_strengths = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-            # batch["org_mlp_out"][layer_id] = (proj_strengths * mahal_dirs_norm).cpu()
 
 
 def cache_activations_for_cb_retain_loss(model, batches, cfg):

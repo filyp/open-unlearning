@@ -7,16 +7,17 @@ from transformers import TrainerCallback
 from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_core import install_hooks
 from trainer.unlearn.cir.cir_utils import (
     batched,
     cache_activations_for_cb_retain_loss,
     cache_activations_for_mlp_breaking_loss,
     cb_retain_loss,
+    compute_per_text_quantile_mask,
     get_token_mask,
     mlp_breaking_loss,
     prep_batch,
     trim_layers,
+    install_hooks,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +59,9 @@ class CIR(UnlearnTrainer):
         self.cfg = cfg
 
         model = self.model
-        self.max_layer = max(max(cfg.layer_range), max(cfg.cb_retaining_layers)) + 1
+        self.max_layer = (
+            max(max(cfg.layer_range), max(cfg.get("cb_retaining_layers", [0]))) + 1
+        )
 
         # * set trainable params
         for n, p in model.named_parameters():
@@ -149,47 +152,23 @@ class CIR(UnlearnTrainer):
 
             # ! Compute Mahalanobis directions using eigendecomposition
             # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-            mahal_dirs = (
-                projected
-                / (stats.eigenvalues + self.cfg.mahal_reg * stats.eigenvalues[-1])
-            ) @ stats.eigenvectors.T
+            _reg = self.cfg.act_reg * stats.eigenvalues[-1]
+            mahal_dirs = (projected / (stats.eigenvalues + _reg)) @ stats.eigenvectors.T
 
-            if self.cfg.project_to_mahal:
-                mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-                proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-                filtered_acts = proj_strenghts * mahal_dirs_norm
-            else:
-                filtered_acts = mahal_dirs
+            # project to mahalanobis directions
+            mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+            proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+            collapsed_acts = proj_strenghts * mahal_dirs_norm
 
-            if self.cfg.filter:
-                # act_norms = centered.norm(dim=1, keepdim=True)
-                # rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
+            if self.cfg.get("act_quantile", 0) > 0:
+                dists = centered.norm(dim=1)
+                # dists = collapsed_acts.norm(dim=1)  # slows unlearning!
 
-                # get mahalanobis directions
-                # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-                for_filtering = (
-                    projected
-                    / (stats.eigenvalues + self.cfg.filter_reg * stats.eigenvalues[-1])
-                ) @ stats.eigenvectors.T
-
-                for_filtering_normed = for_filtering / for_filtering.norm(
-                    dim=1, keepdim=True
+                act_relev_mask = compute_per_text_quantile_mask(
+                    dists, token_mask, self.cfg.act_quantile
                 )
-                dists = (for_filtering_normed * centered).sum(dim=1)
 
-                # compute quantile threshold per text in batch
-                # which text each token belongs to:
-                batch_indices = pt.nonzero(token_mask)[:, 0]
-                act_relev_mask = pt.zeros(
-                    len(dists), dtype=pt.bool, device=dists.device
-                )
-                for text_idx in batch_indices.unique():
-                    text_mask = batch_indices == text_idx
-                    text_dists = dists[text_mask]
-                    threshold = text_dists.quantile(self.cfg.quantile)
-                    act_relev_mask[text_mask] = text_dists > threshold
-
-                acts = filtered_acts[act_relev_mask]
+                acts = collapsed_acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
             # without the projections, this is the equivalent of normal backprop

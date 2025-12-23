@@ -12,24 +12,18 @@ args:
   eval_on_start: True
   eval_strategy: epoch
   optim: sgd
-  learning_rate: 5
   lr_scheduler_type: constant
   num_train_epochs: 16
+  learning_rate: 2
 
 method_args:
   cfg:
-    mlp_floor: 0.0
     layer_range: [4, 7]  # for 8B use [6, 12]
-    quantile: 0.93
-    mlp_quantile: 0.4
 
-    mahal_reg: 1e-3
-    filter_reg: 1  # 1-10 works fine
-    mlp_filter_reg: 5
+    act_quantile: 0.94
+    act_reg: 2e-3
+    # mlp_quantile: 0.5  # useful on later layers
     mlp_reg: 0.2
-
-    project_to_mahal: True
-    filter: True
 
     target_modules:
       - gate_proj
@@ -38,13 +32,13 @@ method_args:
     train_batch_size: 32  # todo specify this batch size in args above
     retain_batch_size: 32
 
-    # ! retaining params
+    # # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
-    retaining_rate: 0
-    cb_retaining_layers: [7]  # for 8B use [12]
-    cb_retaining_pow: 1.0
+    # cb_retaining_layers: [7]  # for 8B use [12]
+    # cb_retaining_pow: 1.0
     
     # ! legacy params
+    # mlp_floor: 0.0
     # cir_niter: 16
     # cut_off_tokens: 1
     # pca_every_n: 1
@@ -54,3 +48,6 @@ method_args:
     # mahal_pow: 1.0
     # filter_pow: 1.0
     # act_collapse: 0
+    # filter_reg: 10
+    # project_to_mahal: True
+    # mlp_filter_reg: 0.002
