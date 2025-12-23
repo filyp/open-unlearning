@@ -18,6 +18,7 @@ from trainer.unlearn.cir.cir_utils import (
     prep_batch,
     install_hooks,
 )
+from trainer.unlearn.cir.cir_core import project_out, get_projections
 
 logging.basicConfig(level=logging.INFO)
 
@@ -50,6 +51,20 @@ class CIRCallback(TrainerCallback):
         # Reset online covariance for next epoch
         for name in self.trainer.acts_online_cov:
             self.trainer.acts_online_cov[name] = OnlineCovariance(device="cuda")
+
+        # Compute PCA projections for gradients (to collapse)
+        if self.trainer.cfg.get("grad_proj_num", 0) > 0:
+            self.trainer.grad_to_collapse = get_projections(
+                self.trainer.grads_list,
+                self.trainer.cfg.grad_proj_num,
+                self.trainer.cfg.get("cir_niter", 16),
+            )
+        # Reset grads list for next epoch
+        self.trainer.grads_list = {
+            n: []
+            for n, m in self.trainer.model.named_modules()
+            if hasattr(m, "weight") and m.weight.requires_grad
+        }
 
 
 class CIR(UnlearnTrainer):
@@ -85,6 +100,13 @@ class CIR(UnlearnTrainer):
         # todo if using only gate and up proj, use just one distr per MLP
         self.acts_online_cov = {
             n: OnlineCovariance(device="cuda")
+            for n, m in model.named_modules()
+            if hasattr(m, "weight") and m.weight.requires_grad
+        }
+
+        # Initialize grads list for PCA-based collapse
+        self.grads_list = {
+            n: []
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
@@ -130,6 +152,7 @@ class CIR(UnlearnTrainer):
             assert len(acts.shape) == len(grads.shape) == 2
 
             self.acts_online_cov[name].add_all(acts)
+            self.grads_list[name].append(grads.cpu())
 
             if not hasattr(self, "distribution_stats"):
                 continue  # first epoch, so only collect activations and not train
@@ -167,6 +190,11 @@ class CIR(UnlearnTrainer):
 
                 acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
+
+            # Collapse grad PCA components if configured
+            if hasattr(self, "grad_to_collapse"):
+                for comp in self.grad_to_collapse[name]:
+                    grads = grads - project_out(grads, comp)
 
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)

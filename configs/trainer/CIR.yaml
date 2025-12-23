@@ -24,6 +24,8 @@ method_args:
       # - down_proj
     train_batch_size: 32  # todo specify this batch size in args above
     retain_batch_size: 32
+    
+    grad_proj_num: 6
 
     # # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
