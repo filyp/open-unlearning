@@ -16,7 +16,6 @@ from trainer.unlearn.cir.cir_utils import (
     get_token_mask,
     mlp_breaking_loss,
     prep_batch,
-    trim_layers,
     install_hooks,
 )
 
@@ -57,11 +56,7 @@ class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-
         model = self.model
-        self.max_layer = (
-            max(max(cfg.layer_range), max(cfg.get("cb_retaining_layers", [0]))) + 1
-        )
 
         # * set trainable params
         for n, p in model.named_parameters():
@@ -120,8 +115,7 @@ class CIR(UnlearnTrainer):
         batch = inputs["forget"]
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-        with trim_layers(model, self.max_layer):
-            output = model(**prep_batch(batch, model.device), output_hidden_states=True)
+        output = model(**prep_batch(batch, model.device), output_hidden_states=True)
         forget_loss = mlp_breaking_loss(model, batch, self.cfg)
         forget_loss.backward()
 
@@ -150,15 +144,18 @@ class CIR(UnlearnTrainer):
 
             # filtered_acts = projected @ stats.eigenvectors.T  # skip any mahalanobis
 
-            # ! Compute Mahalanobis directions using eigendecomposition
-            # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-            _reg = self.cfg.act_reg * stats.eigenvalues[-1]
-            mahal_dirs = (projected / (stats.eigenvalues + _reg)) @ stats.eigenvectors.T
+            if self.cfg.get("act_reg") is not None:
+                # ! Compute Mahalanobis directions using eigendecomposition
+                # Scale reg by largest eigenvalue (last one from eigh)
+                _reg = self.cfg.act_reg * stats.eigenvalues[-1]
+                mahal_dirs = (
+                    projected / (stats.eigenvalues + _reg)
+                ) @ stats.eigenvectors.T
 
-            # project to mahalanobis directions
-            mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-            proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-            collapsed_acts = proj_strenghts * mahal_dirs_norm
+                # project to mahalanobis directions
+                mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+                proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+                acts = proj_strenghts * mahal_dirs_norm
 
             if self.cfg.get("act_quantile", 0) > 0:
                 dists = centered.norm(dim=1)
@@ -168,7 +165,7 @@ class CIR(UnlearnTrainer):
                     dists, token_mask, self.cfg.act_quantile
                 )
 
-                acts = collapsed_acts[act_relev_mask]
+                acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
             # without the projections, this is the equivalent of normal backprop
@@ -178,10 +175,9 @@ class CIR(UnlearnTrainer):
         if self.cfg.get("retaining_rate", 0) > 0:
             model.zero_grad(set_to_none=True)
             r_batch = inputs["retain"]
-            with trim_layers(model, self.max_layer):
-                output = model(
-                    **prep_batch(r_batch, model.device), output_hidden_states=True
-                )
+            output = model(
+                **prep_batch(r_batch, model.device), output_hidden_states=True
+            )
             retain_loss = cb_retain_loss(output, r_batch, self.cfg)
             retain_loss *= self.cfg.retaining_rate
             retain_loss.backward()

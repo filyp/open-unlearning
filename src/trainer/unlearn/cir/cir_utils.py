@@ -1,5 +1,4 @@
 # %%
-from contextlib import contextmanager
 from itertools import islice
 
 import torch as pt
@@ -44,15 +43,15 @@ def batched(iterable, n):
         yield batch
 
 
-@contextmanager
-def trim_layers(model, max_layer):
-    """Temporarily tell the model to use only the first max_layer layers."""
-    all_layers = model.model.layers
-    model.model.layers = model.model.layers[:max_layer]
-    try:
-        yield
-    finally:
-        model.model.layers = all_layers
+# @contextmanager
+# def trim_layers(model, max_layer):
+#     """Temporarily tell the model to use only the first max_layer layers."""
+#     all_layers = model.model.layers
+#     model.model.layers = model.model.layers[:max_layer]
+#     try:
+#         yield
+#     finally:
+#         model.model.layers = all_layers
 
 
 def get_token_mask(batch):
@@ -138,49 +137,47 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
         for layer_id in range(*cfg.layer_range):
             mlp = model.model.layers[layer_id].mlp
             out = mlp.cached_out.detach()[_mask]
-            batch["org_mlp_out"][layer_id] = out.cpu()
+            batch["org_mlp_out"][layer_id] = out
             batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
 
-    if cfg.get("mlp_reg") is None:
-        assert not hasattr(cfg, "mlp_quantile"), "not supported"
-        return
-
-    # Extract eigendecomposition and apply mahalanobis projection
     for layer_id in range(*cfg.layer_range):
+        # Extract eigendecomposition and apply mahalanobis projection
         # Compute covariance statistics per layer using all batches
-        oc = OnlineCovariance(device="cuda")
-        for batch in batches:
-            oc.add_all(batch["org_mlp_out"][layer_id].to("cuda").float())
+        if cfg.get("mlp_reg") is not None:
+            oc = OnlineCovariance(device="cuda")
+            for batch in batches:
+                oc.add_all(batch["org_mlp_out"][layer_id].float())
+            for batch in batches:
+                out = batch["org_mlp_out"][layer_id].float()
+                centered = out - oc.mean
+                projected = centered @ oc.eig_vec
+                # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
+                _reg = cfg.mlp_reg * oc.eig_val[-1]
+                mahal_dirs = (projected / (oc.eig_val + _reg)) @ oc.eig_vec.T
+                mahal_dirs_normal = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+                batch["org_mlp_out"][layer_id] = mahal_dirs_normal.to(model.dtype)
 
-        for batch in batches:
-            out = batch["org_mlp_out"][layer_id].to("cuda").float()
-            centered = out - oc.mean
-            projected = centered @ oc.eig_vec
-            # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-            _reg = cfg.mlp_reg * oc.eig_val[-1]
-            mahal_dirs = (projected / (oc.eig_val + _reg)) @ oc.eig_vec.T
-            mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-
-            # MLP output filtering: zero out low-distance outputs per text
-            # can be useful for recall_loss breaking, on late layers
-            if cfg.get("mlp_quantile", 0) > 0:
-                dists = centered.norm(dim=1)
+        # MLP output filtering: zero out low-distance outputs per text
+        # can be useful for recall_loss breaking, on late layers
+        if cfg.get("mlp_quantile", 0) > 0:
+            for batch in batches:
+                dists = batch["org_mlp_out"][layer_id].float().norm(dim=1)
                 quantile_mask = compute_per_text_quantile_mask(
                     dists, get_token_mask(batch), cfg.mlp_quantile
                 )
                 # Zero out filtered outputs so they don't contribute to loss
-                mahal_dirs_norm[~quantile_mask] = 0
+                batch["org_mlp_out"][layer_id][~quantile_mask] = 0
 
-            batch["org_mlp_out"][layer_id] = mahal_dirs_norm.cpu()
+        for batch in batches:
+            batch["org_mlp_out"][layer_id] = batch["org_mlp_out"][layer_id].cpu()
 
 
 def cache_activations_for_cb_retain_loss(model, batches, cfg):
     for batch in batches:
         with pt.no_grad():
-            with trim_layers(model, max(cfg.cb_retaining_layers) + 1):
-                output = model(
-                    **prep_batch(batch, model.device), output_hidden_states=True
-                )
+            output = model(
+                **prep_batch(batch, model.device), output_hidden_states=True
+            )
         batch["retain_acts"] = {
             l_num: output.hidden_states[l_num].detach().to("cpu")
             for l_num in cfg.cb_retaining_layers

@@ -76,19 +76,18 @@ def _get_loss_and_kl(model, batches, cached_lm_head):
             token_mask = labels != -100
             assert token_mask.shape == current_logits.shape[:2]
 
-            # Compute log probabilities (softmax over vocab dimension)
-            log_p = pt.nn.functional.log_softmax(cached_logits, dim=-1)
-            log_q = pt.nn.functional.log_softmax(current_logits, dim=-1)
+            # Mask first
+            cached_logits_masked = cached_logits[token_mask]  # btw, bfloat is enough
+            current_logits_masked = current_logits[token_mask]
+            assert cached_logits_masked.shape == current_logits_masked.shape
+            assert cached_logits_masked.ndim == 2  # (n_valid_tokens, vocab)
 
             # KL(P || Q) using kl_div (expects log_q as input, p as target)
-            # Mask before reduction to only include valid tokens
-            log_q_masked = log_q[token_mask]  # (n_valid_tokens, vocab)
-            log_p_masked = log_p[token_mask]
-            assert log_q_masked.shape == log_p_masked.shape
-            assert log_q_masked.ndim == 2  # (n_valid_tokens, vocab)
+            log_p = pt.nn.functional.log_softmax(cached_logits_masked, dim=-1)
+            log_q = pt.nn.functional.log_softmax(current_logits_masked, dim=-1)
 
             total_kl += pt.nn.functional.kl_div(
-                log_q_masked, log_p_masked, reduction="sum", log_target=True
+                log_q, log_p, reduction="sum", log_target=True
             ).item()
             total_tokens += token_mask.sum().item()
 

@@ -5,25 +5,18 @@ defaults:
 
 handler: CIR
 args:
-  seed: 42
-  output_dir: ${paths.output_dir}
-  do_train: True
-  do_eval: False
-  eval_on_start: True
-  eval_strategy: epoch
   optim: sgd
   lr_scheduler_type: constant
-  num_train_epochs: 16
-  learning_rate: 2
+  learning_rate: 0.8
 
 method_args:
   cfg:
-    layer_range: [4, 7]  # for 8B use [6, 12]
+    layer_range: [0, 16]
 
     act_quantile: 0.94
-    act_reg: 2e-3
-    # mlp_quantile: 0.5  # useful on later layers
-    mlp_reg: 0.2
+    act_reg: 3e-3
+    # mlp_quantile: 0.5  # useful on later layers, but very slightly
+    # mlp_reg: 3e-3  # no effect, at least for WMDP; todo test it on toxicity
 
     target_modules:
       - gate_proj
