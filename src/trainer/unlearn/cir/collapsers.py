@@ -108,47 +108,47 @@ class MahalanobisCollapser:
         return proj_strenghts * mahal_dirs_norm
 
 
-class MahalanobisCollapserInvCov:
-    """Same as MahalanobisCollapser, but uses inverse covariance instead of eigendecomposition.
+# class MahalanobisCollapserInvCov:
+#     """Same as MahalanobisCollapser, but uses inverse covariance instead of eigendecomposition.
 
-    It is minimally faster than using eigencomposition, but it's negligible.
+#     It is minimally faster than using eigencomposition, but it's negligible.
 
-    Contrary to MahalanobisCollapser, here we are not able to set the regularization relative to the largest eigenvalue.
+#     Contrary to MahalanobisCollapser, here we are not able to set the regularization relative to the largest eigenvalue.
 
-    Also MahalanobisCollapser, can be extended to modify or inspect the PCA components individuually.
-    """
+#     Also MahalanobisCollapser, can be extended to modify or inspect the PCA components individuually.
+#     """
 
-    mean: pt.Tensor
-    inverse_cov: pt.Tensor
+#     mean: pt.Tensor
+#     inverse_cov: pt.Tensor
 
-    def __init__(self, reg: float = 3e-3):
-        self.reg = reg
-        self.reset_vecs()
+#     def __init__(self, reg: float = 3e-3):
+#         self.reg = reg
+#         self.reset_vecs()
 
-    def reset_vecs(self):
-        # Reset online covariance for next epoch
-        self.online_cov = OnlineCovariance(device="cuda")
+#     def reset_vecs(self):
+#         # Reset online covariance for next epoch
+#         self.online_cov = OnlineCovariance(device="cuda")
 
-    def add_vecs(self, vecs):
-        self.online_cov.add_all(vecs)
+#     def add_vecs(self, vecs):
+#         self.online_cov.add_all(vecs)
 
-    def process_saved_vecs(self):
-        # Extract distribution stats from online covariance
-        if self.online_cov.mean is None:
-            return
-        self.mean = self.online_cov.mean
-        cov = self.online_cov.cov
-        # Add regularization and compute inverse covariance
-        cov_reg = cov + self.reg * pt.eye(cov.shape[0], device=cov.device)
-        self.inverse_cov = pt.linalg.inv(cov_reg)
-        self.reset_vecs()
+#     def process_saved_vecs(self):
+#         # Extract distribution stats from online covariance
+#         if self.online_cov.mean is None:
+#             return
+#         self.mean = self.online_cov.mean
+#         cov = self.online_cov.cov
+#         # Add regularization and compute inverse covariance
+#         cov_reg = cov + self.reg * pt.eye(cov.shape[0], device=cov.device)
+#         self.inverse_cov = pt.linalg.inv(cov_reg)
+#         self.reset_vecs()
 
-    def collapse(self, vecs):
-        centered = vecs - self.mean
-        # Compute Mahalanobis directions using inverse covariance
-        mahal_dirs = centered @ self.inverse_cov.T
+#     def collapse(self, vecs):
+#         centered = vecs - self.mean
+#         # Compute Mahalanobis directions using inverse covariance
+#         mahal_dirs = centered @ self.inverse_cov.T
 
-        # project to mahalanobis directions
-        mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-        return proj_strenghts * mahal_dirs_norm
+#         # project to mahalanobis directions
+#         mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+#         proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+#         return proj_strenghts * mahal_dirs_norm
