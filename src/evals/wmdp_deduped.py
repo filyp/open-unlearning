@@ -64,12 +64,12 @@ def _get_loss_and_kl(model, batches, cached_lm_head):
             output = model(**prep_batch(batch, model.device))
             loss_acc += output.loss.item()
 
-            current_logits = output.logits  # (batch, seq, vocab)
+            current_logits = output.logits.float()
 
             # Reconstruct original logits from cached hidden states and lm_head
             cached_hidden = batch["cached_last_hidden"]
-            cached_logits = cached_lm_head(cached_hidden)
-            assert current_logits.shape == cached_logits.shape
+            cached_logits = cached_lm_head(cached_hidden).float()
+            assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
 
             # Get mask for valid tokens (labels != -100)
             labels = batch["labels"].to(model.device)

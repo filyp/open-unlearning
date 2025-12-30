@@ -17,7 +17,7 @@ trainer:
     report_to: none  # suppress the default wandb reporting in the trainer
     # report_to: wandb
     # run_name: ${task_name}  # that's the default
-    num_train_epochs: 16
+    num_train_epochs: 10
     seed: 42
     output_dir: ${paths.output_dir}
     save_strategy: 'no'

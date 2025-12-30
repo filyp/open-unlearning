@@ -1,10 +1,8 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=SAMPLE_UNLEARN mode=wmdp_deduped
 import logging
-from dataclasses import dataclass
 
 import torch as pt
 from transformers import TrainerCallback
-from welford_torch import OnlineCovariance
 
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
@@ -18,7 +16,7 @@ from trainer.unlearn.cir.cir_utils import (
     prep_batch,
     install_hooks,
 )
-from trainer.unlearn.cir.cir_core import project_out, get_projections
+from trainer.unlearn.cir.collapsers import TopPCsCollapser, MahalanobisCollapser
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,13 +26,6 @@ def save_output_hook(module, args, output):
     module.cached_out = output
 
 
-@dataclass
-class DistributionStats:
-    mean: pt.Tensor
-    eigenvalues: pt.Tensor
-    eigenvectors: pt.Tensor
-
-
 class CIRCallback(TrainerCallback):
     """Callback to extract distribution stats at epoch end."""
 
@@ -42,35 +33,19 @@ class CIRCallback(TrainerCallback):
         self.trainer = trainer
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        # Extract distribution stats from online covariance
-        self.trainer.distribution_stats = {
-            name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
-            for name, oc in self.trainer.acts_online_cov.items()
-            if oc.mean is not None
-        }
-        # Reset online covariance for next epoch
-        for name in self.trainer.acts_online_cov:
-            self.trainer.acts_online_cov[name] = OnlineCovariance(device="cuda")
+        for collapser in self.trainer.acts_collapsers.values():
+            collapser.process_saved_vecs()
+        for collapser in self.trainer.grads_collapsers.values():
+            collapser.process_saved_vecs()
 
-        # Compute PCA projections for gradients (to collapse)
-        if self.trainer.cfg.get("grad_proj_num", 0) > 0:
-            self.trainer.grad_to_collapse = get_projections(
-                self.trainer.grads_list,
-                self.trainer.cfg.grad_proj_num,
-                self.trainer.cfg.get("cir_niter", 16),
-            )
-        # Reset grads list for next epoch
-        self.trainer.grads_list = {
-            n: []
-            for n, m in self.trainer.model.named_modules()
-            if hasattr(m, "weight") and m.weight.requires_grad
-        }
+        self.trainer.collapsers_initialized = True
 
 
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
+        self.collapsers_initialized = False
         model = self.model
 
         # * set trainable params
@@ -97,19 +72,20 @@ class CIR(UnlearnTrainer):
         if cfg.get("retaining_rate", 0) > 0:
             cache_activations_for_cb_retain_loss(model, self.retain_batches, cfg)
 
-        # todo if using only gate and up proj, use just one distr per MLP
-        self.acts_online_cov = {
-            n: OnlineCovariance(device="cuda")
+        self.acts_collapsers = {
+            n: MahalanobisCollapser(cfg.act_reg)
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
-        # Initialize grads list for PCA-based collapse
-        self.grads_list = {
-            n: []
-            for n, m in model.named_modules()
-            if hasattr(m, "weight") and m.weight.requires_grad
-        }
+        if cfg.get("grad_proj_num", 0) > 0:
+            self.grads_collapsers = {
+                n: TopPCsCollapser(cfg.grad_proj_num)
+                for n, m in model.named_modules()
+                if hasattr(m, "weight") and m.weight.requires_grad
+            }
+        else:
+            self.grads_collapsers = {}
 
         self.add_callback(CIRCallback(self))
 
@@ -151,50 +127,27 @@ class CIR(UnlearnTrainer):
             grads = module.last_grad_full[token_mask].to(pt.float32)
             assert len(acts.shape) == len(grads.shape) == 2
 
-            self.acts_online_cov[name].add_all(acts)
-            self.grads_list[name].append(grads.cpu())
+            self.acts_collapsers[name].add_vecs(acts)
+            if self.grads_collapsers:
+                self.grads_collapsers[name].add_vecs(grads)
 
-            if not hasattr(self, "distribution_stats"):
+            if not self.collapsers_initialized:
                 continue  # first epoch, so only collect activations and not train
 
-            stats = self.distribution_stats[name]
-            centered = acts - stats.mean
-            projected = centered @ stats.eigenvectors  # (N, D)
-
-            # # ! collapse top components
-            # # works worse a bit than full mahalanobis, but is acceptable when you want more speed (can be optimized to compute only top N PCs)
-            # projected[:, -self.cfg.act_collapse:] = 0  # collapse top components
-
-            # filtered_acts = projected @ stats.eigenvectors.T  # skip any mahalanobis
-
-            if self.cfg.get("act_reg") is not None:
-                # ! Compute Mahalanobis directions using eigendecomposition
-                # Scale reg by largest eigenvalue (last one from eigh)
-                _reg = self.cfg.act_reg * stats.eigenvalues[-1]
-                mahal_dirs = (
-                    projected / (stats.eigenvalues + _reg)
-                ) @ stats.eigenvectors.T
-
-                # project to mahalanobis directions
-                mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-                proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-                acts = proj_strenghts * mahal_dirs_norm
+            centered = acts - self.acts_collapsers[name].mean
 
             if self.cfg.get("act_quantile", 0) > 0:
                 dists = centered.norm(dim=1)
                 # dists = collapsed_acts.norm(dim=1)  # slows unlearning!
-
                 act_relev_mask = compute_per_text_quantile_mask(
                     dists, token_mask, self.cfg.act_quantile
                 )
-
                 acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
-            # Collapse grad PCA components if configured
-            if hasattr(self, "grad_to_collapse"):
-                for comp in self.grad_to_collapse[name]:
-                    grads = grads - project_out(grads, comp)
+            acts = self.acts_collapsers[name].collapse(acts)
+            if self.grads_collapsers:
+                grads = self.grads_collapsers[name].collapse(grads)
 
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
@@ -210,7 +163,7 @@ class CIR(UnlearnTrainer):
             retain_loss *= self.cfg.retaining_rate
             retain_loss.backward()
 
-        if not hasattr(self, "distribution_stats"):
+        if not self.collapsers_initialized:
             # First epoch: zero gradients so optimizer.step() is no-op
             model.zero_grad()
 
@@ -239,61 +192,7 @@ class CIR(UnlearnTrainer):
 # centered_norm = centered / centered.norm(dim=1, keepdim=True)
 
 # dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
-
 # dists = (centered * mahal_dirs_norm).sum(dim=1)
-
 # dists = (centered * mahal_dirs).sum(dim=1)
-
 # dists = (centered_norm * mahal_dirs).sum(dim=1)
 
-# # get Mahalanobis distance (squared) using eigendecomposition
-# projected = mahal_dirs_norm @ eigenvectors
-# dists = (projected ** 2 / eigenvalues).sum(dim=1)
-
-
-# def get_mahalanobis_directions(
-#     centered_vecs: pt.Tensor,
-#     stats: DistributionStats,
-#     reg: float = 1e-2,
-#     mahal_pow: float = 1.0,
-# ):
-#     """Compute Mahalanobis directions using cached eigendecomposition.
-
-#     Mahalanobis direction = Σ⁻¹(x - μ) = V (Λ + reg)⁻¹ Vᵀ (x - μ)
-#     """
-#     # V (Λ + reg)⁻¹ Vᵀ (x - μ) in two matmuls
-#     projected = centered_vecs @ stats.eigenvectors  # (N, D)
-#     directions = (
-#         projected / (stats.eigenvalues + reg) ** mahal_pow
-#     ) @ stats.eigenvectors.T
-#     return directions
-
-# def train(self):
-#     model = self.model
-
-#     if self.args.eval_on_start:
-#         self.evaluate()
-
-#     for _ in range(self.cfg.max_num_epochs):
-#         # ! one epoch
-#         model.train()
-#         for fb, rb in zip(self.forget_batches, self.retain_batches):
-#             inputs = dict(forget=fb, retain=rb)
-#             self.training_step(model, inputs)
-
-#         # ! Extract distribution stats and reset online covariance for next epoch
-#         self.distribution_stats = {
-#             name: DistributionStats(oc.mean, oc.eig_val, oc.eig_vec)
-#             for name, oc in self.acts_online_cov.items()
-#             if oc.mean is not None
-#         }
-
-#         # reset online covariance accumulators for the next epoch
-#         for name in self.acts_online_cov:
-#             # todo, for multi-GPU, maybe use weigth's device?
-#             self.acts_online_cov[name] = OnlineCovariance(device="cuda")
-
-#         # ! get metrics
-#         self.evaluate()
-#         if self.control.should_training_stop:
-#             break
