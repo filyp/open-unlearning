@@ -42,9 +42,9 @@ class TopPCsCollapser:
     def __init__(self, num_proj: int = 10, niter: int = 16):
         self.num_proj = num_proj
         self.niter = niter
-        self.reset_vecs()
+        self._reset_vecs()
 
-    def reset_vecs(self):
+    def _reset_vecs(self):
         # Reset grads list for next epoch
         self.cache = []
 
@@ -60,7 +60,7 @@ class TopPCsCollapser:
         self.to_collapse = _get_projections(
             vectors_flattened, self.num_proj, self.niter
         )
-        self.reset_vecs()
+        self._reset_vecs()
 
     def collapse(self, vecs):
         for comp in self.to_collapse:
@@ -75,11 +75,11 @@ class MahalanobisCollapser:
 
     def __init__(self, reg: float = 3e-3):
         self.reg = reg
-        self.reset_vecs()
+        self._reset_vecs()
 
-    def reset_vecs(self):
+    def _reset_vecs(self):
         # Reset online covariance for next epoch
-        self.online_cov = OnlineCovariance(device="cuda")
+        self.online_cov = OnlineCovariance(device="cuda", dtype=pt.float32)
 
     def add_vecs(self, vecs):
         self.online_cov.add_all(vecs)
@@ -91,7 +91,7 @@ class MahalanobisCollapser:
         self.mean = self.online_cov.mean
         self.eig_val = self.online_cov.eig_val
         self.eig_vec = self.online_cov.eig_vec
-        self.reset_vecs()
+        self._reset_vecs()
 
     def collapse(self, vecs):
         centered = vecs - self.mean
@@ -123,9 +123,9 @@ class MahalanobisCollapser:
 
 #     def __init__(self, reg: float = 3e-3):
 #         self.reg = reg
-#         self.reset_vecs()
+#         self._reset_vecs()
 
-#     def reset_vecs(self):
+#     def _reset_vecs(self):
 #         # Reset online covariance for next epoch
 #         self.online_cov = OnlineCovariance(device="cuda")
 
@@ -141,7 +141,7 @@ class MahalanobisCollapser:
 #         # Add regularization and compute inverse covariance
 #         cov_reg = cov + self.reg * pt.eye(cov.shape[0], device=cov.device)
 #         self.inverse_cov = pt.linalg.inv(cov_reg)
-#         self.reset_vecs()
+#         self._reset_vecs()
 
 #     def collapse(self, vecs):
 #         centered = vecs - self.mean

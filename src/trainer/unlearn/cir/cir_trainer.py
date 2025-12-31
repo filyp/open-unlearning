@@ -21,11 +21,6 @@ from trainer.unlearn.cir.collapsers import MahalanobisCollapser, TopPCsCollapser
 logging.basicConfig(level=logging.INFO)
 
 
-def save_output_hook(module, args, output):
-    # install hooks for MLPs
-    module.cached_out = output
-
-
 class CIRCallback(TrainerCallback):
     """Callback to extract distribution stats at epoch end."""
 
@@ -53,8 +48,6 @@ class CIR(UnlearnTrainer):
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
         install_act_and_grad_caching_hooks(model)
-        for layer_id in range(*cfg.layer_range):
-            model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
 
         self.batches = PreCachingDataLoader(
             self.train_dataset,
@@ -72,14 +65,13 @@ class CIR(UnlearnTrainer):
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
-        if cfg.get("grad_proj_num", 0) > 0:
-            self.grads_collapsers = {
-                n: TopPCsCollapser(cfg.grad_proj_num)
-                for n, m in model.named_modules()
-                if hasattr(m, "weight") and m.weight.requires_grad
-            }
-        else:
-            self.grads_collapsers = {}
+        self.grads_collapsers = {}
+        # self.grads_collapsers = {
+        #     n: TopPCsCollapser(cfg.grad_proj_num)
+        #     # n: MahalanobisCollapser(cfg.grad_reg)
+        #     for n, m in model.named_modules()
+        #     if hasattr(m, "weight") and m.weight.requires_grad
+        # }
 
         self.add_callback(CIRCallback(self))
 

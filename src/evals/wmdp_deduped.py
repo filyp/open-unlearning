@@ -167,7 +167,7 @@ class WMDPDedupedEvaluator(Evaluator):
 
         # * check condition to stop training
         if res["wikitext_kl"] > self.eval_cfg.disr_budget:
-            logging.info("Wikitext loss exceeded the disruption budget")
+            logging.info("Wikitext KL exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
             return res
 

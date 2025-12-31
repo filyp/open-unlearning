@@ -147,7 +147,16 @@ def cb_retain_loss(output, batch, cfg):
 ################################ loss helpers #################################
 
 
+def _save_output_hook(module, args, output):
+    # install hooks for MLPs
+    module.cached_out = output
+
+
 def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
+    # install hooks for MLPs
+    for layer_id in range(*cfg.layer_range):
+        model.model.layers[layer_id].mlp.register_forward_hook(_save_output_hook)
+
     for layer_id in range(*cfg.layer_range):
         model.model.layers[layer_id].mlp.org_mlp_out_norm = 0
 

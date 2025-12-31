@@ -8,15 +8,16 @@ args:
   optim: sgd
   lr_scheduler_type: constant
   learning_rate: 0.8
-  per_device_train_batch_size: 32
+  per_device_train_batch_size: 16
   # per_device_eval_batch_size: 16
 
 method_args:
   cfg:
-    layer_range: [0, 16]
+    layer_range: [0, 5]
 
     act_quantile: 0.94
     act_reg: 3e-3
+    # grad_reg: 3e-2
     # mlp_quantile: 0.5  # useful on later layers, but very slightly
     # mlp_reg: 3e-3  # no effect, at least for WMDP; todo test it on toxicity
 
@@ -47,3 +48,4 @@ method_args:
     # project_to_mahal: True
     # mlp_filter_reg: 0.002
     # mlp_out_norm_pow: 0.0
+    # grad_filt_pow: 0.0
