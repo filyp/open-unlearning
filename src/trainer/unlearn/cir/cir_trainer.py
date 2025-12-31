@@ -127,15 +127,6 @@ class CIR(UnlearnTrainer):
             grads = module.last_grad_full[token_mask].to(pt.float32)
             assert len(acts.shape) == len(grads.shape) == 2
 
-            # todo move back down, after the "continue"
-            if self.cfg.get("act_quantile", 0) > 0:
-                dists = acts.norm(dim=1)
-                act_relev_mask = compute_per_text_quantile_mask(
-                    dists, token_mask, self.cfg.act_quantile
-                )
-                acts = acts[act_relev_mask]
-                grads = grads[act_relev_mask]
-
             self.acts_collapsers[name].add_vecs(acts)
             if self.grads_collapsers:
                 self.grads_collapsers[name].add_vecs(grads)
@@ -143,8 +134,13 @@ class CIR(UnlearnTrainer):
             if not self.collapsers_initialized:
                 continue  # first epoch, so only collect activations and not train
 
-
-
+            if self.cfg.get("act_quantile", 0) > 0:
+                dists = acts.norm(dim=1)
+                act_relev_mask = compute_per_text_quantile_mask(
+                    dists, token_mask, self.cfg.act_quantile
+                )
+                acts = acts[act_relev_mask]
+                grads = grads[act_relev_mask]
 
             acts = self.acts_collapsers[name].collapse(acts)
             if self.grads_collapsers:
