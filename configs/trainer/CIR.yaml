@@ -8,6 +8,8 @@ args:
   optim: sgd
   lr_scheduler_type: constant
   learning_rate: 0.8
+  per_device_train_batch_size: 32
+  # per_device_eval_batch_size: 16
 
 method_args:
   cfg:
@@ -22,12 +24,8 @@ method_args:
       - gate_proj
       - up_proj
       # - down_proj
-    train_batch_size: 32  # todo specify this batch size in args above
-    retain_batch_size: 32
     
     # grad_proj_num: 6  # helps about 2x
-
-    mlp_out_norm_pow: 2.0
 
     # # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
@@ -48,3 +46,4 @@ method_args:
     # filter_reg: 10
     # project_to_mahal: True
     # mlp_filter_reg: 0.002
+    # mlp_out_norm_pow: 0.0

@@ -6,17 +6,17 @@ from transformers import TrainerCallback
 
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
-    batched,
+    PreCachingDataLoader,
     cache_activations_for_cb_retain_loss,
     cache_activations_for_mlp_breaking_loss,
     cb_retain_loss,
     compute_per_text_quantile_mask,
     get_token_mask,
+    install_act_and_grad_caching_hooks,
     mlp_breaking_loss,
     prep_batch,
-    install_hooks,
 )
-from trainer.unlearn.cir.collapsers import TopPCsCollapser, MahalanobisCollapser
+from trainer.unlearn.cir.collapsers import MahalanobisCollapser, TopPCsCollapser
 
 logging.basicConfig(level=logging.INFO)
 
@@ -52,25 +52,19 @@ class CIR(UnlearnTrainer):
         for n, p in model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
-        install_hooks(model)
+        install_act_and_grad_caching_hooks(model)
         for layer_id in range(*cfg.layer_range):
             model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
 
-        # * go through whole dataset, to prepare the batches in advance
-        self.forget_batches = []
-        self.retain_batches = []
-        for f, r in zip(
-            # prepare separately forget and retain, to support different batch sizes
-            batched(self.train_dataset.forget, cfg.train_batch_size),
-            batched(self.train_dataset.retain, cfg.retain_batch_size),
-        ):
-            self.forget_batches.append(self.data_collator(f))
-            self.retain_batches.append(self.data_collator(r))
-        del self.train_dataset
+        self.batches = PreCachingDataLoader(
+            self.train_dataset,
+            self.data_collator,
+            self.args.per_device_train_batch_size,
+        )
 
-        cache_activations_for_mlp_breaking_loss(model, self.forget_batches, cfg)
+        cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
         if cfg.get("retaining_rate", 0) > 0:
-            cache_activations_for_cb_retain_loss(model, self.retain_batches, cfg)
+            cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
 
         self.acts_collapsers = {
             n: MahalanobisCollapser(cfg.act_reg)
@@ -91,20 +85,7 @@ class CIR(UnlearnTrainer):
 
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
-
-        class CIRDataLoader:
-            def __init__(self, forget_batches, retain_batches):
-                self.forget_batches = forget_batches
-                self.retain_batches = retain_batches
-
-            def __iter__(self):
-                for fb, rb in zip(self.forget_batches, self.retain_batches):
-                    yield {"forget": fb, "retain": rb}
-
-            def __len__(self):
-                return len(self.forget_batches)
-
-        return CIRDataLoader(self.forget_batches, self.retain_batches)
+        return self.batches
 
     def training_step(self, model, inputs):
         # note that we may lose some functionality from the original trainer.training_step
@@ -192,4 +173,3 @@ class CIR(UnlearnTrainer):
 # dists = (centered * mahal_dirs_norm).sum(dim=1)
 # dists = (centered * mahal_dirs).sum(dim=1)
 # dists = (centered_norm * mahal_dirs).sum(dim=1)
-
