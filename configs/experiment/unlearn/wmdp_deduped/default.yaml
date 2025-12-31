@@ -31,12 +31,10 @@ tokenizer_cfg:
   padding: true
   truncation: true
 
-
 data:
   custom_loaders:
     wmdp_bio_deduped:
       dataset: bio
-      use_dev_split: false
       eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}

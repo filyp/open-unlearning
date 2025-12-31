@@ -123,6 +123,6 @@
 #   trainer.method_args.cfg.act_reg: "tag(log, interval(3e-4, 1e-2))"
 
 params: 
-  trainer.args.learning_rate: "tag(log, interval(0.6, 1))"
+  trainer.args.learning_rate: "tag(log, interval(0.6, 1.2))"
   trainer.method_args.cfg.act_quantile: "interval(0.9, 0.96)"
   trainer.method_args.cfg.act_reg: "tag(log, interval(1e-3, 8e-3))"

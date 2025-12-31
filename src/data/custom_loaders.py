@@ -35,8 +35,8 @@ def load_hf(cfg, **kwargs):
     return {cfg.load_as: batches}
 
 
-def _load_from_repo(path):
-    base_url = "https://raw.githubusercontent.com/filyp/unlearning/refs/heads/main/data"
+def _load_from_repo(path, repo="filyp/unlearning"):
+    base_url = f"https://raw.githubusercontent.com/{repo}/refs/heads/main"
     return load_dataset(
         "json",
         data_files=[f"{base_url}/{path}"],
@@ -45,7 +45,7 @@ def _load_from_repo(path):
 
 
 def wikitext(cfg, **kwargs):
-    wikitext = _load_from_repo("wikitext_16k.jsonl")
+    wikitext = _load_from_repo("data/wikitext_16k.jsonl")
     batches = [
         kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
         for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
@@ -86,9 +86,8 @@ def _load_recall_batches(questions, cfg, tokenizer):
 def wmdp_bio_deduped(cfg, **kwargs):
     tokenizer = kwargs["tokenizer"]
 
-    is_dev = "dev_" if cfg.use_dev_split else ""
-    T = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}T_corpus_simple.jsonl")
-    V = _load_from_repo(f"wmdp_deduped_{cfg.dataset}/{is_dev}V_corpus_simple.jsonl")
+    T = _load_from_repo(f"data/wmdp_deduped_{cfg.dataset}/all_T_corpus_simple.jsonl")
+    V = _load_from_repo(f"data/wmdp_deduped_{cfg.dataset}/all_V_corpus_simple.jsonl")
 
     T_and_V = concatenate_datasets([T, V])
     eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V

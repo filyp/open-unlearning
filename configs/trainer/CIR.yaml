@@ -27,6 +27,8 @@ method_args:
     
     # grad_proj_num: 6  # helps about 2x
 
+    mlp_out_norm_pow: 2.0
+
     # # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
     # cb_retaining_layers: [7]  # for 8B use [12]

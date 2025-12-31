@@ -99,7 +99,7 @@ def mlp_breaking_loss(model, batch, cfg):
 
         org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
-        dotproducts = dotproducts / org_norm**2
+        dotproducts = dotproducts / org_norm**cfg.mlp_out_norm_pow
         loss_acc += dotproducts.clip(min=0).mean()
 
     return loss_acc / len(range(*cfg.layer_range))
