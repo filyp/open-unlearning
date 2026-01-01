@@ -61,11 +61,13 @@ class CIR(UnlearnTrainer):
 
         self.acts_collapsers = {
             n: MahalanobisCollapser(cfg.act_reg)
+            # n: TopPCsCollapser(24)
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
         self.grads_collapsers = {}
+
         # self.grads_collapsers = {
         #     n: TopPCsCollapser(cfg.grad_proj_num)
         #     # n: MahalanobisCollapser(cfg.grad_reg)

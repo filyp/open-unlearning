@@ -60,7 +60,7 @@ data:
 eval:
   deduped:
     handler: WMDPDedupedEvaluator
-    disr_budget: 0.004  # KL Divergence budget
+    disr_budget: 0.005  # KL Divergence budget
     # * uncomment to use wandb:
     wandb:
       project: open-unlearning-optuna

@@ -93,19 +93,37 @@ class MahalanobisCollapser:
         self.eig_vec = self.online_cov.eig_vec
         self._reset_vecs()
 
+    # def collapse(self, vecs):
+    #     centered = vecs - self.mean
+    #     projected = centered @ self.eig_vec  # (N, D)
+
+    #     # ! Compute Mahalanobis directions using eigendecomposition
+    #     # Scale reg by largest eigenvalue (last one from eigh)
+    #     _reg = self.reg * self.eig_val[-1]
+    #     # mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T  # works similarly good to clamping
+    #     eig_val_clamped = self.eig_val.clamp(min=_reg)
+    #     mahal_dirs = (projected / eig_val_clamped) @ self.eig_vec.T
+
+    #     # project to mahalanobis directions
+    #     mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+    #     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+    #     return proj_strenghts * mahal_dirs_norm
+
+
     def collapse(self, vecs):
         centered = vecs - self.mean
         projected = centered @ self.eig_vec  # (N, D)
 
-        # ! Compute Mahalanobis directions using eigendecomposition
-        # Scale reg by largest eigenvalue (last one from eigh)
         _reg = self.reg * self.eig_val[-1]
-        mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T
+        eig_val_clamped = self.eig_val.clamp(min=_reg)
+        scale = eig_val_clamped / _reg
+        mahal_dirs = (projected / scale) @ self.eig_vec.T
+        return mahal_dirs
 
-        # project to mahalanobis directions
-        mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-        return proj_strenghts * mahal_dirs_norm
+        # # project to mahalanobis directions
+        # mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+        # proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+        # return proj_strenghts * mahal_dirs_norm
 
 
 # class MahalanobisCollapserInvCov:
