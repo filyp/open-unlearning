@@ -120,12 +120,6 @@ class MahalanobisCollapser:
         mahal_dirs = (projected / scale) @ self.eig_vec.T
         return mahal_dirs
 
-        # # project to mahalanobis directions
-        # mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        # proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-        # return proj_strenghts * mahal_dirs_norm
-
-
 # class MahalanobisCollapserInvCov:
 #     """Same as MahalanobisCollapser, but uses inverse covariance instead of eigendecomposition.
 

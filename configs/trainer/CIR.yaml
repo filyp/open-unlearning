@@ -14,9 +14,10 @@ args:
 
 method_args:
   cfg:
-    layer_range: [0, 5]
+    layer_range: [0, 16]
 
     act_quantile: 0.85
+    # act_reg: 3e-3
     act_reg: 3e-3
     # grad_reg: 3e-3
     # mlp_quantile: 0.5  # useful on later layers, but very slightly
