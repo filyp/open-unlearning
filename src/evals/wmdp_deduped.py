@@ -107,6 +107,11 @@ def _get_temperature_1_accuracy(lm_eval_results):
     return target_probs.mean().item()
 
 
+# todo for MobileLLM: it does not have lm_head!
+# https://github.com/facebookresearch/MobileLLM/blob/main/utils/modeling_llama.py
+# logits = F.linear(hidden_states, self.model.embed_tokens.weight)
+
+
 class WMDPDedupedEvaluator(Evaluator):
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg

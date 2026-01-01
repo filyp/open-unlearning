@@ -16,7 +16,7 @@ from trainer.unlearn.cir.cir_utils import (
     mlp_breaking_loss,
     prep_batch,
 )
-from trainer.unlearn.cir.collapsers import MahalanobisCollapser, TopPCsCollapser
+from trainer.unlearn.cir.collapsers import ApproxMahalanobisCollapser, MahalanobisCollapser, TopPCsCollapser
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,18 +62,19 @@ class CIR(UnlearnTrainer):
         self.acts_collapsers = {
             n: MahalanobisCollapser(cfg.act_reg)
             # n: TopPCsCollapser(24)
+            # n: ApproxMahalanobisCollapser(300)
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
-        self.grads_collapsers = {}
-
-        # self.grads_collapsers = {
-        #     n: TopPCsCollapser(cfg.grad_proj_num)
-        #     # n: MahalanobisCollapser(cfg.grad_reg)
-        #     for n, m in model.named_modules()
-        #     if hasattr(m, "weight") and m.weight.requires_grad
-        # }
+        # self.grads_collapsers = {}
+        self.grads_collapsers = {
+            # n: TopPCsCollapser(24)
+            # n: MahalanobisCollapser(cfg.grad_reg)
+            n: ApproxMahalanobisCollapser(self.cfg.grad_proj_num)
+            for n, m in model.named_modules()
+            if hasattr(m, "weight") and m.weight.requires_grad
+        }
 
         self.add_callback(CIRCallback(self))
 
@@ -114,6 +115,10 @@ class CIR(UnlearnTrainer):
                 act_relev_mask = compute_per_text_quantile_mask(
                     dists, token_mask, self.cfg.act_quantile
                 )
+                # dists = grads.norm(dim=1)
+                # grad_relev_mask = compute_per_text_quantile_mask(
+                #     dists, token_mask, self.cfg.grad_quantile
+                # )
                 acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
