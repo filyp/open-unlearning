@@ -67,6 +67,22 @@ class TopPCsCollapser:
         return vecs
 
 
+########################################################
+
+
+def _get_mahal_dirs(centered, eig_val, eig_vec):
+    # Compute Mahalanobis directions using eigendecomposition
+    projected = centered @ eig_vec  # (N, D)
+    proj_diff = projected - projected / (eig_val / eig_val.min())
+    return centered - proj_diff @ eig_vec.T
+
+
+def _proj_to_mahal_dirs(centered, mahal_dirs):
+    mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+    proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+    return proj_strenghts * mahal_dirs_norm
+
+
 class ApproxMahalanobisCollapser:
     def __init__(self, num_proj: int = 1000):
         self.num_proj = num_proj
@@ -77,7 +93,8 @@ class ApproxMahalanobisCollapser:
         self.cache = []
 
     def add_vecs(self, vecs):
-        self.cache.append(vecs.cpu())
+        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
+        self.cache.append(vecs)
 
     def process_saved_vecs(self):
         # Compute PCA projections for gradients (to collapse)
@@ -98,18 +115,8 @@ class ApproxMahalanobisCollapser:
 
     def collapse(self, vecs):
         centered = vecs - self.mean
-        projected = centered @ self.pca_components  # (N, D)
-
-        remainder = centered - (projected @ self.pca_components.T)
-
-        # ! Compute Mahalanobis directions using eigendecomposition
-        mahal_dirs = (projected / self.eig_val) @ self.pca_components.T
-        mahal_dirs = mahal_dirs + (remainder / self.eig_val.min())
-
-        # project to mahalanobis directions
-        mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-        return proj_strenghts * mahal_dirs_norm
+        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.pca_components)
+        return _proj_to_mahal_dirs(centered, mahal_dirs)
 
 
 class MahalanobisCollapser:
@@ -117,8 +124,8 @@ class MahalanobisCollapser:
     eig_val: pt.Tensor
     eig_vec: pt.Tensor
 
-    def __init__(self, reg: float = 3e-3):
-        self.reg = reg
+    def __init__(self, PCs_to_use: int):
+        self.PCs_to_use = PCs_to_use
         self._reset_vecs()
 
     def _reset_vecs(self):
@@ -133,25 +140,29 @@ class MahalanobisCollapser:
         if self.online_cov.mean is None:
             return
         self.mean = self.online_cov.mean
-        self.eig_val = self.online_cov.eig_val
-        self.eig_vec = self.online_cov.eig_vec
+        self.eig_val = self.online_cov.eig_val[-self.PCs_to_use :]
+        self.eig_vec = self.online_cov.eig_vec[:, -self.PCs_to_use :]
         self._reset_vecs()
 
     def collapse(self, vecs):
         centered = vecs - self.mean
-        projected = centered @ self.eig_vec  # (N, D)
+        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.eig_vec)
+        return _proj_to_mahal_dirs(centered, mahal_dirs)
 
-        # ! Compute Mahalanobis directions using eigendecomposition
-        # Scale reg by largest eigenvalue (last one from eigh)
-        _reg = self.reg * self.eig_val[-1]
-        # mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T  # works similarly good to clamping
-        eig_val_clamped = self.eig_val.clamp(min=_reg)
-        mahal_dirs = (projected / eig_val_clamped) @ self.eig_vec.T
+    # def collapse(self, vecs):
+    #     centered = vecs - self.mean
+    #     projected = centered @ self.eig_vec  # (N, D)
 
-        # project to mahalanobis directions
-        mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-        return proj_strenghts * mahal_dirs_norm
+    #     # ! Compute Mahalanobis directions using eigendecomposition
+    #     # eig_val goes from smallest to largest
+    #     _reg = self.eig_val[-self.PCs_to_use]
+    #     eig_val_clamped = self.eig_val.clamp(min=_reg)
+    #     mahal_dirs = (projected / eig_val_clamped) @ self.eig_vec.T
+
+    #     # project to mahalanobis directions
+    #     mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+    #     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+    #     return proj_strenghts * mahal_dirs_norm
 
     # def collapse(self, vecs):
     #     # we rescale the components directly, rather than projecting to mahalanobis directions
@@ -161,6 +172,8 @@ class MahalanobisCollapser:
     #     eig_val_clamped = self.eig_val.clamp(min=_reg)
     #     scale = eig_val_clamped / _reg
     #     return (projected / scale) @ self.eig_vec.T
+
+    # mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T  # works similarly good to clamping
 
 
 # class MahalanobisCollapserInvCov:

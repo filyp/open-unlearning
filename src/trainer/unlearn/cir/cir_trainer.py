@@ -64,12 +64,15 @@ class CIR(UnlearnTrainer):
             cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
         if cfg.get("retaining_rate", 0) > 0:
             cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
+        
+        for batch in self.batches.forget:
+            batch["act_relev_mask"] = {}
 
         self.acts_collapsers = {}
         self.grads_collapsers = {}
 
         self.acts_collapsers = {
-            n: MahalanobisCollapser(cfg.act_reg)
+            n: MahalanobisCollapser(cfg.act_pcs_to_use)
             # n: TopPCsCollapser(24)
             # n: ApproxMahalanobisCollapser(300)
             for n, m in model.named_modules()
@@ -78,8 +81,8 @@ class CIR(UnlearnTrainer):
 
         self.grads_collapsers = {
             # n: TopPCsCollapser(24)
-            # n: MahalanobisCollapser(cfg.grad_reg)
-            n: ApproxMahalanobisCollapser(self.cfg.grad_proj_num)
+            # n: MahalanobisCollapser(cfg.grad_pcs_to_use)
+            n: ApproxMahalanobisCollapser(self.cfg.grad_pcs_to_use)
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
@@ -123,14 +126,14 @@ class CIR(UnlearnTrainer):
                 continue  # first epoch, so only collect activations and not train
 
             if self.cfg.get("act_quantile", 0) > 0:
-                dists = acts.norm(dim=1)
-                act_relev_mask = compute_per_text_quantile_mask(
-                    dists, token_mask, self.cfg.act_quantile
-                )
-                # dists = grads.norm(dim=1)
-                # grad_relev_mask = compute_per_text_quantile_mask(
-                #     dists, token_mask, self.cfg.grad_quantile
-                # )
+                if name in batch["act_relev_mask"]:
+                    act_relev_mask = batch["act_relev_mask"][name]
+                else:
+                    dists = acts.norm(dim=1)
+                    act_relev_mask = compute_per_text_quantile_mask(
+                        dists, token_mask, self.cfg.act_quantile
+                    )
+                    batch["act_relev_mask"][name] = act_relev_mask
                 acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
