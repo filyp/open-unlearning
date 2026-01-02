@@ -5,6 +5,7 @@ defaults:
   # - override /model: Llama-3.2-3B
   - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
+  # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
   - override /data/datasets@data.forget: null
   - override /data/datasets@data.retain: null
@@ -42,7 +43,7 @@ data:
     wikitext:
       load_as: wikitext
       batch_size: 8  # for 16 batches of 16 examples each, eval takes 3s
-      num_batches: 24
+      num_batches: 16
       tokenizer: ${tokenizer_cfg}
     load_hf:  # fineweb bio dataset
       load_as: retain
@@ -62,6 +63,7 @@ eval:
   deduped:
     handler: WMDPDedupedEvaluator
     disr_budget: 0.004  # KL Divergence budget
+    eval_mcq: true
     # * uncomment to use wandb:
     wandb:
       project: open-unlearning-optuna

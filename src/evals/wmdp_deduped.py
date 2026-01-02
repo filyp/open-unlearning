@@ -3,6 +3,7 @@ import logging
 
 import lm_eval.tasks
 import torch as pt
+import torch.nn.functional as F
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
@@ -49,7 +50,7 @@ def _cache_last_hidden_states(model, batches):
             batch["cached_last_hidden"] = output.hidden_states[-1].detach()
 
 
-def _get_loss_and_kl(model, batches, cached_lm_head):
+def _get_loss_and_kl(model, batches, acts_to_logits):
     """Compute loss and KL divergence in a single pass.
 
     KL(P || Q) where P is the original model (cached) and Q is the current model.
@@ -66,9 +67,9 @@ def _get_loss_and_kl(model, batches, cached_lm_head):
 
             current_logits = output.logits.float()
 
-            # Reconstruct original logits from cached hidden states and lm_head
+            # Reconstruct original logits from cached hidden states
             cached_hidden = batch["cached_last_hidden"]
-            cached_logits = cached_lm_head(cached_hidden).float()
+            cached_logits = acts_to_logits(cached_hidden).float()
             assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
 
             # Get mask for valid tokens (labels != -100)
@@ -107,9 +108,19 @@ def _get_temperature_1_accuracy(lm_eval_results):
     return target_probs.mean().item()
 
 
-# todo for MobileLLM: it does not have lm_head!
-# https://github.com/facebookresearch/MobileLLM/blob/main/utils/modeling_llama.py
-# logits = F.linear(hidden_states, self.model.embed_tokens.weight)
+def _create_acts_to_logits(model):
+    """Create a function to convert hidden states to logits.
+
+    Handles models with lm_head and models with shared embeddings (e.g., MobileLLM).
+    Copies the weights so they're preserved even if the model changes during training.
+    """
+    if hasattr(model, "lm_head"):
+        cached_lm_head = copy.deepcopy(model.lm_head)
+        return cached_lm_head
+    else:
+        # MobileLLM-style: use shared embedding weights
+        cached_embed_weight = model.model.embed_tokens.weight.detach().clone()
+        return lambda h: F.linear(h, cached_embed_weight)
 
 
 class WMDPDedupedEvaluator(Evaluator):
@@ -121,14 +132,15 @@ class WMDPDedupedEvaluator(Evaluator):
         self.recall_batches = data["recall"]
         self.eval_qs = data["eval_qs"]
 
-        # Get the wmdp_bio task (uses the standard template)
-        # Use include_defaults=False and only include wmdp tasks for a much faster init
-        wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
-        task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-        self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
-        # Modify the wmdp_bio task to use our custom questions
-        task = self.task_dict["wmdp_bio"]
-        task.dataset["test"] = data["eval_qs"]
+        if self.eval_cfg.eval_mcq:
+            # Get the wmdp_bio task (uses the standard template)
+            # Use include_defaults=False and only include wmdp tasks for a much faster init
+            wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
+            task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
+            self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
+            # Modify the wmdp_bio task to use our custom questions
+            task = self.task_dict["wmdp_bio"]
+            task.dataset["test"] = data["eval_qs"]
 
         if eval_cfg.get("wandb"):
             wandb.init(
@@ -144,31 +156,34 @@ class WMDPDedupedEvaluator(Evaluator):
         pt.cuda.empty_cache()
 
         assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
-        if not hasattr(self, "cached_lm_head"):
-            # ! First evaluation, before training, so:
+        first_eval = not hasattr(self, "acts_to_logits")
+        if first_eval:  # ! first evaluation, before training
             # Cache last hidden states for wikitext KL divergence computation
             _cache_last_hidden_states(model, self.wikitext)
-            # Clone lm_head in case it changes during training
-            self.cached_lm_head = copy.deepcopy(model.lm_head)
+            # Create function to convert hidden states to logits (copies weights)
+            self.acts_to_logits = _create_acts_to_logits(model)
 
         res = {}
         res["wikitext_loss"], res["wikitext_kl"] = _get_loss_and_kl(
-            model, self.wikitext, self.cached_lm_head
+            model, self.wikitext, self.acts_to_logits
         )
         res["recall_loss"] = _get_loss(model, self.recall_batches)
         # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
-        # * eval forget acc
-        lm = HFLM(pretrained=model, tokenizer=kwargs["tokenizer"], batch_size=8)
-        lm_eval_results = evaluator.evaluate(
-            lm=lm,
-            task_dict=self.task_dict,
-            log_samples=True,
-        )
-        res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
-        res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
+        if self.eval_cfg.eval_mcq:
+            # * eval forget acc
+            lm = HFLM(pretrained=model, tokenizer=kwargs["tokenizer"], batch_size=8)
+            lm_eval_results = evaluator.evaluate(
+                lm=lm,
+                task_dict=self.task_dict,
+                log_samples=True,
+            )
+            res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
+            res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         # ! finished evaluating, now handle the results
+        if first_eval:
+            assert res["wikitext_kl"] == 0, "Initial KL should be 0"
 
         # * check condition to stop training
         if res["wikitext_kl"] > self.eval_cfg.disr_budget:

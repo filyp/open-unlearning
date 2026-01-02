@@ -14,9 +14,14 @@ from trainer.unlearn.cir.cir_utils import (
     get_token_mask,
     install_act_and_grad_caching_hooks,
     mlp_breaking_loss,
+    normalize_grads,
     prep_batch,
 )
-from trainer.unlearn.cir.collapsers import ApproxMahalanobisCollapser, MahalanobisCollapser, TopPCsCollapser
+from trainer.unlearn.cir.collapsers import (
+    ApproxMahalanobisCollapser,
+    MahalanobisCollapser,
+    TopPCsCollapser,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,9 +60,13 @@ class CIR(UnlearnTrainer):
             self.args.per_device_train_batch_size,
         )
 
-        cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
+        if cfg.get("forget_loss") == "mlp_breaking":
+            cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
         if cfg.get("retaining_rate", 0) > 0:
             cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
+
+        self.acts_collapsers = {}
+        self.grads_collapsers = {}
 
         self.acts_collapsers = {
             n: MahalanobisCollapser(cfg.act_reg)
@@ -67,7 +76,6 @@ class CIR(UnlearnTrainer):
             if hasattr(m, "weight") and m.weight.requires_grad
         }
 
-        # self.grads_collapsers = {}
         self.grads_collapsers = {
             # n: TopPCsCollapser(24)
             # n: MahalanobisCollapser(cfg.grad_reg)
@@ -90,7 +98,10 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
-        forget_loss = mlp_breaking_loss(model, batch, self.cfg)
+        if self.cfg.get("forget_loss") == "mlp_breaking":
+            forget_loss = mlp_breaking_loss(model, batch, self.cfg)
+        else:
+            forget_loss = -output.loss
         forget_loss.backward()
 
         # ! here we modify the grad
@@ -103,7 +114,8 @@ class CIR(UnlearnTrainer):
             grads = module.last_grad_full[token_mask].to(pt.float32)
             assert len(acts.shape) == len(grads.shape) == 2
 
-            self.acts_collapsers[name].add_vecs(acts)
+            if self.acts_collapsers:
+                self.acts_collapsers[name].add_vecs(acts)
             if self.grads_collapsers:
                 self.grads_collapsers[name].add_vecs(grads)
 
@@ -122,7 +134,8 @@ class CIR(UnlearnTrainer):
                 acts = acts[act_relev_mask]
                 grads = grads[act_relev_mask]
 
-            acts = self.acts_collapsers[name].collapse(acts)
+            if self.acts_collapsers:
+                acts = self.acts_collapsers[name].collapse(acts)
             if self.grads_collapsers:
                 grads = self.grads_collapsers[name].collapse(grads)
 
@@ -139,6 +152,8 @@ class CIR(UnlearnTrainer):
             retain_loss = cb_retain_loss(output, r_batch, self.cfg)
             retain_loss *= self.cfg.retaining_rate
             retain_loss.backward()
+
+        normalize_grads(model)
 
         if not self.collapsers_initialized:
             # First epoch: zero gradients so optimizer.step() is no-op

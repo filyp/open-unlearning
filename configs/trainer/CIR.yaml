@@ -7,18 +7,14 @@ handler: CIR
 args:
   optim: sgd
   lr_scheduler_type: constant
-  learning_rate: 0.5
+  learning_rate: 0.15
   per_device_train_batch_size: 16
   # per_device_eval_batch_size: 16
 
 method_args:
   cfg:
-    # layer_range: [0, 16]  # Llama-3.2-1B has 16 layers
-    # layer_range: [0, 30]  # MobileLLM-125M has 30 layers
-    layer_range: [0, 10]
-
     act_quantile: 0.93
-    act_reg: 0.015  # 3e-3 is too high
+    act_reg: 0.015  # 3e-3
 
     target_modules:
       - gate_proj
@@ -27,9 +23,16 @@ method_args:
     
     # grad_reg: 3e-3
     grad_proj_num: 600
+    
+    # forget_loss: mlp_breaking
+    forget_loss: null
 
+    # ! unused params
     # mlp_quantile: 0.5  # useful on later layers, but very slightly
     # mlp_reg: 3e-3  # no effect, at least for WMDP; todo test it on toxicity
+    # layer_range: [0, 10]
+    ## Llama-3.2-1B has 16 layers
+    ## MobileLLM-125M has 30 layers
 
     # # ! retaining params
     # retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow

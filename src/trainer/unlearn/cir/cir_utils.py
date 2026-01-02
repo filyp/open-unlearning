@@ -1,5 +1,6 @@
 # %%
 from itertools import islice
+import logging
 
 import torch as pt
 
@@ -72,6 +73,7 @@ def compute_per_text_quantile_mask(
     Returns:
         Boolean mask of same length as dists, True for tokens above their text's quantile threshold
     """
+    # todo: apparently this is quite slow, so maybe compute only at the beginning and store the masks?
     batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
     act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
     for text_idx in batch_indices.unique():
@@ -103,14 +105,30 @@ class PreCachingDataLoader:
         return len(self.forget)
 
 
+def normalize_grads(model):
+    # L2 norm of weight.grad, computed across all the trainable weights
+    update_norm = pt.sqrt(
+        sum(
+            p.grad.float().norm() ** 2 for p in model.parameters() if p.grad is not None
+        )
+    )
+    # normalize the grads
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad /= update_norm
+    # print(f"update_norm: {update_norm}")
+
+
 ################################ loss functions #################################
 
 
 def mlp_breaking_loss(model, batch, cfg):
     _mask = get_token_mask(batch)
 
+    layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
+
     loss_acc = 0
-    for layer_id in range(*cfg.layer_range):
+    for layer_id in range(*layer_range):
         mlp = model.model.layers[layer_id].mlp
         out = mlp.cached_out
         out = out[_mask].float()
@@ -122,7 +140,7 @@ def mlp_breaking_loss(model, batch, cfg):
         dotproducts = dotproducts / mlp.org_mlp_out_norm**2
         loss_acc += dotproducts.clip(min=0).mean()
 
-    return loss_acc / len(range(*cfg.layer_range))
+    return loss_acc / len(range(*layer_range))
 
 
 def cb_retain_loss(output, batch, cfg):
@@ -153,11 +171,14 @@ def _save_output_hook(module, args, output):
 
 
 def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
+    layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
+    logging.info(f"layer_range for mlp_breaking_loss: {layer_range}")
+
     # install hooks for MLPs
-    for layer_id in range(*cfg.layer_range):
+    for layer_id in range(*layer_range):
         model.model.layers[layer_id].mlp.register_forward_hook(_save_output_hook)
 
-    for layer_id in range(*cfg.layer_range):
+    for layer_id in range(*layer_range):
         model.model.layers[layer_id].mlp.org_mlp_out_norm = 0
 
     for batch in batches:
@@ -165,16 +186,16 @@ def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
             model(**prep_batch(batch, model.device))
         _mask = get_token_mask(batch)
         batch["org_mlp_out"] = {}
-        for layer_id in range(*cfg.layer_range):
+        for layer_id in range(*layer_range):
             mlp = model.model.layers[layer_id].mlp
             out = mlp.cached_out.detach()[_mask]
             batch["org_mlp_out"][layer_id] = out
             mlp.org_mlp_out_norm += out.float().norm(dim=-1).mean().item()
 
-    for layer_id in range(*cfg.layer_range):
+    for layer_id in range(*layer_range):
         model.model.layers[layer_id].mlp.org_mlp_out_norm /= len(batches)
 
-    for layer_id in range(*cfg.layer_range):
+    for layer_id in range(*layer_range):
         # # Extract eigendecomposition and apply mahalanobis projection
         # # Compute covariance statistics per layer using all batches
         # if cfg.get("mlp_reg") is not None:
@@ -214,24 +235,6 @@ def cache_activations_for_cb_retain_loss(model, batches, cfg):
             l_num: output.hidden_states[l_num].detach().to("cpu")
             for l_num in cfg.cb_retaining_layers
         }
-
-
-# def get_update_norm(model):
-#     """L2 norm of weight.grad, computed across all the trainable weights."""
-#     return (
-#         sum(
-#             m.weight.grad.to(pt.float32).norm() ** 2
-#             for _, m in trainable_modules(model)
-#             if m.weight.grad is not None
-#         )
-#         ** 0.5
-#     )
-
-
-# def scale_grads_(model, factor: float):
-#     for p in model.parameters():
-#         if p.grad is not None:
-#             p.grad *= factor
 
 
 # def PCA_gpu(v):

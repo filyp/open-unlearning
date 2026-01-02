@@ -186,3 +186,4 @@ multirun/
 CLAUDE.md
 slurm-*.out
 job.sh
+profile.prof
