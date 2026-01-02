@@ -156,8 +156,7 @@ def cb_retain_loss(output, batch, cfg):
 
         avg_act_norm = org_acts.norm(dim=-1).mean()
         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
-
-        loss_acc += dist**cfg.cb_retaining_pow
+        loss_acc += dist
 
     return loss_acc / len(cfg.cb_retaining_layers)
 

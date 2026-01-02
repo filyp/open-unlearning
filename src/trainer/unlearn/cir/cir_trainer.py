@@ -62,9 +62,9 @@ class CIR(UnlearnTrainer):
 
         if cfg.get("forget_loss") == "mlp_breaking":
             cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
-        if cfg.get("retaining_rate", 0) > 0:
-            cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
-        
+        # if cfg.get("retaining_rate", 0) > 0:
+        #     cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
+
         for batch in self.batches.forget:
             batch["act_relev_mask"] = {}
 
@@ -74,7 +74,7 @@ class CIR(UnlearnTrainer):
         self.acts_collapsers = {
             n: MahalanobisCollapser(cfg.act_pcs_to_use)
             # n: TopPCsCollapser(24)
-            # n: ApproxMahalanobisCollapser(300)
+            # n: ApproxMahalanobisCollapser(cfg.act_pcs_to_use)
             for n, m in model.named_modules()
             if hasattr(m, "weight") and m.weight.requires_grad
         }
@@ -127,9 +127,12 @@ class CIR(UnlearnTrainer):
 
             if self.cfg.get("act_quantile", 0) > 0:
                 if name in batch["act_relev_mask"]:
+                    # we use the caching, because recalculating these can be slow
                     act_relev_mask = batch["act_relev_mask"][name]
                 else:
                     dists = acts.norm(dim=1)
+                    # dists = acts.norm(dim=1) * grads.norm(dim=1)
+                    # dists = grads.norm(dim=1)
                     act_relev_mask = compute_per_text_quantile_mask(
                         dists, token_mask, self.cfg.act_quantile
                     )
@@ -145,16 +148,15 @@ class CIR(UnlearnTrainer):
             # without the projections, this is the equivalent of normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
 
-        # ! retain pass
-        if self.cfg.get("retaining_rate", 0) > 0:
-            model.zero_grad(set_to_none=True)
-            r_batch = inputs["retain"]
-            output = model(
-                **prep_batch(r_batch, model.device), output_hidden_states=True
-            )
-            retain_loss = cb_retain_loss(output, r_batch, self.cfg)
-            retain_loss *= self.cfg.retaining_rate
-            retain_loss.backward()
+        # # ! retain pass
+        # if self.cfg.get("retaining_rate", 0) > 0:
+        #     r_batch = inputs["retain"]
+        #     output = model(
+        #         **prep_batch(r_batch, model.device), output_hidden_states=True
+        #     )
+        #     retain_loss = cb_retain_loss(output, r_batch, self.cfg)
+        #     retain_loss *= self.cfg.retaining_rate
+        #     retain_loss.backward()
 
         normalize_grads(model)
 
@@ -169,23 +171,10 @@ class CIR(UnlearnTrainer):
 # model = AutoModelForCausalLM.from_pretrained(
 #     cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 # )
-# model.config.use_cache = False
-# trainer = CirTrainer(
-#     model=model,
-#     train_dataset=train_dataset,
-# )
+# trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
 
-
 # * old ways of filtering:
-# act_norms = centered.norm(dim=1, keepdim=True)
-# rescaled_acts = acts * act_norms**(self.cfg.act_norm_pow)
-# dists = (rescaled_acts * mahal_dirs_norm).sum(dim=1)
-
-# Apply mask based on Mahalanobis distance quantile
-# ! note: once, using centered worked better than centered_norm, so investigate it
-# centered_norm = centered / centered.norm(dim=1, keepdim=True)
-
 # dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
 # dists = (centered * mahal_dirs_norm).sum(dim=1)
 # dists = (centered * mahal_dirs).sum(dim=1)

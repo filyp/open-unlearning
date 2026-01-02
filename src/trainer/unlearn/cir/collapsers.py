@@ -48,7 +48,8 @@ class TopPCsCollapser:
         self.cache = []
 
     def add_vecs(self, vecs):
-        self.cache.append(vecs.cpu())
+        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
+        self.cache.append(vecs)
 
     def process_saved_vecs(self):
         # Compute PCA projections for gradients (to collapse)
@@ -74,6 +75,9 @@ def _get_mahal_dirs(centered, eig_val, eig_vec):
     # Compute Mahalanobis directions using eigendecomposition
     projected = centered @ eig_vec  # (N, D)
     proj_diff = projected - projected / (eig_val / eig_val.min())
+    # neg = projected / (eig_val / eig_val.min())
+    # neg[:, -24:] = 0
+    # proj_diff = projected - neg
     return centered - proj_diff @ eig_vec.T
 
 
