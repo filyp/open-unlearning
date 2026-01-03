@@ -55,6 +55,7 @@ class CIR(UnlearnTrainer):
             self.args.per_device_train_batch_size,
         )
 
+        # todo: this can be done in the first epoch
         if cfg.get("forget_loss") == "mlp_breaking":
             cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
         # if cfg.get("retaining_rate", 0) > 0:
@@ -86,10 +87,6 @@ class CIR(UnlearnTrainer):
 
     def training_step(self, model, inputs):
 
-        # model.requires_grad_(False)
-        # model.model.layers[0].mlp.up_proj.weight.requires_grad = True
-        # model.model.layers[0].mlp.gate_proj.weight.requires_grad = True
-
         model.train()
         # ! unlearning loss
         batch = inputs["forget"]
@@ -101,13 +98,7 @@ class CIR(UnlearnTrainer):
             forget_loss = mlp_breaking_loss(model, batch, self.cfg)
         else:
             forget_loss = -output.loss
-
         forget_loss.backward()
-
-        # # * set trainable params
-        # for n, p in model.named_parameters():
-        #     p.requires_grad = any(pattern in n for pattern in self.cfg.target_modules)
-        
 
         grad_corrections = {}
         for name, module in model.named_modules():

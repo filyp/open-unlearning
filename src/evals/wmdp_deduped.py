@@ -192,6 +192,7 @@ class WMDPDedupedEvaluator(Evaluator):
             return res
 
         self.last_valid_res = res
+        # self.last_valid_model_state_dict = model.state_dict()  # to cpu
         if self.eval_cfg.get("wandb"):
             wandb.log(res)
         return res
@@ -200,3 +201,15 @@ class WMDPDedupedEvaluator(Evaluator):
         if self.eval_cfg.get("wandb") and wandb.run is not None:
             wandb.finish()
         return self.last_valid_res["recall_loss"]
+
+
+# model = AutoModelForCausalLM.from_pretrained(
+#     cfg.model_id,
+#     torch_dtype=torch.bfloat16,
+#     device_map="cuda",
+#     state_dict=your_state_dict,  # pass your weights here
+# )
+
+# state_dict = model.state_dict()
+# for k, v in state_dict.items():
+#   state_dict[k] = v.cpu()
