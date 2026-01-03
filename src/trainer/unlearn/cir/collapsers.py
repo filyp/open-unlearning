@@ -128,13 +128,14 @@ class MahalanobisCollapser:
     eig_val: pt.Tensor
     eig_vec: pt.Tensor
 
-    def __init__(self, PCs_to_use: int):
+    def __init__(self, PCs_to_use: int, device: str):
         self.PCs_to_use = PCs_to_use
+        self.device = device
         self._reset_vecs()
 
     def _reset_vecs(self):
         # Reset online covariance for next epoch
-        self.online_cov = OnlineCovariance(device="cuda", dtype=pt.float32)
+        self.online_cov = OnlineCovariance(device=self.device, dtype=pt.float32)
 
     def add_vecs(self, vecs):
         self.online_cov.add_all(vecs)

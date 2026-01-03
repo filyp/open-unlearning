@@ -7,19 +7,27 @@ import torch as pt
 ###################### hooks for caching acts and grads #######################
 
 
-def _save_act_hook(module, args):
-    module.last_act_full = args[0].detach().clone()
+def save_act_input_hook(module, args):
+    # if module.training:
+    module.last_act_input = args[0].detach().clone()
 
 
-def _save_grad_hook(module, args):
-    module.last_grad_full = args[0].detach().clone()
+def save_grad_output_hook(module, grad_output):
+    # if module.training:
+    module.last_grad_output = grad_output[0].detach().clone()
 
 
-def install_act_and_grad_caching_hooks(model):
-    for _, module in model.named_modules():
-        if hasattr(module, "weight") and module.weight.requires_grad:
-            module.register_forward_pre_hook(_save_act_hook)
-            module.register_full_backward_pre_hook(_save_grad_hook)
+def save_grad_input_and_output_hook(module, grad_input, grad_output):
+    # if module.training:
+    module.last_grad_input = grad_input[0].detach().clone()
+    module.last_grad_output = grad_output[0].detach().clone()
+
+
+# def install_act_and_grad_caching_hooks(model):
+#     for _, module in model.named_modules():
+#         if hasattr(module, "weight") and module.weight.requires_grad:
+#             module.register_forward_pre_hook(_save_act_hook)
+#             module.register_full_backward_pre_hook(_save_grad_hook)
 
 
 ################################ torch utils #################################
@@ -117,6 +125,26 @@ def normalize_grads(model):
         if p.grad is not None:
             p.grad /= update_norm
     # print(f"update_norm: {update_norm}")
+
+
+def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
+    if "relev_mask" not in batch:
+        batch["relev_mask"] = {}
+
+    if name in batch["relev_mask"]:
+        # we use the caching, because recalculating these can be slow
+        relev_mask = batch["relev_mask"][name]
+    else:
+        dists = acts.norm(dim=1)
+        relev_mask = compute_per_text_quantile_mask(dists, token_mask, quantile)
+        batch["relev_mask"][name] = relev_mask
+    return relev_mask
+
+
+def sanitize_tensor(t, epsilon):
+    sign = t.sign()
+    sign[sign == 0] = 1
+    return t + sign * epsilon
 
 
 ################################ loss functions #################################

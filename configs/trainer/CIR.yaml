@@ -9,14 +9,14 @@ args:
   lr_scheduler_type: constant
   learning_rate: 0.15
   per_device_train_batch_size: 16
-  # per_device_eval_batch_size: 16
+  # # per_device_eval_batch_size: 16
 
 method_args:
   cfg:
     act_quantile: 0.9
     
     act_pcs_to_use: 400
-    grad_pcs_to_use: 50
+    grad_pcs_to_use: 24
 
     target_modules:
       - gate_proj
