@@ -8,7 +8,6 @@ from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
     cache_activations_for_cb_retain_loss,
-    cache_activations_for_mlp_breaking_loss,
     cb_retain_loss,
     get_grad_correction,
     get_relev_mask_with_caching,
@@ -19,6 +18,7 @@ from trainer.unlearn.cir.cir_utils import (
     save_act_input_hook,
     save_grad_output_hook,
     save_grad_input_and_output_hook,
+    save_output_hook,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 
@@ -41,7 +41,6 @@ class CIRCallback(TrainerCallback):
         self.trainer.collapsers_initialized = True
 
 
-
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -59,9 +58,13 @@ class CIR(UnlearnTrainer):
             self.args.per_device_train_batch_size,
         )
 
-        # todo: this can be done in the first epoch
         if cfg.get("forget_loss") == "mlp_breaking":
-            cache_activations_for_mlp_breaking_loss(model, self.batches.forget, cfg)
+            self.layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
+            logging.info(f"layer_range for mlp_breaking_loss: {self.layer_range}")
+            # install hooks for MLPs
+            for layer_id in range(*self.layer_range):
+                model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
+
         # if cfg.get("retaining_rate", 0) > 0:
         #     cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
 
@@ -89,7 +92,7 @@ class CIR(UnlearnTrainer):
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
         return self.batches
-    
+
     def training_step(self, model, inputs):
         model.train()
         # ! unlearning loss
@@ -98,7 +101,7 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
         if self.cfg.get("forget_loss") == "mlp_breaking":
-            forget_loss = mlp_breaking_loss(model, batch, self.cfg)
+            forget_loss = mlp_breaking_loss(model, batch, self.cfg, self.layer_range)
         else:
             forget_loss = -output.loss
         forget_loss.backward()

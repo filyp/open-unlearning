@@ -29,7 +29,7 @@ app = modal.App("open-unlearning", image=image)
     timeout=1 * 3600,
 )
 def run_training(args: str):
-    cmd = f"cd /root/code && source .env && HF_HUB_DOWNLOAD_TIMEOUT=60 PYTHONUNBUFFERED=1 {args}"
+    cmd = f"cd /root/code && set -a && source .env && set +a && HF_HUB_DOWNLOAD_TIMEOUT=60 PYTHONUNBUFFERED=1 {args}"
 
     print(f"Running: {cmd}")
     subprocess.run(cmd, shell=True, executable="/bin/bash", check=True)

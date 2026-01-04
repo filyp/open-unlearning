@@ -1,8 +1,21 @@
 import copy
 import logging
+import os
 
 import torch as pt
-from datasets import concatenate_datasets, load_dataset
+from datasets import concatenate_datasets, load_dataset, load_from_disk
+
+
+def load_hf_cached(path, split="train", data_files=None):
+    """Load a HuggingFace dataset with local disk caching for fast subsequent loads."""
+    cache_dir = f".cache/{path.replace('/', '_')}_{split}_{data_files}"
+    if os.path.exists(cache_dir):
+        return load_from_disk(cache_dir)
+    else:
+        ds = load_dataset(path, split=split, data_files=data_files)
+        os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+        ds.save_to_disk(cache_dir)
+        return ds
 
 ############## WMDP DEDUPED ##############
 # todo they don't support chat templates yet - will need to handle that using data.utils
@@ -15,18 +28,8 @@ def _tokenize(text, tokenizer, tokenizer_args):
     return batch
 
 
-def load_hf(cfg, **kwargs):
-    import os
-    from datasets import load_from_disk
-
-    # Check for local_cache_path for faster loading from pre-cached Arrow files
-    local_cache = cfg.get("local_cache_path")
-    if local_cache and os.path.exists(local_cache):
-        corpus = load_from_disk(local_cache)
-    else:
-        corpus = load_dataset(**cfg.hf_args)
-        if local_cache:
-            corpus.save_to_disk(local_cache)
+def load_hf_and_tokenize(cfg, **kwargs):
+    corpus = load_hf_cached(**cfg.hf_args)
 
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
@@ -35,17 +38,17 @@ def load_hf(cfg, **kwargs):
     return {cfg.load_as: batches}
 
 
-def _load_from_repo(path, repo="filyp/unlearning"):
-    base_url = f"https://raw.githubusercontent.com/{repo}/refs/heads/main"
-    return load_dataset(
-        "json",
-        data_files=[f"{base_url}/{path}"],
-        split="train",
-    )
+# def _load_from_repo(path, repo="filyp/unlearning"):
+#     base_url = f"https://raw.githubusercontent.com/{repo}/refs/heads/main"
+#     return load_dataset(
+#         "json",
+#         data_files=[f"{base_url}/{path}"],
+#         split="train",
+#     )
 
 
 def wikitext(cfg, **kwargs):
-    wikitext = _load_from_repo("data/wikitext_16k.jsonl")
+    wikitext = load_hf_cached(path="filypo/wikitext_16k", split="train")
     batches = [
         kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
         for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
@@ -85,10 +88,10 @@ def _load_recall_batches(questions, cfg, tokenizer):
 
 def wmdp_bio_deduped(cfg, **kwargs):
     tokenizer = kwargs["tokenizer"]
-
-    T = _load_from_repo(f"data/wmdp_deduped_{cfg.dataset}/all_T_corpus_simple.jsonl")
-    V = _load_from_repo(f"data/wmdp_deduped_{cfg.dataset}/all_V_corpus_simple.jsonl")
-
+    
+    T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")
+    V = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_V", split="train")
+    
     T_and_V = concatenate_datasets([T, V])
     eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
     logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
@@ -113,6 +116,3 @@ def wmdp_bio_deduped(cfg, **kwargs):
         recall=recall_batches,
         eval_qs=eval_qs,
     )
-
-
-##########################################

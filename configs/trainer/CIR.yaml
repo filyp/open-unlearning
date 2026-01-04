@@ -7,16 +7,16 @@ handler: CIR
 args:
   optim: sgd
   lr_scheduler_type: constant
-  # learning_rate: 0.1  # 1B
+  learning_rate: 0.1  # 1B
   # learning_rate: 0.2  # 3B
-  learning_rate: 0.2  # 8B
+  # learning_rate: 0.2  # 8B
 
 method_args:
   cfg:
     act_quantile: 0.9
     
     act_pcs_to_use: 400
-    # grad_pcs_to_use: 50
+    grad_pcs_to_use: 50
 
     target_modules:
       - gate_proj

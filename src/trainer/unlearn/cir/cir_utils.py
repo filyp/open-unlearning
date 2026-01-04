@@ -1,6 +1,4 @@
-# %%
 from itertools import islice
-import logging
 
 import torch as pt
 
@@ -21,6 +19,11 @@ def save_grad_input_and_output_hook(module, grad_input, grad_output):
     # if module.training:
     module.last_grad_input = grad_input[0].detach().clone()
     module.last_grad_output = grad_output[0].detach().clone()
+
+
+def save_output_hook(module, args, output):
+    # for mlp output saving
+    module.cached_out = output
 
 
 # def install_act_and_grad_caching_hooks(model):
@@ -150,25 +153,27 @@ def sanitize_tensor(t, epsilon):
 ################################ loss functions #################################
 
 
-def mlp_breaking_loss(model, batch, cfg):
-    # nota that it transports the original outputs from RAM
+def mlp_breaking_loss(model, batch, cfg, layer_range):
+    # note that it transports the original outputs from RAM
     # which would normally be slow, but if it is called right after model.forward(),
-    # it is done in parallel, so causes no slowdown 
+    # it is done in parallel, so causes no slowdown
     _mask = get_token_mask(batch)
 
-    layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
+    if "org_mlp_out" not in batch:  # first epoch
+        batch["org_mlp_out"] = {}
 
     loss_acc = 0
     for layer_id in range(*layer_range):
         mlp = model.model.layers[layer_id].mlp
-        out = mlp.cached_out
-        out = out[_mask].float()
-        org_out = batch["org_mlp_out"][layer_id].to(out.device).float()
-        assert out.shape == org_out.shape
-        assert len(out.shape) == 2
+        out = mlp.cached_out[_mask]
 
+        if layer_id not in batch["org_mlp_out"]:  # first epoch, so cache it
+            batch["org_mlp_out"][layer_id] = out.detach().cpu()
+
+        org_out = batch["org_mlp_out"][layer_id].to(out.device)
+        org_out_norm = org_out.norm(dim=-1).mean()
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
-        dotproducts = dotproducts / mlp.org_mlp_out_norm**2
+        dotproducts = dotproducts / org_out_norm**2
         loss_acc += dotproducts.clip(min=0).mean()
 
     return loss_acc / len(range(*layer_range))
@@ -195,68 +200,6 @@ def cb_retain_loss(output, batch, cfg):
 ################################ loss helpers #################################
 
 
-def _save_output_hook(module, args, output):
-    # install hooks for MLPs
-    module.cached_out = output
-
-
-def cache_activations_for_mlp_breaking_loss(model, batches, cfg):
-    layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
-    logging.info(f"layer_range for mlp_breaking_loss: {layer_range}")
-
-    # install hooks for MLPs
-    for layer_id in range(*layer_range):
-        model.model.layers[layer_id].mlp.register_forward_hook(_save_output_hook)
-
-    for layer_id in range(*layer_range):
-        model.model.layers[layer_id].mlp.org_mlp_out_norm = 0
-
-    for batch in batches:
-        with pt.no_grad():
-            model(**prep_batch(batch, model.device))
-        _mask = get_token_mask(batch)
-        batch["org_mlp_out"] = {}
-        for layer_id in range(*layer_range):
-            mlp = model.model.layers[layer_id].mlp
-            out = mlp.cached_out.detach()[_mask]
-            batch["org_mlp_out"][layer_id] = out
-            mlp.org_mlp_out_norm += out.float().norm(dim=-1).mean().item()
-
-    for layer_id in range(*layer_range):
-        model.model.layers[layer_id].mlp.org_mlp_out_norm /= len(batches)
-
-    for layer_id in range(*layer_range):
-        # # Extract eigendecomposition and apply mahalanobis projection
-        # # Compute covariance statistics per layer using all batches
-        # if cfg.get("mlp_reg") is not None:
-        #     oc = OnlineCovariance(device="cuda")
-        #     for batch in batches:
-        #         oc.add_all(batch["org_mlp_out"][layer_id].float())
-        #     for batch in batches:
-        #         out = batch["org_mlp_out"][layer_id].float()
-        #         centered = out - oc.mean
-        #         projected = centered @ oc.eig_vec
-        #         # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
-        #         _reg = cfg.mlp_reg * oc.eig_val[-1]
-        #         mahal_dirs = (projected / (oc.eig_val + _reg)) @ oc.eig_vec.T
-        #         mahal_dirs_normal = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-        #         batch["org_mlp_out"][layer_id] = mahal_dirs_normal.to(model.dtype)
-
-        # # MLP output filtering: zero out low-distance outputs per text
-        # # can be useful for recall_loss breaking, on late layers
-        # if cfg.get("mlp_quantile", 0) > 0:
-        #     for batch in batches:
-        #         dists = batch["org_mlp_out"][layer_id].float().norm(dim=1)
-        #         quantile_mask = compute_per_text_quantile_mask(
-        #             dists, get_token_mask(batch), cfg.mlp_quantile
-        #         )
-        #         # Zero out filtered outputs so they don't contribute to loss
-        #         batch["org_mlp_out"][layer_id][~quantile_mask] = 0
-
-        for batch in batches:
-            batch["org_mlp_out"][layer_id] = batch["org_mlp_out"][layer_id].cpu()
-
-
 def cache_activations_for_cb_retain_loss(model, batches, cfg):
     for batch in batches:
         with pt.no_grad():
@@ -265,21 +208,6 @@ def cache_activations_for_cb_retain_loss(model, batches, cfg):
             l_num: output.hidden_states[l_num].detach().to("cpu")
             for l_num in cfg.cb_retaining_layers
         }
-
-
-# def PCA_gpu(v):
-#     # Center the data
-#     v = v - v.mean(axis=0)
-#     # Compute covariance matrix
-#     cov = (v.T @ v) / (v.shape[0] - 1)
-#     # Compute eigenvalues and eigenvectors
-#     # * pt.linalg.eigh seems to leak memory!!
-#     eigenvalues, eigenvectors = pt.linalg.eigh(cov)
-#     # Sort in descending order
-#     idx = eigenvalues.argsort(descending=True)
-#     eigenvalues = eigenvalues[idx]
-#     eigenvectors = eigenvectors[:, idx]
-#     return eigenvectors.T  # [:n_components]
 
 
 # def trainable_modules(model):
@@ -321,3 +249,31 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
         _parent_mlp_name = name.rsplit(".", 1)[0]
         grad_corrections[_parent_mlp_name] = grad_correction
     return grad_corrections
+
+
+# # Extract eigendecomposition and apply mahalanobis projection
+# # Compute covariance statistics per layer using all batches
+# if cfg.get("mlp_reg") is not None:
+#     oc = OnlineCovariance(device="cuda")
+#     for batch in batches:
+#         oc.add_all(batch["org_mlp_out"][layer_id].float())
+#     for batch in batches:
+#         out = batch["org_mlp_out"][layer_id].float()
+#         centered = out - oc.mean
+#         projected = centered @ oc.eig_vec
+#         # Scale reg by largest eigenvalue (last one from eigh) to be scale-invariant
+#         _reg = cfg.mlp_reg * oc.eig_val[-1]
+#         mahal_dirs = (projected / (oc.eig_val + _reg)) @ oc.eig_vec.T
+#         mahal_dirs_normal = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+#         batch["org_mlp_out"][layer_id] = mahal_dirs_normal.to(model.dtype)
+
+# # MLP output filtering: zero out low-distance outputs per text
+# # can be useful for recall_loss breaking, on late layers
+# if cfg.get("mlp_quantile", 0) > 0:
+#     for batch in batches:
+#         dists = batch["org_mlp_out"][layer_id].float().norm(dim=1)
+#         quantile_mask = compute_per_text_quantile_mask(
+#             dists, get_token_mask(batch), cfg.mlp_quantile
+#         )
+#         # Zero out filtered outputs so they don't contribute to loss
+#         batch["org_mlp_out"][layer_id][~quantile_mask] = 0

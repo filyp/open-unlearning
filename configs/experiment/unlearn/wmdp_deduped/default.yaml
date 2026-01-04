@@ -17,8 +17,9 @@ trainer:
   args:
     # report_to: none
     # report_to: tensorboard
-    report_to: wandb
+    # report_to: wandb
     # report_to: dvclive
+    report_to: comet_ml
     run_name: ${task_name}${oc.select:hydra:job.num,}
     # run_name: lr=${trainer.args.learning_rate}
     num_train_epochs: 10
@@ -50,6 +51,7 @@ data:
   custom_loaders:
     wmdp_bio_deduped:
       dataset: bio
+      # dataset: cyber
       eval_on_all_questions: true  # todo change back to false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
@@ -58,11 +60,10 @@ data:
       batch_size: 8  # for 16 batches of 16 examples each, eval takes 3s
       num_batches: 16
       tokenizer: ${tokenizer_cfg}
-    load_hf:  # fineweb bio dataset
+    load_hf_and_tokenize:  # fineweb bio dataset
       load_as: retain
       limit: 1000
       tokenizer: ${tokenizer_cfg}
-      local_cache_path: .cache/fineweb_bio  # fast local Arrow cache
       hf_args:
         path: m-a-p/FineFineWeb
         split: train
@@ -76,7 +77,8 @@ eval:
   deduped:
     handler: WMDPDedupedEvaluator
     disr_budget: 0.004  # KL Divergence budget
-    eval_mcq: true
+    # eval_mcq: true  # todo reenable
+    eval_mcq: false
 
 # Optuna sweeper config (activate with --multirun flag)
 hydra:
