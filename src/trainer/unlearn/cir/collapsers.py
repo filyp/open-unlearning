@@ -53,7 +53,6 @@ class TopPCsCollapser:
 
     def process_saved_vecs(self):
         # Compute PCA projections for gradients (to collapse)
-        pt.cuda.empty_cache()
         if not self.cache:
             return
         vectors_flattened = pt.cat(self.cache)
@@ -102,7 +101,6 @@ class ApproxMahalanobisCollapser:
 
     def process_saved_vecs(self):
         # Compute PCA projections for gradients (to collapse)
-        pt.cuda.empty_cache()
         if not self.cache:
             return
         vectors_flattened = pt.cat(self.cache)

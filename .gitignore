@@ -187,3 +187,10 @@ CLAUDE.md
 slurm-*.out
 job.sh
 profile.prof
+.aim/
+*.lprof
+
+# dvclive
+# .dvcignore
+# dvc.yaml
+# .dvc

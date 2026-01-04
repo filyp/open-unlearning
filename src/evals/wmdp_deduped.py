@@ -8,7 +8,6 @@ from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
 
-import wandb
 from evals.base import Evaluator
 from trainer.unlearn.cir.cir_utils import prep_batch
 
@@ -142,18 +141,9 @@ class WMDPDedupedEvaluator(Evaluator):
             task = self.task_dict["wmdp_bio"]
             task.dataset["test"] = data["eval_qs"]
 
-        if eval_cfg.get("wandb"):
-            wandb.init(
-                project=eval_cfg.wandb.project,
-                name=eval_cfg.wandb.name,
-                group=eval_cfg.wandb.group,
-                # config=OmegaConf.to_container(cfg),
-            )
-
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
-        pt.cuda.empty_cache()
 
         assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
         first_eval = not hasattr(self, "acts_to_logits")
@@ -193,13 +183,9 @@ class WMDPDedupedEvaluator(Evaluator):
 
         self.last_valid_res = res
         # self.last_valid_model_state_dict = model.state_dict()  # to cpu
-        if self.eval_cfg.get("wandb"):
-            wandb.log(res)
         return res
 
     def final_score(self):
-        if self.eval_cfg.get("wandb") and wandb.run is not None:
-            wandb.finish()
         return self.last_valid_res["recall_loss"]
 
 

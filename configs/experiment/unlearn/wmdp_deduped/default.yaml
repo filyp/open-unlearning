@@ -2,8 +2,9 @@
 
 defaults:
   # - override /model: Llama-3.2-3B-Instruct
-  - override /model: Llama-3.2-3B
-  # - override /model: Llama-3.2-1B
+  # - override /model: Llama-3.1-8B
+  # - override /model: Llama-3.2-3B
+  - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
@@ -12,13 +13,14 @@ defaults:
   - override /eval: null  # This disables the default TOFU evaluation
   - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
-# mode: wmdp_deduped  # needs to be overriden with CLI
-
 trainer:
   args:
-    report_to: none  # suppress the default wandb reporting in the trainer
-    # report_to: wandb
-    # run_name: ${task_name}  # that's the default
+    # report_to: none
+    # report_to: tensorboard
+    report_to: wandb
+    # report_to: dvclive
+    run_name: ${task_name}${oc.select:hydra:job.num,}
+    # run_name: lr=${trainer.args.learning_rate}
     num_train_epochs: 10
     seed: 42
     output_dir: ${paths.output_dir}
@@ -27,6 +29,17 @@ trainer:
     do_eval: False
     eval_on_start: True
     eval_strategy: epoch
+    per_device_train_batch_size: 16
+    # # per_device_eval_batch_size: 16
+    # logging_steps: 5
+    # output_dir: ${paths.output_dir}
+    # logging_dir: ${trainer.args.output_dir}/logs
+    # logging_dir: ./logs
+
+model:
+  model_args:
+    # disable flash attention 2 because we use short texts
+    attn_implementation: null
 
 tokenizer_cfg:
   max_length: 128
@@ -64,13 +77,6 @@ eval:
     handler: WMDPDedupedEvaluator
     disr_budget: 0.004  # KL Divergence budget
     eval_mcq: true
-    # * uncomment to use wandb:
-    wandb:
-      project: open-unlearning-optuna
-      group: ${task_name}
-      name: ${task_name}${oc.select:hydra:job.num,}
-      # name based on unlearning_rate
-      # name: ur=${trainer.method_args.cfg.unlearning_rate}
 
 # Optuna sweeper config (activate with --multirun flag)
 hydra:
@@ -99,8 +105,3 @@ hydra:
 #   relearning_eval:
 #     handler: WMDPDedupedEvaluator
 #     num_eval_batches: 16
-#     # * uncomment to use wandb:
-#     wandb:
-#       project: ret_unlearning|src|main_runner.py
-#       group: nov_test
-#       name: ${task_name}

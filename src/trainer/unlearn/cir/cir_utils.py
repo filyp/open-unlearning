@@ -151,6 +151,9 @@ def sanitize_tensor(t, epsilon):
 
 
 def mlp_breaking_loss(model, batch, cfg):
+    # nota that it transports the original outputs from RAM
+    # which would normally be slow, but if it is called right after model.forward(),
+    # it is done in parallel, so causes no slowdown 
     _mask = get_token_mask(batch)
 
     layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
@@ -285,3 +288,36 @@ def cache_activations_for_cb_retain_loss(model, batches, cfg):
 #         for n, m in model.named_modules()
 #         if "_proj" in n and m.weight.requires_grad
 #     ]
+
+################################ grad collapse #################################
+
+
+def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initialized):
+    grad_corrections = {}
+    for name, module in model.named_modules():
+        if not name.endswith(".down_proj"):
+            continue
+        if not hasattr(module, "last_grad_input"):
+            continue
+
+        # grad_input == grad_output @ module.weight (from backpropagation)
+        grad_input = module.last_grad_input[token_mask]
+        grad_output = module.last_grad_output[token_mask]
+        assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
+        assert grad_output.shape == (token_mask.sum(), module.weight.shape[0])
+        module.last_grad_input = None
+        module.last_grad_output = None
+
+        grad_collapsers[name].add_vecs(grad_output)
+
+        if not collapsers_initialized:
+            continue  # first epoch, so only collect activations and not train
+
+        out_collapsed = (
+            grad_collapsers[name].collapse(grad_output).to(module.weight.dtype)
+        )
+        in_collapsed = out_collapsed @ module.weight  # backprop
+        grad_correction = in_collapsed / sanitize_tensor(grad_input, 1e-6)
+        _parent_mlp_name = name.rsplit(".", 1)[0]
+        grad_corrections[_parent_mlp_name] = grad_correction
+    return grad_corrections
