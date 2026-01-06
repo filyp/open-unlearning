@@ -9,7 +9,7 @@ from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
 
 from evals.base import Evaluator
-from trainer.unlearn.cir.cir_utils import prep_batch
+from trainer.unlearn.cir.cir_utils import batched, prep_batch
 
 logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
@@ -125,10 +125,11 @@ def _create_acts_to_logits(model):
 class WMDPDedupedEvaluator(Evaluator):
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg
+        
 
         # load data
         self.wikitext = data["wikitext"]
-        self.recall_batches = data["recall"]
+        self.recall_samples = data["recall"]
         self.eval_qs = data["eval_qs"]
 
         if self.eval_cfg.eval_mcq:
@@ -144,8 +145,9 @@ class WMDPDedupedEvaluator(Evaluator):
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
+        trainer = kwargs["trainer"]
 
-        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
+        assert trainer.args.eval_on_start, "eval_on_start must be True"
         first_eval = not hasattr(self, "acts_to_logits")
         if first_eval:  # ! first evaluation, before training
             # Cache last hidden states for wikitext KL divergence computation
@@ -157,12 +159,25 @@ class WMDPDedupedEvaluator(Evaluator):
         res["wikitext_loss"], res["wikitext_kl"] = _get_loss_and_kl(
             model, self.wikitext, self.acts_to_logits
         )
-        res["recall_loss"] = _get_loss(model, self.recall_batches)
+
+        # collate recall samples to target batch size
+        recall_batches = [
+            trainer.data_collator(samples)
+            for samples in batched(
+                self.recall_samples, trainer.args.per_device_eval_batch_size
+            )
+        ]
+        res["recall_loss"] = _get_loss(model, recall_batches)
+
         # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
 
         if self.eval_cfg.eval_mcq:
             # * eval forget acc
-            lm = HFLM(pretrained=model, tokenizer=kwargs["tokenizer"], batch_size=8)
+            lm = HFLM(
+                pretrained=model,
+                tokenizer=kwargs["tokenizer"],
+                batch_size=trainer.args.per_device_eval_batch_size,
+            )
             lm_eval_results = evaluator.evaluate(
                 lm=lm,
                 task_dict=self.task_dict,
@@ -174,28 +189,25 @@ class WMDPDedupedEvaluator(Evaluator):
         # ! finished evaluating, now handle the results
         if first_eval:
             assert res["wikitext_kl"] == 0, "Initial KL should be 0"
+        
+        if self.eval_cfg.disr_budget is None:
+            # used for example in relearning
+            # don't stop training, don't keep track of the best valid model state
+            return res
 
         # * check condition to stop training
         if res["wikitext_kl"] > self.eval_cfg.disr_budget:
             logging.info("Wikitext KL exceeded the disruption budget")
-            kwargs["trainer"].control.should_training_stop = True
+            trainer.control.should_training_stop = True
             return res
 
+        # save the best model state, that doesn't exceed the disruption budget
+        # this way relearning can start from this valid model state
+        self.best_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
+
         self.last_valid_res = res
-        # self.last_valid_model_state_dict = model.state_dict()  # to cpu
         return res
 
     def final_score(self):
         return self.last_valid_res["recall_loss"]
 
-
-# model = AutoModelForCausalLM.from_pretrained(
-#     cfg.model_id,
-#     torch_dtype=torch.bfloat16,
-#     device_map="cuda",
-#     state_dict=your_state_dict,  # pass your weights here
-# )
-
-# state_dict = model.state_dict()
-# for k, v in state_dict.items():
-#   state_dict[k] = v.cpu()

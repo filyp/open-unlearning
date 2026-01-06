@@ -1,9 +1,17 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()  # here, because of TQDM_DISABLE, todo, move back down
+
 import hydra
 from omegaconf import DictConfig
-from data import get_data, get_collators
+from transformers import AutoModelForCausalLM
+
+from data import get_collators, get_data
+from evals import get_evaluators
 from model import get_model
 from trainer import load_trainer
-from evals import get_evaluators
 from trainer.utils import seed_everything
 
 
@@ -59,52 +67,51 @@ def main(cfg: DictConfig):
 
     if trainer_args.do_train:
         trainer.train()
-        # todo option for saving each epoch instead of at the end, so when model broken, dont save
-        # trainer.save_state()
-        # trainer.save_model(trainer_args.output_dir)
+    if trainer_cfg.get("save_final_state", True):
+        trainer.save_state()
+        trainer.save_model(trainer_args.output_dir)
 
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
 
-    # relearning_cfg = cfg.get("relearning", None)
-    # if relearning_cfg:
+    relearning_cfg = cfg.get("relearning_trainer", None)
+    if relearning_cfg:
+        # Get best model state dict from evaluator
+        for evaluator in evaluators.values():
+            if hasattr(evaluator, "best_model_state_dict"):
+                best_model_state_dict = evaluator.best_model_state_dict
+                break
+        assert "best_model_state_dict" in locals(), "Relearning needs saved best model"
 
-    #     # unfreeze all parameters
-    #     for p in model.parameters():
-    #         p.requires_grad = True
-    #     # remove all hooks
-    #     for m in model.modules():
-    #         m._forward_hooks = {}
-    #         m._backward_hooks = {}
+        # Create fresh model from config and load best weights
+        model = AutoModelForCausalLM.from_config(model.config, torch_dtype=model.dtype)
+        model.load_state_dict(best_model_state_dict)
+        model.to("cuda")
 
-    #     from evals.wmdp_deduped import WMDPDedupedEvaluator
-    #     import torch as pt
-    #     from trainer.unlearn.cir.cir_utils import prep_batch
-    #     from torch.utils.data import DataLoader
+        # Modify project names for relearning tracking
+        if "WANDB_PROJECT" in os.environ:
+            os.environ["WANDB_PROJECT"] = "rel-" + os.environ["WANDB_PROJECT"]
+        if "COMET_PROJECT_NAME" in os.environ:
+            os.environ["COMET_PROJECT_NAME"] = "rel-" + os.environ["COMET_PROJECT_NAME"]
 
-    #     ev = WMDPDedupedEvaluator(relearning_cfg.relearning_eval, data, tokenizer=tokenizer)
+        relearning_evaluators = get_evaluators(
+            eval_cfgs={"wmdp_deduped": relearning_cfg.relearning_eval},
+            template_args=template_args,
+            model=model,
+            tokenizer=tokenizer,
+            data=data,
+        )
 
-    #     retraining_optimizer = pt.optim.SGD(model.parameters(), lr=relearning_cfg.lr)
-    #     relearn_loader = DataLoader(
-    #         data["relearn"],
-    #         batch_size=relearning_cfg.relearn_batch_size,
-    #         shuffle=False,
-    #         collate_fn=collator
-    #     )
-
-    #     # * get metrics
-    #     ev.evaluate(model, tokenizer=tokenizer)
-
-    #     for epoch in range(relearning_cfg.num_epochs):
-    #         model.train()
-    #         for batch in relearn_loader:
-    #             model.zero_grad(set_to_none=True)
-    #             output = model(**prep_batch(batch, model.device))
-    #             output.loss.backward()
-    #             retraining_optimizer.step()
-
-    #         # * get metrics
-    #         ev.evaluate(model, tokenizer=tokenizer)
+        relearn_trainer, _ = load_trainer(
+            trainer_cfg=relearning_cfg,
+            model=model,
+            train_dataset=data["relearn"],
+            tokenizer=tokenizer,
+            data_collator=collator,
+            evaluators=relearning_evaluators,
+            template_args=template_args,
+        )
+        relearn_trainer.train()
 
     # * get the final score (if defined), and return for potential Optuna optimization
     for evaluator in evaluators.values():

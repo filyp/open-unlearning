@@ -7,7 +7,7 @@ handler: CIR
 args:
   optim: sgd
   lr_scheduler_type: constant
-  learning_rate: 0.1  # 1B
+  learning_rate: 0.2  # 1B
   # learning_rate: 0.2  # 3B
   # learning_rate: 0.2  # 8B
 
@@ -26,10 +26,11 @@ method_args:
     forget_loss: mlp_breaking
     # forget_loss: null
 
+    layer_range: [6, 12]
+
     # ! unused params
     # mlp_quantile: 0.5  # useful on later layers, but very slightly
     # mlp_reg: 3e-3  # no effect, at least for WMDP; todo test it on toxicity
-    layer_range: [0, 10]
     ## Llama-3.2-1B has 16 layers
     ## MobileLLM-125M has 30 layers
 

@@ -85,6 +85,18 @@ class UnlearnTrainer(FinetuneTrainer):
         """
         The only change to this function is calling the Trainer's compute_loss, as it's often overridden by unlearning methods, and we want to maintain the Trainer's evaluation setup.
         """
+
+        # todo maybe it would be cleaner to simply require custom compute_loss to:
+        # if not self.model.training:
+        #     return super().compute_loss(...)
+        # would make updating transformer versions easier
+        # or have:
+        # def compute_loss(self, model, inputs, return_outputs=False):
+        #     if model.training:
+        #         return self.compute_unlearn_loss(model, inputs, return_outputs)
+        #     return super().compute_loss(model, inputs, return_outputs)
+        # and have children classes implement compute_unlearn_loss
+
         has_labels = (
             False
             if len(self.label_names) == 0

@@ -15,7 +15,7 @@ image = (
     .add_local_dir(
         ".",
         remote_path="/root/code",
-        ignore=[".git", ".venv", "__pycache__", "saves", "*.pyc", "profile.prof", ".cache", "wandb", "multirun", ".ruff_cache"],
+        ignore=[".git", ".venv", "**/__pycache__", "saves", "*.pyc", "profile.prof", "wandb", "multirun", ".ruff_cache", "build", "logs"],
     )
 )
 
@@ -24,12 +24,12 @@ app = modal.App("open-unlearning", image=image)
 
 @app.function(
     gpu="L40S",  # 48GB
-    # gpu="H100",  # it's not any faster than L40S, at least for wmdp-deduped
     # gpu="A100-80GB",  # if needing 80GB
+    # gpu="H100",  # it's not any faster than L40S, at least for wmdp-deduped
     timeout=1 * 3600,
 )
 def run_training(args: str):
-    cmd = f"cd /root/code && set -a && source .env && set +a && HF_HUB_DOWNLOAD_TIMEOUT=60 PYTHONUNBUFFERED=1 {args}"
+    cmd = f"cd /root/code && HF_HUB_DOWNLOAD_TIMEOUT=60 PYTHONUNBUFFERED=1 {args}"
 
     print(f"Running: {cmd}")
     subprocess.run(cmd, shell=True, executable="/bin/bash", check=True)

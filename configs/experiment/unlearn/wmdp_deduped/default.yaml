@@ -14,7 +14,7 @@ defaults:
   - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
 trainer:
-  args:
+  args: &trainer_args
     # report_to: none
     # report_to: tensorboard
     # report_to: wandb
@@ -31,11 +31,12 @@ trainer:
     eval_on_start: True
     eval_strategy: epoch
     per_device_train_batch_size: 16
-    # # per_device_eval_batch_size: 16
+    per_device_eval_batch_size: 16
     # logging_steps: 5
     # output_dir: ${paths.output_dir}
     # logging_dir: ${trainer.args.output_dir}/logs
     # logging_dir: ./logs
+  save_final_state: False
 
 model:
   model_args:
@@ -43,7 +44,7 @@ model:
     attn_implementation: null
 
 tokenizer_cfg:
-  max_length: 128
+  max_length: 128  # for our wmdp corpora it's more than enough
   padding: true
   truncation: true
 
@@ -52,13 +53,13 @@ data:
     wmdp_bio_deduped:
       dataset: bio
       # dataset: cyber
-      eval_on_all_questions: true  # todo change back to false
+      eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
     wikitext:
       load_as: wikitext
-      batch_size: 8  # for 16 batches of 16 examples each, eval takes 3s
-      num_batches: 16
+      batch_size: 8
+      num_batches: 8
       tokenizer: ${tokenizer_cfg}
     load_hf_and_tokenize:  # fineweb bio dataset
       load_as: retain
@@ -77,8 +78,7 @@ eval:
   deduped:
     handler: WMDPDedupedEvaluator
     disr_budget: 0.004  # KL Divergence budget
-    # eval_mcq: true  # todo reenable
-    eval_mcq: false
+    eval_mcq: true
 
 # Optuna sweeper config (activate with --multirun flag)
 hydra:
@@ -100,10 +100,18 @@ hydra:
 # model_id: meta-llama/Llama-3.1-8B
 
 
-# relearning:
-#   lr: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape
-#   num_epochs: 3
-#   relearn_batch_size: 32  # can be higher because batches are usually shorter
-#   relearning_eval:
-#     handler: WMDPDedupedEvaluator
-#     num_eval_batches: 16
+relearning_trainer:
+  handler: FinetuneTrainer
+  args:
+    <<: *trainer_args  # Merge all trainer args
+    learning_rate: 6e-6
+    num_train_epochs: 10
+    per_device_train_batch_size: 32  # can be higher because batches are usually shorter
+    optim: sgd
+    lr_scheduler_type: constant
+    max_grad_norm: 0
+  relearning_eval:
+    handler: WMDPDedupedEvaluator
+    disr_budget: null  # null means training will not be terminated based on KL
+    eval_mcq: true
+
