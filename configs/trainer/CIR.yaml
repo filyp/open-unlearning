@@ -7,9 +7,7 @@ handler: CIR
 args:
   optim: sgd
   lr_scheduler_type: constant
-  learning_rate: 0.2  # 1B
-  # learning_rate: 0.2  # 3B
-  # learning_rate: 0.2  # 8B
+  learning_rate: 0.3
 
 method_args:
   cfg:
@@ -23,10 +21,11 @@ method_args:
       - up_proj
       # - down_proj
     
-    forget_loss: mlp_breaking
     # forget_loss: null
+    forget_loss: mlp_breaking
+    # forget_loss: mlp_activation_breaking
 
-    layer_range: [6, 12]
+    # layer_range: [0, 12]
 
     # ! unused params
     # mlp_quantile: 0.5  # useful on later layers, but very slightly

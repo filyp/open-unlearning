@@ -1,4 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from accelerate import init_empty_weights
 from omegaconf import DictConfig, open_dict
 from typing import Dict, Any
 import os
@@ -63,6 +64,24 @@ def get_model(model_cfg: DictConfig):
         )
     tokenizer = get_tokenizer(tokenizer_args)
     return model, tokenizer
+
+
+def reset_model(model):
+    """Create a fresh model with same config, using meta device for speed.
+
+    Uses accelerate.init_empty_weights() to skip random initialization.
+    Buffers (like inv_freq) are initialized on CPU, parameters on meta device.
+
+    Args:
+        model: The model whose config/dtype/class to use
+
+    Returns:
+        A new model with meta parameters (use load_state_dict with assign=True)
+    """
+    model_cls = MODEL_REGISTRY.get(model.__class__.__name__, AutoModelForCausalLM)
+    with init_empty_weights():
+        new_model = model_cls.from_config(model.config, torch_dtype=model.dtype)
+    return new_model
 
 
 def _add_or_replace_eos_token(tokenizer, eos_token: str) -> None:

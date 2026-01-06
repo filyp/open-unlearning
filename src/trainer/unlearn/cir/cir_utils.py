@@ -26,6 +26,11 @@ def save_output_hook(module, args, output):
     module.cached_out = output
 
 
+def save_act_input_hook_nondetached(module, args):
+    # for saving input to a module (without detaching, for gradient flow)
+    module.last_act_input = args[0]
+
+
 # def install_act_and_grad_caching_hooks(model):
 #     for _, module in model.named_modules():
 #         if hasattr(module, "weight") and module.weight.requires_grad:
@@ -153,7 +158,7 @@ def sanitize_tensor(t, epsilon):
 ################################ loss functions #################################
 
 
-def mlp_breaking_loss(model, batch, cfg, layer_range):
+def mlp_breaking_loss(model, batch, layer_range):
     # note that it transports the original outputs from RAM
     # which would normally be slow, but if it is called right after model.forward(),
     # it is done in parallel, so causes no slowdown
@@ -179,35 +184,58 @@ def mlp_breaking_loss(model, batch, cfg, layer_range):
     return loss_acc / len(range(*layer_range))
 
 
-def cb_retain_loss(output, batch, cfg):
-    # _mask = get_token_mask(batch)  # retains only on meaningful tokens
-    _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
+def mlp_activation_breaking_loss(model, batch, layer_range):
+    # Similar to mlp_breaking_loss but targets the down_proj input activation
+    # (the intermediate MLP activation before the down projection)
+    _mask = get_token_mask(batch)
+
+    if "org_down_proj_input" not in batch:  # first epoch
+        batch["org_down_proj_input"] = {}
 
     loss_acc = 0
-    for layer_id in cfg.cb_retaining_layers:
-        acts = output.hidden_states[layer_id][_mask].float()
-        org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
-        assert acts.shape == org_acts.shape
-        assert len(acts.shape) == 2
+    for layer_id in range(*layer_range):
+        down_proj = model.model.layers[layer_id].mlp.down_proj
+        act = down_proj.last_act_input[_mask]
 
-        avg_act_norm = org_acts.norm(dim=-1).mean()
-        dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
-        loss_acc += dist
+        if layer_id not in batch["org_down_proj_input"]:  # first epoch, so cache it
+            batch["org_down_proj_input"][layer_id] = act.detach().cpu()
 
-    return loss_acc / len(cfg.cb_retaining_layers)
+        org_act = batch["org_down_proj_input"][layer_id].to(act.device)
+        org_act_norm = org_act.norm(dim=-1).mean()
+        # dotproducts = pt.einsum("ts,ts->t", act, org_act)
+        # dotproducts = dotproducts / org_act_norm**2
+        # loss_acc += dotproducts.clip(min=0).mean()
+        loss_acc += (act * org_act).clip(min=0).mean() / org_act_norm**2
+
+    return loss_acc / len(range(*layer_range))
+
+
+# def cb_retain_loss(output, batch, cfg):
+#     # _mask = get_token_mask(batch)  # retains only on meaningful tokens
+#     _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
+#     loss_acc = 0
+#     for layer_id in cfg.cb_retaining_layers:
+#         acts = output.hidden_states[layer_id][_mask].float()
+#         org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
+#         assert acts.shape == org_acts.shape
+#         assert len(acts.shape) == 2
+#         avg_act_norm = org_acts.norm(dim=-1).mean()
+#         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
+#         loss_acc += dist
+#     return loss_acc / len(cfg.cb_retaining_layers)
 
 
 ################################ loss helpers #################################
 
 
-def cache_activations_for_cb_retain_loss(model, batches, cfg):
-    for batch in batches:
-        with pt.no_grad():
-            output = model(**prep_batch(batch, model.device), output_hidden_states=True)
-        batch["retain_acts"] = {
-            l_num: output.hidden_states[l_num].detach().to("cpu")
-            for l_num in cfg.cb_retaining_layers
-        }
+# def cache_activations_for_cb_retain_loss(model, batches, cfg):
+#     for batch in batches:
+#         with pt.no_grad():
+#             output = model(**prep_batch(batch, model.device), output_hidden_states=True)
+#         batch["retain_acts"] = {
+#             l_num: output.hidden_states[l_num].detach().to("cpu")
+#             for l_num in cfg.cb_retaining_layers
+#         }
 
 
 # def trainable_modules(model):

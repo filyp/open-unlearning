@@ -208,6 +208,6 @@ class WMDPDedupedEvaluator(Evaluator):
         self.last_valid_res = res
         return res
 
-    def final_score(self):
+    def get_final_score(self):
         return self.last_valid_res["recall_loss"]
 

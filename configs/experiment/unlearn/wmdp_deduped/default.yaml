@@ -3,8 +3,8 @@
 defaults:
   # - override /model: Llama-3.2-3B-Instruct
   # - override /model: Llama-3.1-8B
-  # - override /model: Llama-3.2-3B
-  - override /model: Llama-3.2-1B
+  - override /model: Llama-3.2-3B
+  # - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
@@ -51,8 +51,8 @@ tokenizer_cfg:
 data:
   custom_loaders:
     wmdp_bio_deduped:
-      dataset: bio
-      # dataset: cyber
+      # dataset: bio
+      dataset: cyber
       eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
@@ -77,7 +77,7 @@ data:
 eval:
   deduped:
     handler: WMDPDedupedEvaluator
-    disr_budget: 0.004  # KL Divergence budget
+    disr_budget: 0.003  # KL Divergence budget
     eval_mcq: true
 
 # Optuna sweeper config (activate with --multirun flag)

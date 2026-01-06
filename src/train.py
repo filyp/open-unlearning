@@ -6,11 +6,10 @@ load_dotenv()  # here, because of TQDM_DISABLE, todo, move back down
 
 import hydra
 from omegaconf import DictConfig
-from transformers import AutoModelForCausalLM
 
 from data import get_collators, get_data
 from evals import get_evaluators
-from model import get_model
+from model import get_model, reset_model
 from trainer import load_trainer
 from trainer.utils import seed_everything
 
@@ -83,10 +82,9 @@ def main(cfg: DictConfig):
                 break
         assert "best_model_state_dict" in locals(), "Relearning needs saved best model"
 
-        # Create fresh model from config and load best weights
-        model = AutoModelForCausalLM.from_config(model.config, torch_dtype=model.dtype)
-        model.load_state_dict(best_model_state_dict)
-        model.to("cuda")
+        # Create fresh model and load best weights
+        model = reset_model(model)
+        model.load_state_dict(best_model_state_dict, assign=True)
 
         # Modify project names for relearning tracking
         if "WANDB_PROJECT" in os.environ:
@@ -115,8 +113,8 @@ def main(cfg: DictConfig):
 
     # * get the final score (if defined), and return for potential Optuna optimization
     for evaluator in evaluators.values():
-        if hasattr(evaluator, "final_score"):
-            final_score = evaluator.final_score()
+        if hasattr(evaluator, "get_final_score"):
+            final_score = evaluator.get_final_score()
             print(f"Final score for {evaluator.__class__.__name__}: {final_score}")
             return final_score
 

@@ -7,15 +7,15 @@ from transformers import TrainerCallback
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
-    cache_activations_for_cb_retain_loss,
-    cb_retain_loss,
     get_grad_correction,
     get_relev_mask_with_caching,
     get_token_mask,
+    mlp_activation_breaking_loss,
     mlp_breaking_loss,
     normalize_grads,
     prep_batch,
     save_act_input_hook,
+    save_act_input_hook_nondetached,
     save_grad_output_hook,
     save_grad_input_and_output_hook,
     save_output_hook,
@@ -58,12 +58,16 @@ class CIR(UnlearnTrainer):
             self.args.per_device_train_batch_size,
         )
 
-        if cfg.get("forget_loss") == "mlp_breaking":
+        if cfg.get("forget_loss") in ("mlp_breaking", "mlp_activation_breaking"):
             self.layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
-            logging.info(f"layer_range for mlp_breaking_loss: {self.layer_range}")
+            logging.info(f"layer_range for {cfg.forget_loss}: {self.layer_range}")
             # install hooks for MLPs
             for layer_id in range(*self.layer_range):
-                model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
+                mlp = model.model.layers[layer_id].mlp
+                if cfg.forget_loss == "mlp_breaking":
+                    mlp.register_forward_hook(save_output_hook)
+                elif cfg.forget_loss == "mlp_activation_breaking":
+                    mlp.down_proj.register_forward_pre_hook(save_act_input_hook_nondetached)
 
         # if cfg.get("retaining_rate", 0) > 0:
         #     cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
@@ -100,8 +104,11 @@ class CIR(UnlearnTrainer):
         token_mask = get_token_mask(batch)
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
+
         if self.cfg.get("forget_loss") == "mlp_breaking":
-            forget_loss = mlp_breaking_loss(model, batch, self.cfg, self.layer_range)
+            forget_loss = mlp_breaking_loss(model, batch, self.layer_range)
+        elif self.cfg.get("forget_loss") == "mlp_activation_breaking":
+            forget_loss = mlp_activation_breaking_loss(model, batch, self.layer_range)
         else:
             forget_loss = -output.loss
         forget_loss.backward()
@@ -132,6 +139,12 @@ class CIR(UnlearnTrainer):
 
             if "grad_pcs_to_use" in self.cfg:
                 _parent_mlp_name = name.rsplit(".", 1)[0]
+                if _parent_mlp_name not in grad_corrections:
+                    # on last layer in layer_range, there is no grad correction
+                    _last_layer = max(self.layer_range) - 1
+                    assert f".{_last_layer}." in _parent_mlp_name
+                    module.weight.grad = None
+                    continue
                 grads *= grad_corrections[_parent_mlp_name].float()
 
             if self.cfg.get("act_quantile", 0) > 0:
