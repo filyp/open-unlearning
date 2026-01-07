@@ -13,13 +13,14 @@ from trainer.unlearn.cir.cir_utils import (
     get_token_mask,
     mlp_activation_breaking_loss,
     mlp_breaking_loss,
+    gate_and_up_breaking_loss,
     neuron_breaking_loss,
     normalize_grads,
     prep_batch,
     save_act_input_hook,
     save_grad_input_hook,
     save_grad_output_hook,
-    save_output_hook,
+    save_act_output_hook,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 
@@ -79,9 +80,12 @@ class CIR(UnlearnTrainer):
         for layer_id in range(*self.layer_range):
             mlp = model.model.layers[layer_id].mlp
             if cfg.forget_loss == "mlp_breaking":
-                mlp.down_proj.register_forward_hook(save_output_hook)
+                mlp.down_proj.register_forward_hook(save_act_output_hook)
             elif cfg.forget_loss == "mlp_activation_breaking":
                 mlp.down_proj.register_forward_hook(save_act_input_hook)
+            elif cfg.forget_loss == "gate_and_up_breaking":
+                mlp.gate_proj.register_forward_hook(save_act_output_hook)
+                mlp.up_proj.register_forward_hook(save_act_output_hook)
             elif cfg.forget_loss == "neuron_breaking":
                 mlp.down_proj.register_forward_hook(save_act_input_hook)
                 # note: overlaps some collapse hooks, but that's fine:
@@ -126,14 +130,18 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
 
-        if self.cfg.get("forget_loss") == "mlp_breaking":
+        if self.cfg.forget_loss == "mlp_breaking":
             forget_loss = mlp_breaking_loss(model, batch, self.layer_range)
-        elif self.cfg.get("forget_loss") == "mlp_activation_breaking":
+        elif self.cfg.forget_loss == "mlp_activation_breaking":
             forget_loss = mlp_activation_breaking_loss(model, batch, self.layer_range)
-        elif self.cfg.get("forget_loss") == "neuron_breaking":
+        elif self.cfg.forget_loss == "gate_and_up_breaking":
+            forget_loss = gate_and_up_breaking_loss(model, batch, self.layer_range)
+        elif self.cfg.forget_loss == "neuron_breaking":
             forget_loss = neuron_breaking_loss(model, batch, self.layer_range, output)
-        else:
+        elif self.cfg.forget_loss == "neg_cross_entropy":
             forget_loss = -output.loss
+        else:
+            raise ValueError(f"Unknown forget loss: {self.cfg.forget_loss}")
         forget_loss.backward()
         # we could do backward(inputs=[some_early_weight]) and delete that grad later
         # to skip the weight.grad computation, while maintaining full backpropagation
