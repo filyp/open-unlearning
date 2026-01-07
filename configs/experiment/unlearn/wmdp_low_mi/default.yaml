@@ -43,7 +43,7 @@ tokenizer_cfg:
 
 data:
   custom_loaders:
-    wmdp_bio_deduped:
+    wmdp_low_mi:
       dataset: bio
       # dataset: cyber
       eval_on_all_questions: false
@@ -68,8 +68,8 @@ data:
           # - computer_science_and_technology/computer_science_and_technology_000000.jsonl
 
 eval:
-  wmdp_deduped:
-    handler: WMDPDedupedEvaluator
+  wmdp_low_mi:
+    handler: WMDPLLowMIEvaluator
     disr_budget: 0.005  # KL Divergence budget
     eval_mcq: true
 
@@ -84,8 +84,8 @@ relearning_trainer:
     lr_scheduler_type: constant
     max_grad_norm: 0
   relearning_eval:
-    wmdp_deduped:
-      handler: WMDPDedupedEvaluator
+    wmdp_low_mi:
+      handler: WMDPLLowMIEvaluator
       disr_budget: null  # null means training will not be terminated based on KL
       eval_mcq: true
 

@@ -1,4 +1,4 @@
-# python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=SAMPLE_UNLEARN mode=wmdp_deduped
+# python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
 import re
 
@@ -166,7 +166,7 @@ class CIR(UnlearnTrainer):
         normalize_grads(model)
 
         if not self.after_first_epoch:
-            # zero gradients so optimizer.step() is no-op
+            # zero gradients so that optimizer.step() is no-op
             model.zero_grad()
 
         return forget_loss.detach()
@@ -178,12 +178,3 @@ class CIR(UnlearnTrainer):
 # )
 # trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
-
-# * old ways of filtering:
-# dists = acts.norm(dim=1) * grads.norm(dim=1)
-# dists = grads.norm(dim=1)
-#
-# dists = (centered_norm * mahal_dirs_norm).sum(dim=1)
-# dists = (centered * mahal_dirs_norm).sum(dim=1)
-# dists = (centered * mahal_dirs).sum(dim=1)
-# dists = (centered_norm * mahal_dirs).sum(dim=1)

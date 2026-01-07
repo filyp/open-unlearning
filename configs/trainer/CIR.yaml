@@ -7,7 +7,7 @@ handler: CIR
 args:
   optim: sgd
   lr_scheduler_type: constant
-  learning_rate: 0.25
+  learning_rate: 0.15
 
 method_args:
   cfg:
@@ -23,7 +23,7 @@ method_args:
     
     # forget_loss: mlp_breaking
     # forget_loss: mlp_activation_breaking
-    forget_loss: gate_and_up_breaking
+    forget_loss: gate_and_up_breaking_approx
 
     # forget_loss: neuron_breaking
     # forget_loss: neg_cross_entropy

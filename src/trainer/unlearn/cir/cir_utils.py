@@ -107,7 +107,7 @@ def _sanitize_tensor(t, epsilon):
     return t + sign * epsilon
 
 
-def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initialized):
+def get_grad_correction(model, token_mask, grad_collapsers, after_first_epoch):
     grad_corrections = {}
     for name, module in model.named_modules():
         if not name.endswith(".down_proj"):
@@ -123,7 +123,7 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
 
         grad_collapsers[name].add_vecs(grad_output)
 
-        if not collapsers_initialized:
+        if not after_first_epoch:
             continue  # first epoch, so only collect activations and not train
 
         out_collapsed = (

@@ -51,11 +51,40 @@ def mlp_activation_breaking(model, batch, layer_range):
     return loss_acc / len(range(*layer_range))
 
 
+def gate_and_up_breaking_approx(model, batch, layer_range):
+    # ignores neurons where gate activation is negative
+    # this way, we can store 2x less data than in gate_and_up_breaking
+    # also, it turns out, ignoring negative gates actually yields better results
+    _mask = get_token_mask(batch)
+
+    if "org_act_out" not in batch:  # first epoch
+        batch["org_act_out"] = {}
+
+    loss_acc = 0
+    for layer_id in range(*layer_range):
+        mlp = model.model.layers[layer_id].mlp
+        gate_out = mlp.gate_proj.cached_out[_mask]
+        up_out = mlp.up_proj.cached_out[_mask]
+        
+        if layer_id not in batch["org_act_out"]:  # first epoch, so cache it
+            act = gate_out.clip(min=0) * up_out
+            batch["org_act_out"][layer_id] = act.detach().cpu()
+
+        org_act = batch["org_act_out"][layer_id].to(up_out.device)
+        norm = org_act.norm(dim=-1).mean()
+
+        loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
+        loss_acc += (gate_out.clip(min=0) * org_act.abs()).mean() / norm**1.5
+
+    return loss_acc / len(range(*layer_range))
+
+
 def gate_and_up_breaking(model, batch, layer_range):
     _mask = get_token_mask(batch)
 
-    if "org_act_output" not in batch:  # first epoch
-        batch["org_act_output"] = {}
+    if "org_gate_out" not in batch:  # first epoch
+        batch["org_gate_out"] = {}
+        batch["org_up_out"] = {}
 
     loss_acc = 0
     for layer_id in range(*layer_range):
@@ -63,43 +92,29 @@ def gate_and_up_breaking(model, batch, layer_range):
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
 
-        if layer_id not in batch["org_act_output"]:  # first epoch, so cache it
-            act = gate_out.clip(min=0) * up_out
-            batch["org_act_output"][layer_id] = act.detach().cpu()
+        gate_out = mlp.act_fn(gate_out)
 
-        org_act = batch["org_act_output"][layer_id].to(up_out.device)
-        norm = org_act.norm(dim=-1).mean()
+        if layer_id not in batch["org_gate_out"]:  # first epoch, so cache it
+            batch["org_gate_out"][layer_id] = gate_out.detach().cpu()
+            batch["org_up_out"][layer_id] = up_out.detach().cpu()
 
-        loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
-        loss_acc += (gate_out.clip(min=0) * org_act.abs()).mean() / norm**1.5
+        org_gate_out = batch["org_gate_out"][layer_id].to(up_out.device)
+        org_up_out = batch["org_up_out"][layer_id].to(up_out.device)
+        gate_norm = org_gate_out.norm(dim=-1).mean()
+        up_norm = org_up_out.norm(dim=-1).mean()
 
-    return loss_acc / len(range(*layer_range))
-
-
-def gate_and_up_breaking_approx(model, batch, layer_range):
-    _mask = get_token_mask(batch)
-
-    if "org_act_output" not in batch:  # first epoch
-        batch["org_act_output"] = {}
-
-    loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
-        gate_out = mlp.gate_proj.cached_out[_mask]
-        up_out = mlp.up_proj.cached_out[_mask]
-
-        if layer_id not in batch["org_act_output"]:  # first epoch, so cache it
-            act = gate_out.clip(min=0) * up_out
-            batch["org_act_output"][layer_id] = act.detach().cpu()
-
-        org_act = batch["org_act_output"][layer_id].to(up_out.device)
-        norm = org_act.norm(dim=-1).mean()
-
-        loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
-        loss_acc += (gate_out.clip(min=0) * org_act.abs()).mean() / norm**1.5
+        loss_acc += (
+            ((gate_out * org_gate_out).clip(min=0) * org_up_out.abs()).mean()
+            / gate_norm**2
+            / up_norm
+        )
+        loss_acc += (
+            ((up_out * org_up_out).clip(min=0) * org_gate_out.abs()).mean()
+            / up_norm**2
+            / gate_norm
+        )
 
     return loss_acc / len(range(*layer_range))
-
 
 
 # # separate gate and up
@@ -108,9 +123,9 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
 #     # (the intermediate MLP activation before the down projection)
 #     _mask = get_token_mask(batch)
 
-#     if "org_gate_output" not in batch:  # first epoch
-#         batch["org_gate_output"] = {}
-#         batch["org_up_output"] = {}
+#     if "org_gate_out" not in batch:  # first epoch
+#         batch["org_gate_out"] = {}
+#         batch["org_up_out"] = {}
 
 #     loss_acc = 0
 #     for layer_id in range(*layer_range):
@@ -120,13 +135,13 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
 
 #         gate_out = gate_out.clip(min=0)
 
-#         if layer_id not in batch["org_gate_output"]:  # first epoch, so cache it
+#         if layer_id not in batch["org_gate_out"]:  # first epoch, so cache it
 #             # act = gate_out.clip(min=0) * up_out
-#             batch["org_gate_output"][layer_id] = gate_out.detach().cpu()
-#             batch["org_up_output"][layer_id] = up_out.detach().cpu()
+#             batch["org_gate_out"][layer_id] = gate_out.detach().cpu()
+#             batch["org_up_out"][layer_id] = up_out.detach().cpu()
 
-#         org_gate_out = batch["org_gate_output"][layer_id].to(gate_out.device)
-#         org_up_out = batch["org_up_output"][layer_id].to(up_out.device)
+#         org_gate_out = batch["org_gate_out"][layer_id].to(gate_out.device)
+#         org_up_out = batch["org_up_out"][layer_id].to(up_out.device)
 
 #         norm = org_gate_out.norm(dim=-1).mean()
 #         loss_acc += (gate_out * org_gate_out).clip(min=0).mean() / norm**2

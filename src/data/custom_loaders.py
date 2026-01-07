@@ -20,7 +20,7 @@ def load_hf_cached(path, split="train", data_files=None):
         return ds
 
 
-############## WMDP DEDUPED ##############
+############## WMDP LOW MI ##############
 # todo they don't support chat templates yet - will need to handle that using data.utils
 
 
@@ -76,7 +76,7 @@ def _load_recall_samples(questions, cfg, tokenizer):
     return samples
 
 
-def wmdp_bio_deduped(cfg, **kwargs):
+def wmdp_low_mi(cfg, **kwargs):
     tokenizer = kwargs["tokenizer"]
 
     T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")

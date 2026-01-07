@@ -122,7 +122,7 @@ def _create_acts_to_logits(model):
         return lambda h: F.linear(h, cached_embed_weight)
 
 
-class WMDPDedupedEvaluator(Evaluator):
+class WMDPLLowMIEvaluator(Evaluator):
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg
         

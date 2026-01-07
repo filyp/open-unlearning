@@ -1,5 +1,5 @@
 # Run from repo root:
-#   modal run modal_runner.py --args 'python3 src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_deduped/default trainer=CIR task_name=test'
+#   modal run modal_runner.py --args 'python3 src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=test'
 
 import subprocess
 
@@ -25,7 +25,7 @@ app = modal.App("open-unlearning", image=image)
 @app.function(
     gpu="L40S",  # 48GB
     # gpu="A100-80GB",  # if needing 80GB
-    # gpu="H100",  # it's not any faster than L40S, at least for wmdp-deduped
+    # gpu="H100",  # it's not any faster than L40S, at least for wmdp_low_mi
     timeout=1 * 3600,
 )
 def run_training(args: str):
