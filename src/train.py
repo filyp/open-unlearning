@@ -93,7 +93,7 @@ def main(cfg: DictConfig):
             os.environ["COMET_PROJECT_NAME"] = "rel-" + os.environ["COMET_PROJECT_NAME"]
 
         relearning_evaluators = get_evaluators(
-            eval_cfgs={"wmdp_deduped": relearning_cfg.relearning_eval},
+            eval_cfgs=relearning_cfg.relearning_eval,
             template_args=template_args,
             model=model,
             tokenizer=tokenizer,

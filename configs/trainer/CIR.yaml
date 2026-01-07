@@ -22,10 +22,11 @@ method_args:
       # - down_proj
     
     # forget_loss: null
-    forget_loss: mlp_breaking
-    # forget_loss: mlp_activation_breaking
+    # forget_loss: mlp_breaking
+    forget_loss: mlp_activation_breaking
+    # forget_loss: neuron_breaking
 
-    # layer_range: [0, 12]
+    layer_range: [6, 12]
 
     # ! unused params
     # mlp_quantile: 0.5  # useful on later layers, but very slightly

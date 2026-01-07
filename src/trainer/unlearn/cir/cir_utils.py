@@ -5,37 +5,39 @@ import torch as pt
 ###################### hooks for caching acts and grads #######################
 
 
-def save_act_input_hook(module, args):
-    # if module.training:
-    module.last_act_input = args[0].detach().clone()
-
-
-def save_grad_output_hook(module, grad_output):
-    # if module.training:
-    module.last_grad_output = grad_output[0].detach().clone()
-
-
-def save_grad_input_and_output_hook(module, grad_input, grad_output):
-    # if module.training:
-    module.last_grad_input = grad_input[0].detach().clone()
-    module.last_grad_output = grad_output[0].detach().clone()
+def save_act_input_hook(module, args, output):
+    assert isinstance(args, tuple)
+    assert len(args) == 1
+    if module.training:
+        module.last_act_input = args[0]
+    else:
+        module.last_act_input = None  # clean automatically
 
 
 def save_output_hook(module, args, output):
-    # for mlp output saving
-    module.cached_out = output
+    assert isinstance(output, pt.Tensor)
+    if module.training:
+        module.cached_out = output
+    else:
+        module.cached_out = None  # clean automatically
 
 
-def save_act_input_hook_nondetached(module, args):
-    # for saving input to a module (without detaching, for gradient flow)
-    module.last_act_input = args[0]
+def save_grad_input_hook(module, grad_input, grad_output):
+    assert isinstance(grad_input, tuple)
+    assert len(grad_input) == 1
+    if module.training:
+        module.last_grad_input = grad_input[0]
+    else:
+        module.last_grad_input = None  # clean automatically
 
 
-# def install_act_and_grad_caching_hooks(model):
-#     for _, module in model.named_modules():
-#         if hasattr(module, "weight") and module.weight.requires_grad:
-#             module.register_forward_pre_hook(_save_act_hook)
-#             module.register_full_backward_pre_hook(_save_grad_hook)
+def save_grad_output_hook(module, grad_input, grad_output):
+    assert isinstance(grad_output, tuple)
+    assert len(grad_output) == 1
+    if module.training:
+        module.last_grad_output = grad_output[0]
+    else:
+        module.last_grad_output = None  # clean automatically
 
 
 ################################ torch utils #################################
@@ -57,17 +59,6 @@ def batched(iterable, n):
     it = iter(iterable)
     while batch := list(islice(it, n)):
         yield batch
-
-
-# @contextmanager
-# def trim_layers(model, max_layer):
-#     """Temporarily tell the model to use only the first max_layer layers."""
-#     all_layers = model.model.layers
-#     model.model.layers = model.model.layers[:max_layer]
-#     try:
-#         yield
-#     finally:
-#         model.model.layers = all_layers
 
 
 def get_token_mask(batch):
@@ -170,7 +161,7 @@ def mlp_breaking_loss(model, batch, layer_range):
     loss_acc = 0
     for layer_id in range(*layer_range):
         mlp = model.model.layers[layer_id].mlp
-        out = mlp.cached_out[_mask]
+        out = mlp.down_proj.cached_out[_mask]
 
         if layer_id not in batch["org_mlp_out"]:  # first epoch, so cache it
             batch["org_mlp_out"][layer_id] = out.detach().cpu()
@@ -210,40 +201,36 @@ def mlp_activation_breaking_loss(model, batch, layer_range):
     return loss_acc / len(range(*layer_range))
 
 
-# def cb_retain_loss(output, batch, cfg):
-#     # _mask = get_token_mask(batch)  # retains only on meaningful tokens
-#     _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
-#     loss_acc = 0
-#     for layer_id in cfg.cb_retaining_layers:
-#         acts = output.hidden_states[layer_id][_mask].float()
-#         org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
-#         assert acts.shape == org_acts.shape
-#         assert len(acts.shape) == 2
-#         avg_act_norm = org_acts.norm(dim=-1).mean()
-#         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
-#         loss_acc += dist
-#     return loss_acc / len(cfg.cb_retaining_layers)
+def neuron_breaking_loss(model, batch, layer_range, output):
+    # Similar to mlp_activation_breaking_loss but uses gradients instead of cached activations
+    # On first batch, we do an extra backward pass with -output.loss to get gradients on neurons
+    _mask = get_token_mask(batch)
 
+    if "org_down_proj_grad" not in batch:  # first epoch
+        # Do backward pass with -loss to get gradients that would decrease the loss
+        (-output.loss).backward(retain_graph=True)
 
-################################ loss helpers #################################
+        batch["org_down_proj_grad"] = {}
+        for layer_id in range(*layer_range):
+            down_proj = model.model.layers[layer_id].mlp.down_proj
+            # last_grad_input is the gradient w.r.t. the input of down_proj
+            grad = down_proj.last_grad_input[_mask]
+            batch["org_down_proj_grad"][layer_id] = grad.detach().cpu()
 
+        # Zero out the gradients so they don't affect the actual training step
+        model.zero_grad()
 
-# def cache_activations_for_cb_retain_loss(model, batches, cfg):
-#     for batch in batches:
-#         with pt.no_grad():
-#             output = model(**prep_batch(batch, model.device), output_hidden_states=True)
-#         batch["retain_acts"] = {
-#             l_num: output.hidden_states[l_num].detach().to("cpu")
-#             for l_num in cfg.cb_retaining_layers
-#         }
+    loss_acc = 0
+    for layer_id in range(*layer_range):
+        down_proj = model.model.layers[layer_id].mlp.down_proj
+        act = down_proj.last_act_input[_mask]
 
+        org_grad = batch["org_down_proj_grad"][layer_id].to(act.device)
+        # activation * org_gradient, clipped and averaged
+        loss_acc += (act * org_grad).clip(min=0).mean()
 
-# def trainable_modules(model):
-#     return [
-#         (n, m)
-#         for n, m in model.named_modules()
-#         if "_proj" in n and m.weight.requires_grad
-#     ]
+    return loss_acc / len(range(*layer_range))
+
 
 ################################ grad collapse #################################
 
@@ -253,16 +240,15 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
     for name, module in model.named_modules():
         if not name.endswith(".down_proj"):
             continue
-        if not hasattr(module, "last_grad_input"):
+        up_proj = model.get_submodule(name.replace(".down_proj", ".up_proj"))
+        if not up_proj.weight.requires_grad:
             continue
 
         # grad_input == grad_output @ module.weight (from backpropagation)
-        grad_input = module.last_grad_input[token_mask]
-        grad_output = module.last_grad_output[token_mask]
+        grad_input = module.last_grad_input[token_mask].detach().clone()
+        grad_output = module.last_grad_output[token_mask].detach().clone()
         assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
         assert grad_output.shape == (token_mask.sum(), module.weight.shape[0])
-        module.last_grad_input = None
-        module.last_grad_output = None
 
         grad_collapsers[name].add_vecs(grad_output)
 
@@ -305,3 +291,47 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
 #         )
 #         # Zero out filtered outputs so they don't contribute to loss
 #         batch["org_mlp_out"][layer_id][~quantile_mask] = 0
+
+
+# def cb_retain_loss(output, batch, cfg):
+#     # _mask = get_token_mask(batch)  # retains only on meaningful tokens
+#     _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
+#     loss_acc = 0
+#     for layer_id in cfg.cb_retaining_layers:
+#         acts = output.hidden_states[layer_id][_mask].float()
+#         org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
+#         assert acts.shape == org_acts.shape
+#         assert len(acts.shape) == 2
+#         avg_act_norm = org_acts.norm(dim=-1).mean()
+#         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
+#         loss_acc += dist
+#     return loss_acc / len(cfg.cb_retaining_layers)
+
+
+# def cache_activations_for_cb_retain_loss(model, batches, cfg):
+#     for batch in batches:
+#         with pt.no_grad():
+#             output = model(**prep_batch(batch, model.device), output_hidden_states=True)
+#         batch["retain_acts"] = {
+#             l_num: output.hidden_states[l_num].detach().to("cpu")
+#             for l_num in cfg.cb_retaining_layers
+#         }
+
+
+# def trainable_modules(model):
+#     return [
+#         (n, m)
+#         for n, m in model.named_modules()
+#         if "_proj" in n and m.weight.requires_grad
+#     ]
+
+# @contextmanager
+# def trim_layers(model, max_layer):
+#     """Temporarily tell the model to use only the first max_layer layers."""
+#     all_layers = model.model.layers
+#     model.model.layers = model.model.layers[:max_layer]
+#     try:
+#         yield
+#     finally:
+#         model.model.layers = all_layers
+
