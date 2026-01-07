@@ -2,74 +2,6 @@ import torch as pt
 from welford_torch import OnlineCovariance
 
 
-# todo if using only gate and up proj, we could use just one distr per MLP
-# but for simplicity, we can keep it separate for now
-
-
-# * it is still useful if we want to do the more efficient calculation of just the top N PCs, not full covariance matrix inversion
-def project_out(base, unwanted):
-    # check dimensions
-    _pos, _stream = base.shape
-    (_stream2,) = unwanted.shape
-    assert _stream == _stream2
-
-    unwanted = unwanted / unwanted.norm()
-    magnitudes = (base * unwanted).sum(axis=-1)
-    return pt.einsum("t,s->ts", magnitudes, unwanted)
-
-
-def _get_projections(vectors_flattened, num_proj=11, niter=16):
-    num_pc = num_proj - 1
-    vectors_flattened = vectors_flattened.to("cuda").float()
-
-    mean = vectors_flattened.mean(axis=0)
-
-    if num_proj == 0:
-        return pt.tensor([])
-    elif num_proj == 1:
-        return mean.reshape(1, -1)
-
-    centered_vectors = vectors_flattened - mean
-    _, S, V = pt.pca_lowrank(centered_vectors, num_pc, niter=niter)
-    pca_components = V.T
-
-    # return one tensor of mean and the pca components
-    return pt.cat([mean.reshape(1, -1), pca_components], dim=0)
-
-
-class TopPCsCollapser:
-    def __init__(self, num_proj: int = 10, niter: int = 16):
-        self.num_proj = num_proj
-        self.niter = niter
-        self._reset_vecs()
-
-    def _reset_vecs(self):
-        # Reset grads list for next epoch
-        self.cache = []
-
-    def add_vecs(self, vecs):
-        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
-        self.cache.append(vecs)
-
-    def process_saved_vecs(self):
-        # Compute PCA projections for gradients (to collapse)
-        if not self.cache:
-            return
-        vectors_flattened = pt.cat(self.cache)
-        self.to_collapse = _get_projections(
-            vectors_flattened, self.num_proj, self.niter
-        )
-        self._reset_vecs()
-
-    def collapse(self, vecs):
-        for comp in self.to_collapse:
-            vecs = vecs - project_out(vecs, comp)
-        return vecs
-
-
-########################################################
-
-
 def _get_mahal_dirs(centered, eig_val, eig_vec):
     # Compute Mahalanobis directions using eigendecomposition
     projected = centered @ eig_vec  # (N, D)
@@ -84,41 +16,6 @@ def _proj_to_mahal_dirs(centered, mahal_dirs):
     mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
     return proj_strenghts * mahal_dirs_norm
-
-
-class ApproxMahalanobisCollapser:
-    def __init__(self, num_proj: int = 1000):
-        self.num_proj = num_proj
-        self._reset_vecs()
-
-    def _reset_vecs(self):
-        # Reset grads list for next epoch
-        self.cache = []
-
-    def add_vecs(self, vecs):
-        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
-        self.cache.append(vecs)
-
-    def process_saved_vecs(self):
-        # Compute PCA projections for gradients (to collapse)
-        if not self.cache:
-            return
-        vectors_flattened = pt.cat(self.cache)
-
-        vectors_flattened = vectors_flattened.to("cuda").float()
-        self.mean = vectors_flattened.mean(axis=0)
-
-        centered_vectors = vectors_flattened - self.mean
-        _, S, V = pt.pca_lowrank(centered_vectors, self.num_proj)
-        self.eig_val = S
-        self.pca_components = V
-
-        self._reset_vecs()
-
-    def collapse(self, vecs):
-        centered = vecs - self.mean
-        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.pca_components)
-        return _proj_to_mahal_dirs(centered, mahal_dirs)
 
 
 class MahalanobisCollapser:
@@ -179,6 +76,42 @@ class MahalanobisCollapser:
     # mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T  # works similarly good to clamping
 
 
+class ApproxMahalanobisCollapser:
+    def __init__(self, num_proj: int, device: str):
+        self.num_proj = num_proj
+        self.device = device
+        self._reset_vecs()
+
+    def _reset_vecs(self):
+        # Reset grads list for next epoch
+        self.cache = []
+
+    def add_vecs(self, vecs):
+        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
+        self.cache.append(vecs)
+
+    def process_saved_vecs(self):
+        # Compute PCA projections for gradients (to collapse)
+        if not self.cache:
+            return
+        vectors_flattened = pt.cat(self.cache)
+
+        vectors_flattened = vectors_flattened.to(self.device).float()
+        self.mean = vectors_flattened.mean(axis=0)
+
+        centered_vectors = vectors_flattened - self.mean
+        _, S, V = pt.pca_lowrank(centered_vectors, self.num_proj)
+        self.eig_val = S
+        self.pca_components = V
+
+        self._reset_vecs()
+
+    def collapse(self, vecs):
+        centered = vecs - self.mean
+        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.pca_components)
+        return _proj_to_mahal_dirs(centered, mahal_dirs)
+
+
 # class MahalanobisCollapserInvCov:
 #     """Same as MahalanobisCollapser, but uses inverse covariance instead of eigendecomposition.
 
@@ -223,3 +156,68 @@ class MahalanobisCollapser:
 #         mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
 #         proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
 #         return proj_strenghts * mahal_dirs_norm
+
+
+############################## top N collapse ##############################
+
+
+# # * it is still useful if we want to do the more efficient calculation of just the top N PCs, not full covariance matrix inversion or eigen decomposition
+# # it performs much worse than the MahalanobisCollapser, though
+# def project_out(base, unwanted):
+#     # check dimensions
+#     _pos, _stream = base.shape
+#     (_stream2,) = unwanted.shape
+#     assert _stream == _stream2
+
+#     unwanted = unwanted / unwanted.norm()
+#     magnitudes = (base * unwanted).sum(axis=-1)
+#     return pt.einsum("t,s->ts", magnitudes, unwanted)
+
+
+# def _get_projections(vectors_flattened, num_proj=11, niter=16):
+#     num_pc = num_proj - 1
+#     vectors_flattened = vectors_flattened.to("cuda").float()
+
+#     mean = vectors_flattened.mean(axis=0)
+
+#     if num_proj == 0:
+#         return pt.tensor([])
+#     elif num_proj == 1:
+#         return mean.reshape(1, -1)
+
+#     centered_vectors = vectors_flattened - mean
+#     _, S, V = pt.pca_lowrank(centered_vectors, num_pc, niter=niter)
+#     pca_components = V.T
+
+#     # return one tensor of mean and the pca components
+#     return pt.cat([mean.reshape(1, -1), pca_components], dim=0)
+
+
+# class TopPCsCollapser:
+#     def __init__(self, num_proj: int = 10, niter: int = 16):
+#         self.num_proj = num_proj
+#         self.niter = niter
+#         self._reset_vecs()
+
+#     def _reset_vecs(self):
+#         # Reset grads list for next epoch
+#         self.cache = []
+
+#     def add_vecs(self, vecs):
+#         # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
+#         self.cache.append(vecs)
+
+#     def process_saved_vecs(self):
+#         # Compute PCA projections for gradients (to collapse)
+#         if not self.cache:
+#             return
+#         vectors_flattened = pt.cat(self.cache)
+#         self.to_collapse = _get_projections(
+#             vectors_flattened, self.num_proj, self.niter
+#         )
+#         self._reset_vecs()
+
+#     def collapse(self, vecs):
+#         for comp in self.to_collapse:
+#             vecs = vecs - project_out(vecs, comp)
+#         return vecs

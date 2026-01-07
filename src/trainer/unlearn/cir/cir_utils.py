@@ -2,45 +2,7 @@ from itertools import islice
 
 import torch as pt
 
-###################### hooks for caching acts and grads #######################
-
-
-def save_act_input_hook(module, args, output):
-    assert isinstance(args, tuple)
-    assert len(args) == 1
-    if module.training:
-        module.last_act_input = args[0]
-    else:
-        module.last_act_input = None  # clean automatically
-
-
-def save_act_output_hook(module, args, output):
-    assert isinstance(output, pt.Tensor)
-    if module.training:
-        module.cached_out = output
-    else:
-        module.cached_out = None  # clean automatically
-
-
-def save_grad_input_hook(module, grad_input, grad_output):
-    assert isinstance(grad_input, tuple)
-    assert len(grad_input) == 1
-    if module.training:
-        module.last_grad_input = grad_input[0]
-    else:
-        module.last_grad_input = None  # clean automatically
-
-
-def save_grad_output_hook(module, grad_input, grad_output):
-    assert isinstance(grad_output, tuple)
-    assert len(grad_output) == 1
-    if module.training:
-        module.last_grad_output = grad_output[0]
-    else:
-        module.last_grad_output = None  # clean automatically
-
-
-################################ torch utils #################################
+import trainer.unlearn.cir.hooks as hooks
 
 
 def prep_batch(batch, device):
@@ -123,7 +85,6 @@ def normalize_grads(model):
     for p in model.parameters():
         if p.grad is not None:
             p.grad /= update_norm
-    # print(f"update_norm: {update_norm}")
 
 
 def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
@@ -140,131 +101,10 @@ def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
     return relev_mask
 
 
-def sanitize_tensor(t, epsilon):
+def _sanitize_tensor(t, epsilon):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
-
-
-################################ loss functions #################################
-
-
-def mlp_breaking_loss(model, batch, layer_range):
-    # note that it transports the original outputs from RAM
-    # which would normally be slow, but if it is called right after model.forward(),
-    # it is done in parallel, so causes no slowdown
-    _mask = get_token_mask(batch)
-
-    if "org_mlp_out" not in batch:  # first epoch
-        batch["org_mlp_out"] = {}
-
-    loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
-        out = mlp.down_proj.cached_out[_mask]
-
-        if layer_id not in batch["org_mlp_out"]:  # first epoch, so cache it
-            batch["org_mlp_out"][layer_id] = out.detach().cpu()
-
-        org_out = batch["org_mlp_out"][layer_id].to(out.device)
-        org_out_norm = org_out.norm(dim=-1).mean()
-        dotproducts = pt.einsum("ts,ts->t", out, org_out)
-        dotproducts = dotproducts / org_out_norm**2
-        loss_acc += dotproducts.clip(min=0).mean()
-
-    return loss_acc / len(range(*layer_range))
-
-
-def mlp_activation_breaking_loss(model, batch, layer_range):
-    # Similar to mlp_breaking_loss but targets the down_proj input activation
-    # (the intermediate MLP activation before the down projection)
-    _mask = get_token_mask(batch)
-
-    if "org_down_proj_input" not in batch:  # first epoch
-        batch["org_down_proj_input"] = {}
-
-    loss_acc = 0
-    for layer_id in range(*layer_range):
-        down_proj = model.model.layers[layer_id].mlp.down_proj
-        act = down_proj.last_act_input[_mask]
-
-        if layer_id not in batch["org_down_proj_input"]:  # first epoch, so cache it
-            batch["org_down_proj_input"][layer_id] = act.detach().cpu()
-
-        org_act = batch["org_down_proj_input"][layer_id].to(act.device)
-        org_act_norm = org_act.norm(dim=-1).mean()
-        loss_acc += (act * org_act).clip(min=0).mean() / org_act_norm**2
-
-    return loss_acc / len(range(*layer_range))
-
-
-def gate_and_up_breaking_loss(model, batch, layer_range):
-    # Similar to mlp_breaking_loss but targets the down_proj input activation
-    # (the intermediate MLP activation before the down projection)
-    _mask = get_token_mask(batch)
-
-    if "org_act_output" not in batch:  # first epoch
-        batch["org_act_output"] = {}
-
-    loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
-        gate_out = mlp.gate_proj.cached_out[_mask]
-        up_out = mlp.up_proj.cached_out[_mask]
-
-        if layer_id not in batch["org_act_output"]:  # first epoch, so cache it
-            act = gate_out.clip(min=0) * up_out
-            batch["org_act_output"][layer_id] = act.detach().cpu()
-
-        org_act = batch["org_act_output"][layer_id].to(up_out.device)
-        norm = org_act.norm(dim=-1).mean()
-
-        # tried also weighting them individually, by gate and up org output, not the org_act, but it works much worse
-
-        loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
-        loss_acc += (gate_out.clip(min=0) * org_act.abs()).mean() / norm**1.5
-
-        # loss_acc += (act * org_act).clip(min=0).mean() / norm**2
-
-    return loss_acc / len(range(*layer_range))
-
-
-def neuron_breaking_loss(model, batch, layer_range, output):
-    # It weighs how much neurons must be broken, by their gradient.
-    # Note: this works surprisingly bad; possibly there's some bug.
-    # Even if there's no bug, it would be useful to understand why it's so bad.
-
-    # Similar to mlp_activation_breaking_loss but uses gradients instead of cached activations
-    # On first batch, we do an extra backward pass with -output.loss to get gradients on neurons
-    _mask = get_token_mask(batch)
-
-    if "org_down_proj_grad" not in batch:  # first epoch
-        # Do backward pass with -loss to get gradients that would decrease the loss
-        (-output.loss).backward(retain_graph=True)
-
-        batch["org_down_proj_grad"] = {}
-        for layer_id in range(*layer_range):
-            down_proj = model.model.layers[layer_id].mlp.down_proj
-            # last_grad_input is the gradient w.r.t. the input of down_proj
-            grad = down_proj.last_grad_input[_mask]
-            batch["org_down_proj_grad"][layer_id] = grad.detach().cpu()
-
-        # Zero out the gradients so they don't affect the actual training step
-        model.zero_grad()
-
-    loss_acc = 0
-    for layer_id in range(*layer_range):
-        down_proj = model.model.layers[layer_id].mlp.down_proj
-        act = down_proj.last_act_input[_mask]
-
-        org_grad = batch["org_down_proj_grad"][layer_id].to(act.device)
-        # activation * org_gradient, clipped and averaged
-        loss_acc += (act * org_grad).clip(min=0).mean()
-
-    return loss_acc / len(range(*layer_range))
-
-
-################################ grad collapse #################################
 
 
 def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initialized):
@@ -276,7 +116,6 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
         if not up_proj.weight.requires_grad:
             continue
 
-        # grad_input == grad_output @ module.weight (from backpropagation)
         grad_input = module.last_grad_input[token_mask].detach().clone()
         grad_output = module.last_grad_output[token_mask].detach().clone()
         assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
@@ -290,11 +129,34 @@ def get_grad_correction(model, token_mask, grad_collapsers, collapsers_initializ
         out_collapsed = (
             grad_collapsers[name].collapse(grad_output).to(module.weight.dtype)
         )
-        in_collapsed = out_collapsed @ module.weight  # backprop
-        grad_correction = in_collapsed / sanitize_tensor(grad_input, 1e-6)
+        in_collapsed = out_collapsed @ module.weight  # backpropagation
+        grad_correction = in_collapsed / _sanitize_tensor(grad_input, 1e-6)
         _parent_mlp_name = name.rsplit(".", 1)[0]
         grad_corrections[_parent_mlp_name] = grad_correction
     return grad_corrections
+
+
+def install_hooks(model, layer_range, forget_loss):
+    # hooks for forget loss
+    for layer_id in range(*layer_range):
+        mlp = model.model.layers[layer_id].mlp
+        if forget_loss == "mlp_breaking":
+            mlp.down_proj.register_forward_hook(hooks.save_act_output)
+        elif forget_loss == "mlp_activation_breaking":
+            mlp.down_proj.register_forward_hook(hooks.save_act_input)
+        elif forget_loss in ["gate_and_up_breaking", "gate_and_up_breaking_approx"]:
+            mlp.gate_proj.register_forward_hook(hooks.save_act_output)
+            mlp.up_proj.register_forward_hook(hooks.save_act_output)
+
+    for layer_id in range(layer_range[1] - 1):
+        # hooks for component collapse
+        mlp = model.model.layers[layer_id].mlp
+        for module in [mlp.up_proj, mlp.gate_proj]:
+            module.register_forward_hook(hooks.save_act_input)
+            module.register_full_backward_hook(hooks.save_grad_output)
+        # additional hooks for computing grad collapse more efficiently
+        mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
+        mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
 
 # # Extract eigendecomposition and apply mahalanobis projection

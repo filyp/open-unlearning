@@ -5,43 +5,37 @@ import re
 import torch as pt
 from transformers import TrainerCallback
 
+import trainer.unlearn.cir.loss_fns as loss_fns
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
     get_grad_correction,
     get_relev_mask_with_caching,
     get_token_mask,
-    mlp_activation_breaking_loss,
-    mlp_breaking_loss,
-    gate_and_up_breaking_loss,
-    neuron_breaking_loss,
+    install_hooks,
     normalize_grads,
     prep_batch,
-    save_act_input_hook,
-    save_grad_input_hook,
-    save_grad_output_hook,
-    save_act_output_hook,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 
 logging.basicConfig(level=logging.INFO)
 
 
-# limit RAM
-import resource  # noqa: E402
+# # limit RAM
+# import resource  # noqa: E402
+# resource.setrlimit(resource.RLIMIT_DATA, (18 * 1024**3, 20 * 1024**3))
 
-resource.setrlimit(resource.RLIMIT_DATA, (18 * 1024**3, 20 * 1024**3))
 
-
-class CIRCallback(TrainerCallback):
+class CalculateDistributionStatsCallback(TrainerCallback):
     """Callback to extract distribution stats at epoch end."""
 
     def __init__(self, trainer):
         self.trainer = trainer
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        for collapser in self.trainer.act_collapsers.values():
-            collapser.process_saved_vecs()
+        if "act_pcs_to_use" in self.trainer.cfg:
+            for collapser in self.trainer.act_collapsers.values():
+                collapser.process_saved_vecs()
         if "grad_pcs_to_use" in self.trainer.cfg:
             for collapser in self.trainer.grad_collapsers.values():
                 collapser.process_saved_vecs()
@@ -54,13 +48,12 @@ class CIR(UnlearnTrainer):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
         self.after_first_epoch = False
-        model = self.model
 
-        self.layer_range = cfg.get("layer_range", [0, len(model.model.layers)])
+        self.layer_range = cfg.get("layer_range", [0, len(self.model.model.layers)])
         logging.info(f"loss layer range: {self.layer_range}")
 
-        # * set trainable params
-        for n, p in model.named_parameters():
+        # set trainable params
+        for n, p in self.model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
             if p.requires_grad:
                 # match .layers.X. pattern
@@ -70,53 +63,33 @@ class CIR(UnlearnTrainer):
                 if int(layer_num) >= self.layer_range[1] - 1:
                     p.requires_grad = False
 
+        install_hooks(self.model, self.layer_range, cfg.forget_loss)
+
+        # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
             self.train_dataset,
             self.data_collator,
             self.args.per_device_train_batch_size,
         )
 
-        # hooks for forget loss
-        for layer_id in range(*self.layer_range):
-            mlp = model.model.layers[layer_id].mlp
-            if cfg.forget_loss == "mlp_breaking":
-                mlp.down_proj.register_forward_hook(save_act_output_hook)
-            elif cfg.forget_loss == "mlp_activation_breaking":
-                mlp.down_proj.register_forward_hook(save_act_input_hook)
-            elif cfg.forget_loss == "gate_and_up_breaking":
-                mlp.gate_proj.register_forward_hook(save_act_output_hook)
-                mlp.up_proj.register_forward_hook(save_act_output_hook)
-            elif cfg.forget_loss == "neuron_breaking":
-                mlp.down_proj.register_forward_hook(save_act_input_hook)
-                # note: overlaps some collapse hooks, but that's fine:
-                mlp.down_proj.register_full_backward_hook(save_grad_input_hook)
-
-        # hooks for component collapse
-        for layer_id in range(self.layer_range[1] - 1):
-            mlp = model.model.layers[layer_id].mlp
-            mlp.up_proj.register_forward_hook(save_act_input_hook)
-            mlp.up_proj.register_full_backward_hook(save_grad_output_hook)
-            mlp.gate_proj.register_forward_hook(save_act_input_hook)
-            mlp.gate_proj.register_full_backward_hook(save_grad_output_hook)
-            mlp.down_proj.register_full_backward_hook(save_grad_input_hook)
-            mlp.down_proj.register_full_backward_hook(save_grad_output_hook)
+        # register collapsers, that calculate distribution stats, and later collapse
+        if "act_pcs_to_use" in self.cfg:
+            self.act_collapsers = {
+                name: MahalanobisCollapser(cfg.act_pcs_to_use, module.weight.device)
+                for name, module in self.model.named_modules()
+                if name.endswith(".up_proj")
+            }
+        if "grad_pcs_to_use" in self.cfg:
+            self.grad_collapsers = {
+                name: MahalanobisCollapser(cfg.grad_pcs_to_use, module.weight.device)
+                for name, module in self.model.named_modules()
+                if name.endswith(".down_proj")
+            }
 
         # if cfg.get("retaining_rate", 0) > 0:
         #     cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
 
-        self.act_collapsers = {
-            name: MahalanobisCollapser(cfg.act_pcs_to_use, module.weight.device)
-            for name, module in model.named_modules()
-            if name.endswith(".up_proj")
-        }
-        if "grad_pcs_to_use" in self.cfg:
-            self.grad_collapsers = {
-                name: MahalanobisCollapser(cfg.grad_pcs_to_use, module.weight.device)
-                for name, module in model.named_modules()
-                if name.endswith(".down_proj")
-            }
-
-        self.add_callback(CIRCallback(self))
+        self.add_callback(CalculateDistributionStatsCallback(self))
 
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
@@ -130,18 +103,14 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
 
-        if self.cfg.forget_loss == "mlp_breaking":
-            forget_loss = mlp_breaking_loss(model, batch, self.layer_range)
-        elif self.cfg.forget_loss == "mlp_activation_breaking":
-            forget_loss = mlp_activation_breaking_loss(model, batch, self.layer_range)
-        elif self.cfg.forget_loss == "gate_and_up_breaking":
-            forget_loss = gate_and_up_breaking_loss(model, batch, self.layer_range)
-        elif self.cfg.forget_loss == "neuron_breaking":
-            forget_loss = neuron_breaking_loss(model, batch, self.layer_range, output)
+        if hasattr(loss_fns, self.cfg.forget_loss):
+            loss_fn = getattr(loss_fns, self.cfg.forget_loss)
+            forget_loss = loss_fn(model, batch, self.layer_range)
         elif self.cfg.forget_loss == "neg_cross_entropy":
             forget_loss = -output.loss
         else:
             raise ValueError(f"Unknown forget loss: {self.cfg.forget_loss}")
+
         forget_loss.backward()
         # we could do backward(inputs=[some_early_weight]) and delete that grad later
         # to skip the weight.grad computation, while maintaining full backpropagation
@@ -177,6 +146,7 @@ class CIR(UnlearnTrainer):
                 acts = acts[relev_mask]
                 grads = grads[relev_mask]
 
+            # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
             _up_proj_name = name.replace(".gate_proj", ".up_proj")
             acts = self.act_collapsers[_up_proj_name].collapse(acts)
 
@@ -204,7 +174,7 @@ class CIR(UnlearnTrainer):
 
 # # minimal steps to run:
 # model = AutoModelForCausalLM.from_pretrained(
-#     cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+#     cfg.model_id, torch_dtype=pt.bfloat16
 # )
 # trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
