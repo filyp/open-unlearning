@@ -9,12 +9,12 @@ import trainer.unlearn.cir.loss_fns as loss_fns
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
-    get_grad_correction,
     get_relev_mask_with_caching,
     get_token_mask,
     install_hooks,
     normalize_grads,
     prep_batch,
+    sanitize_tensor,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 
@@ -40,14 +40,14 @@ class CalculateDistributionStatsCallback(TrainerCallback):
             for collapser in self.trainer.grad_collapsers.values():
                 collapser.process_saved_vecs()
 
-        self.trainer.after_first_epoch = True
+        self.trainer.collapsers_initialized = True
 
 
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-        self.after_first_epoch = False
+        self.collapsers_initialized = False
 
         self.layer_range = cfg.get("layer_range", [0, len(self.model.model.layers)])
         logging.info(f"loss layer range: {self.layer_range}")
@@ -116,9 +116,7 @@ class CIR(UnlearnTrainer):
         # to skip the weight.grad computation, while maintaining full backpropagation
 
         if "grad_pcs_to_use" in self.cfg:
-            grad_corrections = get_grad_correction(
-                model, token_mask, self.grad_collapsers, self.after_first_epoch
-            )
+            grad_corrections = self.get_grad_correction(token_mask)
 
         for name, module in model.named_modules():
             if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
@@ -132,12 +130,11 @@ class CIR(UnlearnTrainer):
             if name.endswith(".up_proj"):
                 self.act_collapsers[name].add_vecs(acts)
 
-            if not self.after_first_epoch:
+            if not self.collapsers_initialized:
                 continue  # so only collect activations and not train
 
             if "grad_pcs_to_use" in self.cfg:
-                _parent_mlp_name = name.rsplit(".", 1)[0]
-                grads *= grad_corrections[_parent_mlp_name].float()
+                grads *= grad_corrections[parent_mlp_name(name)].float()
 
             if self.cfg.get("act_quantile", 0) > 0:
                 relev_mask = get_relev_mask_with_caching(
@@ -165,11 +162,44 @@ class CIR(UnlearnTrainer):
 
         normalize_grads(model)
 
-        if not self.after_first_epoch:
+        if not self.collapsers_initialized:
             # zero gradients so that optimizer.step() is no-op
             model.zero_grad()
 
         return forget_loss.detach()
+
+    def get_grad_correction(self, token_mask):
+        grad_corrections = {}
+        for name, module in self.model.named_modules():
+            if not name.endswith(".down_proj"):
+                continue
+            up_proj = self.model.get_submodule(name.replace(".down_proj", ".up_proj"))
+            if not up_proj.weight.requires_grad:
+                continue
+
+            grad_input = module.last_grad_input[token_mask].detach().clone()
+            grad_output = module.last_grad_output[token_mask].detach().clone()
+            assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
+            assert grad_output.shape == (token_mask.sum(), module.weight.shape[0])
+
+            self.grad_collapsers[name].add_vecs(grad_output)
+
+            if not self.collapsers_initialized:
+                continue  # first epoch, so only collect activations and not train
+
+            out_collapsed = (
+                self.grad_collapsers[name].collapse(grad_output).to(module.weight.dtype)
+            )
+            in_collapsed = out_collapsed @ module.weight  # backpropagation
+            grad_correction = in_collapsed / sanitize_tensor(grad_input, 1e-6)
+            grad_corrections[parent_mlp_name(name)] = grad_correction
+        return grad_corrections
+
+
+def parent_mlp_name(name):
+    parent_name = name.rsplit(".", 1)[0]
+    assert parent_name.endswith(".mlp")
+    return parent_name
 
 
 # # minimal steps to run:
@@ -178,3 +208,14 @@ class CIR(UnlearnTrainer):
 # )
 # trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
+
+
+# self.steps_since_last_recalc += 1
+# if self.steps_since_last_recalc % 21 == 0:
+#     if "act_pcs_to_use" in self.cfg:
+#         for collapser in self.act_collapsers.values():
+#             collapser.process_saved_vecs()
+#     if "grad_pcs_to_use" in self.cfg:
+#         for collapser in self.grad_collapsers.values():
+#             collapser.process_saved_vecs()
+#     self.collapsers_initialized = True

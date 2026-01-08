@@ -95,45 +95,16 @@ def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
         # we use the caching, because recalculating these can be slow
         relev_mask = batch["relev_mask"][name]
     else:
-        dists = acts.norm(dim=1)
-        relev_mask = compute_per_text_quantile_mask(dists, token_mask, quantile)
+        norms = acts.norm(dim=1)
+        relev_mask = compute_per_text_quantile_mask(norms, token_mask, quantile)
         batch["relev_mask"][name] = relev_mask
     return relev_mask
 
 
-def _sanitize_tensor(t, epsilon):
+def sanitize_tensor(t, epsilon):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
-
-
-def get_grad_correction(model, token_mask, grad_collapsers, after_first_epoch):
-    grad_corrections = {}
-    for name, module in model.named_modules():
-        if not name.endswith(".down_proj"):
-            continue
-        up_proj = model.get_submodule(name.replace(".down_proj", ".up_proj"))
-        if not up_proj.weight.requires_grad:
-            continue
-
-        grad_input = module.last_grad_input[token_mask].detach().clone()
-        grad_output = module.last_grad_output[token_mask].detach().clone()
-        assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
-        assert grad_output.shape == (token_mask.sum(), module.weight.shape[0])
-
-        grad_collapsers[name].add_vecs(grad_output)
-
-        if not after_first_epoch:
-            continue  # first epoch, so only collect activations and not train
-
-        out_collapsed = (
-            grad_collapsers[name].collapse(grad_output).to(module.weight.dtype)
-        )
-        in_collapsed = out_collapsed @ module.weight  # backpropagation
-        grad_correction = in_collapsed / _sanitize_tensor(grad_input, 1e-6)
-        _parent_mlp_name = name.rsplit(".", 1)[0]
-        grad_corrections[_parent_mlp_name] = grad_correction
-    return grad_corrections
 
 
 def install_hooks(model, layer_range, forget_loss):

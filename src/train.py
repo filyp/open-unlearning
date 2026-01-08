@@ -86,7 +86,12 @@ def main(cfg: DictConfig):
         model = reset_model(model)
         model.load_state_dict(best_model_state_dict, assign=True)
 
-        # Modify project names for relearning tracking
+        # Finish current tracking runs and modify project names for relearning
+        try:
+            import wandb
+            wandb.finish()
+        except Exception:
+            pass
         if "WANDB_PROJECT" in os.environ:
             os.environ["WANDB_PROJECT"] = "rel-" + os.environ["WANDB_PROJECT"]
         if "COMET_PROJECT_NAME" in os.environ:
