@@ -1,0 +1,5 @@
+params:
+  trainer.args.learning_rate: "tag(log, interval(1e-5, 5e-5))"
+  trainer.method_args.beta: "interval(3.5, 4.5)"
+  trainer.method_args.delta: "choice(0, 1)"
+  trainer.method_args.gamma: "interval(0.125, 0.25)"

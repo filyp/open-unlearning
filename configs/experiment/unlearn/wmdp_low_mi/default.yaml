@@ -1,10 +1,10 @@
 # @package _global_
-
+ 
 defaults:
-  # - override /model: Llama-3.2-3B-Instruct
+  - /trainer@relearning_trainer: finetune
   # - override /model: Llama-3.1-8B
-  # - override /model: Llama-3.2-3B
-  - override /model: Llama-3.2-1B
+  - override /model: Llama-3.2-3B
+  # - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
@@ -14,22 +14,11 @@ defaults:
   - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
 trainer:
-  args: &trainer_args
+  save_final_state: False
+  args:
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}${oc.select:hydra:job.num,}
-    # run_name: lr=${trainer.args.learning_rate}
-    num_train_epochs: 20
-    seed: 42
-    output_dir: ${paths.output_dir}
-    save_strategy: 'no'
-    do_train: True
     do_eval: False
-    eval_on_start: True
-    eval_strategy: epoch
-    per_device_train_batch_size: 16
-    per_device_eval_batch_size: 16
-    # output_dir: ${paths.output_dir}
-  save_final_state: False
 
 model:
   model_args:
@@ -74,15 +63,13 @@ eval:
     eval_mcq: true
 
 relearning_trainer:
+  # default loadede from finetune.yaml
   handler: FinetuneTrainer
   args:
-    <<: *trainer_args  # Merge all trainer args
-    num_train_epochs: 10
-    learning_rate: 1e-5
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
-    per_device_train_batch_size: 32
     lr_scheduler_type: constant
-    max_grad_norm: 0
+    report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
+    run_name: ${task_name}${oc.select:hydra:job.num,}
   relearning_eval:
     wmdp_low_mi:
       handler: WMDPLLowMIEvaluator
@@ -93,15 +80,15 @@ relearning_trainer:
 # Optuna sweeper config (activate with --multirun flag)
 hydra:
   sweeper:
+    # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
     storage: ${oc.env:OPTUNA_STORAGE_URL}
     study_name: ${task_name}
-    direction: maximize
-    n_trials: 10000
+    direction: minimize
+    n_trials: 10
     n_jobs: 1
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
-      # seed: ${trainer.args.seed}  # deterministic
-    # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
+      seed: ${trainer.args.seed}  # deterministic
+      # seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
  

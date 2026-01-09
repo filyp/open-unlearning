@@ -67,7 +67,7 @@ def _get_loss_and_kl(model, batches, acts_to_logits):
             current_logits = output.logits.float()
 
             # Reconstruct original logits from cached hidden states
-            cached_hidden = batch["cached_last_hidden"]
+            cached_hidden = batch["cached_last_hidden"].to(model.dtype)
             cached_logits = acts_to_logits(cached_hidden).float()
             assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
 
@@ -125,7 +125,6 @@ def _create_acts_to_logits(model):
 class WMDPLLowMIEvaluator(Evaluator):
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg
-        
 
         # load data
         self.wikitext = data["wikitext"]
@@ -141,6 +140,8 @@ class WMDPLLowMIEvaluator(Evaluator):
             # Modify the wmdp_bio task to use our custom questions
             task = self.task_dict["wmdp_bio"]
             task.dataset["test"] = data["eval_qs"]
+        
+        self.results = []
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
@@ -187,11 +188,13 @@ class WMDPLLowMIEvaluator(Evaluator):
             res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         # ! finished evaluating, now handle the results
+        self.results.append(res)
+
         if first_eval:
             assert res["wikitext_kl"] == 0, "Initial KL should be 0"
-        
+
         if self.eval_cfg.disr_budget is None:
-            # used for example in relearning
+            # used in relearning
             # don't stop training, don't keep track of the best valid model state
             return res
 
@@ -204,10 +207,12 @@ class WMDPLLowMIEvaluator(Evaluator):
         # save the best model state, that doesn't exceed the disruption budget
         # this way relearning can start from this valid model state
         self.best_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
-
-        self.last_valid_res = res
         return res
 
-    def get_final_score(self):
-        return self.last_valid_res["recall_loss"]
-
+    def get_relearning_robustness_metric(self):
+        if self.eval_cfg.eval_mcq:
+            logging.info("Using max temperature=1 accuracy as the robustness metric")
+            return max(res["forget_acc_t1"] for res in self.results)
+        else:
+            logging.info("Using min recall loss as the robustness metric")
+            return min(res["recall_loss"] for res in self.results)

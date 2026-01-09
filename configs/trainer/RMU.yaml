@@ -1,5 +1,6 @@
 defaults:
   - GradDiff
+  - /hydra/sweeper: RMU
 
 handler: RMU
 method_args:

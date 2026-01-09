@@ -1,13 +1,13 @@
-# could load values from finetune.yaml like other trainer configs, but we are too different
 defaults:
-  # - finetune
-  - /sweep: CIR  # Load CIR-specific sweep params (used with --multirun)
+  - finetune
+  - /hydra/sweeper: CIR  # Load CIR-specific sweep params (used with --multirun)
 
 handler: CIR
 args:
-  optim: sgd
+  optim: sgd  # adam underperforms
   learning_rate: 0.3
   lr_scheduler_type: constant
+  gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
 method_args:
   cfg:
@@ -20,38 +20,11 @@ method_args:
       - gate_proj
       - up_proj
     
-    forget_loss: mlp_breaking
+    # forget_loss: mlp_breaking
     # forget_loss: mlp_activation_breaking
-    # forget_loss: gate_and_up_breaking_approx
-    # forget_loss: neuron_breaking
+    forget_loss: gate_and_up_breaking_approx
     # forget_loss: neg_cross_entropy
-
-
-    # ! unused params
-    # layer_range: [6, 12]
-    # mlp_quantile: 0.5  # useful on later layers, but very slightly
-    # mlp_reg: 3e-3  # no effect, at least for WMDP; todo test it on toxicity
-    ## Llama-3.2-1B has 16 layers
-    ## MobileLLM-125M has 30 layers
 
     # # ! retaining params
     # retaining_rate: 1e-1
     # cb_retaining_layers: [6, 9, 12, 15]  # for 8B use [12]
-    
-    # ! legacy params
-    # mlp_floor: 0.0
-    # cir_niter: 16
-    # cut_off_tokens: 1
-    # pca_every_n: 1
-    # act_proj_num: 10
-    # grad_proj_num: 0
-    # train_from_layer: 0
-    # mahal_pow: 1.0
-    # filter_pow: 1.0
-    # act_collapse: 0
-    # filter_reg: 10
-    # project_to_mahal: True
-    # mlp_filter_reg: 0.002
-    # mlp_out_norm_pow: 0.0
-    # grad_filt_pow: 0.0
-    # cb_retaining_pow: 1.0

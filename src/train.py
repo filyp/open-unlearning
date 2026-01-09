@@ -117,11 +117,11 @@ def main(cfg: DictConfig):
         relearn_trainer.train()
 
     # * get the final score (if defined), and return for potential Optuna optimization
-    for evaluator in evaluators.values():
-        if hasattr(evaluator, "get_final_score"):
-            final_score = evaluator.get_final_score()
-            print(f"Final score for {evaluator.__class__.__name__}: {final_score}")
-            return final_score
+    for evaluator in relearning_evaluators.values():
+        if hasattr(evaluator, "get_relearning_robustness_metric"):
+            robustness = evaluator.get_relearning_robustness_metric()
+            print(f"Robustness metric for {evaluator.__class__.__name__}: {robustness}")
+            return robustness
 
 
 if __name__ == "__main__":

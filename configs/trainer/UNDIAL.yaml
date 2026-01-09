@@ -1,5 +1,6 @@
 defaults:
   - finetune
+  - /hydra/sweeper: UNDIAL
 
 handler: UNDIAL # corresponds to the class defined in src/trainer/unlearn/grad_diff.py
 args: # HuggingFace TrainingArguments
