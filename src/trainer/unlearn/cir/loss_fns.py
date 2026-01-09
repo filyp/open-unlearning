@@ -57,20 +57,20 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
     # also, it turns out, ignoring negative gates actually yields better results
     _mask = get_token_mask(batch)
 
-    if "org_act_out" not in batch:  # first epoch
-        batch["org_act_out"] = {}
+    if "org_act" not in batch:  # first epoch
+        batch["org_act"] = {}
 
     loss_acc = 0
     for layer_id in range(*layer_range):
         mlp = model.model.layers[layer_id].mlp
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
-        
-        if layer_id not in batch["org_act_out"]:  # first epoch, so cache it
-            act = gate_out.clip(min=0) * up_out
-            batch["org_act_out"][layer_id] = act.detach().cpu()
 
-        org_act = batch["org_act_out"][layer_id].to(up_out.device)
+        if layer_id not in batch["org_act"]:  # first epoch, so cache it
+            act = gate_out.clip(min=0) * up_out
+            batch["org_act"][layer_id] = act.detach().cpu()
+
+        org_act = batch["org_act"][layer_id].to(up_out.device)
         norm = org_act.norm(dim=-1).mean()
 
         loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
@@ -119,8 +119,6 @@ def gate_and_up_breaking(model, batch, layer_range):
 
 # # separate gate and up
 # def gate_and_up_breaking(model, batch, layer_range):
-#     # Similar to mlp_breaking_loss but targets the down_proj input activation
-#     # (the intermediate MLP activation before the down projection)
 #     _mask = get_token_mask(batch)
 
 #     if "org_gate_out" not in batch:  # first epoch
@@ -151,12 +149,13 @@ def gate_and_up_breaking(model, batch, layer_range):
 #     return loss_acc / len(range(*layer_range))
 
 
-# def neuron_breaking(model, batch, layer_range, output):
+# def neuron_breaking_grad_weighted(model, batch, layer_range, output):
 #     # It weighs how much neurons must be broken, by their gradient.
 #     # Note: this works surprisingly bad; possibly there's some bug.
 #     # Even if there's no bug, it would be useful to understand why it's so bad.
+#     # There's also related gate_and_up_breaking_grad_filtered loss, which works similarly to its simpler gate_and_up_breaking_approx loss,
+#     # which suggests there's not a bug, just the gradient isn't important, and here also relying only on gradient is not sufficient.
 
-#     # Similar to mlp_activation_breaking_loss but uses gradients instead of cached activations
 #     # On first batch, we do an extra backward pass with -output.loss to get gradients on neurons
 #     _mask = get_token_mask(batch)
 
@@ -185,8 +184,74 @@ def gate_and_up_breaking(model, batch, layer_range):
 
 #     return loss_acc / len(range(*layer_range))
 
-# neuron_breaking loss requires:
-#             elif cfg.forget_loss == "neuron_breaking":
+# neuron_breaking_grad_weighted loss requires:
+#             elif cfg.forget_loss == "neuron_breaking_grad_weighted":
 #                 mlp.down_proj.register_forward_hook(hooks.save_act_input)
 #                 # note: overlaps some collapse hooks, but that's fine:
 #                 mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
+
+
+# def gate_and_up_breaking_grad_filtered(model, batch, layer_range, output):
+#     _mask = get_token_mask(batch)
+
+#     if "org_act" not in batch:  # first epoch
+#         # output.loss.backward(retain_graph=True)
+#         loss = -_correct_logit(output, batch)
+#         loss.backward(retain_graph=True)
+
+#         batch["org_act"] = {}
+#         for layer_id in range(*layer_range):
+#             mlp = model.model.layers[layer_id].mlp
+#             gate_out = mlp.gate_proj.cached_out[_mask]
+#             up_out = mlp.up_proj.cached_out[_mask]
+#             act = gate_out.clip(min=0) * up_out
+
+#             down_proj = model.model.layers[layer_id].mlp.down_proj
+#             # last_grad_input is the gradient w.r.t. the input of down_proj
+#             grad = down_proj.last_grad_input[_mask]
+#             sign_mask = grad.sign() == act.sign()
+#             # sign_mask = (grad * act) > -0.001
+#             act[sign_mask] = 0
+
+#             batch["org_act"][layer_id] = act.detach().cpu()
+
+#         # Zero out the gradients so they don't affect the actual training step
+#         model.zero_grad()
+
+#     loss_acc = 0
+#     for layer_id in range(*layer_range):
+#         mlp = model.model.layers[layer_id].mlp
+#         gate_out = mlp.gate_proj.cached_out[_mask]
+#         up_out = mlp.up_proj.cached_out[_mask]
+
+#         org_act = batch["org_act"][layer_id].to(up_out.device)
+#         norm = org_act.norm(dim=-1).mean()
+
+#         loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
+#         loss_acc += (gate_out.clip(min=0) * org_act.abs()).mean() / norm**1.5
+
+#     return loss_acc / len(range(*layer_range))
+
+
+# # gate_and_up_breaking_grad_filtered loss requires:
+# elif forget_loss == "gate_and_up_breaking_grad_filtered":
+#     mlp.gate_proj.register_forward_hook(hooks.save_act_output)
+#     mlp.up_proj.register_forward_hook(hooks.save_act_output)
+#     # note: overlaps some collapse hooks, but that's fine:
+#     mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
+
+
+# def _correct_logit(output, batch):
+#     logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
+#     ids = batch["input_ids"][:, 1:].flatten()
+#     true_logits = logits[pt.arange(len(ids)), ids]
+#     # true_logits -= logits.mean(dim=-1)  # this is for the _minus_avg version
+#     # true_logits -= logits.mean(dim=-1).detach()
+
+#     true_logits = true_logits.clip(min=0)
+
+#     # mask out the beginning tokens
+#     mask = get_token_mask(batch)
+#     mask = mask[:, 1:].flatten()
+
+#     return true_logits[mask].mean()
