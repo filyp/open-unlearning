@@ -1,3 +1,4 @@
+# @package hydra.sweeper
 params:
   trainer.args.learning_rate: "tag(log, interval(1e-5, 3e-4))"
   trainer.method_args.alpha: "tag(log, interval(1, 5))"

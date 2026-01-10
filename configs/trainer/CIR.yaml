@@ -27,4 +27,4 @@ method_args:
 
     # # ! retaining params
     # retaining_rate: 1e-1
-    # cb_retaining_layers: [6, 9, 12, 15]  # for 8B use [12]
+    # cb_retaining_layers: [6, 9, 12, 15]

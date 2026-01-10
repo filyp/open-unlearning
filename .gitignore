@@ -194,3 +194,5 @@ profile.prof
 # .dvcignore
 # dvc.yaml
 # .dvc
+
+tmp_comm/

@@ -66,24 +66,6 @@ def get_model(model_cfg: DictConfig):
     return model, tokenizer
 
 
-def reset_model(model):
-    """Create a fresh model with same config, using meta device for speed.
-
-    Uses accelerate.init_empty_weights() to skip random initialization.
-    Buffers (like inv_freq) are initialized on CPU, parameters on meta device.
-
-    Args:
-        model: The model whose config/dtype/class to use
-
-    Returns:
-        A new model with meta parameters (use load_state_dict with assign=True)
-    """
-    model_cls = MODEL_REGISTRY.get(model.__class__.__name__, AutoModelForCausalLM)
-    with init_empty_weights():
-        new_model = model_cls.from_config(model.config, torch_dtype=model.dtype)
-    return new_model
-
-
 def _add_or_replace_eos_token(tokenizer, eos_token: str) -> None:
     is_added = tokenizer.eos_token_id is None
     num_added_tokens = tokenizer.add_special_tokens({"eos_token": eos_token})

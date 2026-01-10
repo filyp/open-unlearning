@@ -1,17 +1,16 @@
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()  # here, because of TQDM_DISABLE, todo, move back down
+from pathlib import Path
 
 import hydra
+from dotenv import load_dotenv
 from omegaconf import DictConfig
 
 from data import get_collators, get_data
 from evals import get_evaluators
-from model import get_model, reset_model
+from model import get_model
 from trainer import load_trainer
 from trainer.utils import seed_everything
+
+load_dotenv()
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
@@ -73,55 +72,22 @@ def main(cfg: DictConfig):
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
 
-    relearning_cfg = cfg.get("relearning_trainer", None)
-    if relearning_cfg:
-        # Get best model state dict from evaluator
+    # save best model
+    comm_dir = Path(cfg.paths.tmp_comm_dir)
+    for evaluator in evaluators.values():
+        if hasattr(evaluator, "best_model_state_dict"):
+            # save model
+            # torch.save(evaluator.best_model_state_dict, comm_dir / "best_model.pt")
+            model.load_state_dict(evaluator.best_model_state_dict)
+            model.save_pretrained(comm_dir / "best_model")
+            break
+
+    # * get the final score (if defined), and save to file
+    if mode == "relearn":
         for evaluator in evaluators.values():
-            if hasattr(evaluator, "best_model_state_dict"):
-                best_model_state_dict = evaluator.best_model_state_dict
-                break
-        assert "best_model_state_dict" in locals(), "Relearning needs saved best model"
-
-        # Create fresh model and load best weights
-        model = reset_model(model)
-        model.load_state_dict(best_model_state_dict, assign=True)
-
-        # Finish current tracking runs and modify project names for relearning
-        try:
-            import wandb
-            wandb.finish()
-        except Exception:
-            pass
-        if "WANDB_PROJECT" in os.environ:
-            os.environ["WANDB_PROJECT"] = "rel-" + os.environ["WANDB_PROJECT"]
-        if "COMET_PROJECT_NAME" in os.environ:
-            os.environ["COMET_PROJECT_NAME"] = "rel-" + os.environ["COMET_PROJECT_NAME"]
-
-        relearning_evaluators = get_evaluators(
-            eval_cfgs=relearning_cfg.relearning_eval,
-            template_args=template_args,
-            model=model,
-            tokenizer=tokenizer,
-            data=data,
-        )
-
-        relearn_trainer, _ = load_trainer(
-            trainer_cfg=relearning_cfg,
-            model=model,
-            train_dataset=data["relearn"],
-            tokenizer=tokenizer,
-            data_collator=collator,
-            evaluators=relearning_evaluators,
-            template_args=template_args,
-        )
-        relearn_trainer.train()
-
-    # * get the final score (if defined), and return for potential Optuna optimization
-    for evaluator in relearning_evaluators.values():
-        if hasattr(evaluator, "get_relearning_robustness_metric"):
-            robustness = evaluator.get_relearning_robustness_metric()
-            print(f"Robustness metric for {evaluator.__class__.__name__}: {robustness}")
-            return robustness
+            if hasattr(evaluator, "get_relearning_robustness_metric"):
+                robustness = evaluator.get_relearning_robustness_metric()
+                (comm_dir / "robustness.txt").write_text(str(robustness))
 
 
 if __name__ == "__main__":

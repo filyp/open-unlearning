@@ -3,8 +3,8 @@
 defaults:
   - /trainer@relearning_trainer: finetune
   # - override /model: Llama-3.1-8B
-  - override /model: Llama-3.2-3B
-  # - override /model: Llama-3.2-1B
+  # - override /model: Llama-3.2-3B
+  - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
@@ -19,6 +19,7 @@ trainer:
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}${oc.select:hydra:job.num,}
     do_eval: False
+    # per_device_eval_batch_size: 8
 
 model:
   model_args:
@@ -59,7 +60,11 @@ data:
 eval:
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator
-    disr_budget: 0.005  # KL Divergence budget
+    # KL Divergence budget
+    # disr_budget: 0.005
+    # disr_budget: 0.003
+    disr_budget: 0.03
+    # disr_budget: 0.1
     eval_mcq: true
 
 relearning_trainer:
@@ -70,11 +75,11 @@ relearning_trainer:
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}${oc.select:hydra:job.num,}
-  relearning_eval:
-    wmdp_low_mi:
-      handler: WMDPLLowMIEvaluator
-      disr_budget: null  # null means training will not be terminated based on KL
-      eval_mcq: true
+relearning_eval:
+  wmdp_low_mi:
+    handler: WMDPLLowMIEvaluator
+    disr_budget: null  # null means training will not be terminated based on KL
+    eval_mcq: true
 
 
 # Optuna sweeper config (activate with --multirun flag)

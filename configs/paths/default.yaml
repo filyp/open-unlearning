@@ -16,3 +16,6 @@ output_dir: ${paths.root_dir}/saves/${mode}/${task_name}
 
 # path to working directory
 work_dir: ${hydra:runtime.cwd}
+
+# temporary directory for communcation between unlearning and relearning processes
+tmp_comm_dir: ${paths.root_dir}/tmp_comm
