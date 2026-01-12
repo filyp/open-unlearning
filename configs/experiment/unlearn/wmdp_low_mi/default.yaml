@@ -3,8 +3,8 @@
 defaults:
   - /trainer@relearning_trainer: finetune
   # - override /model: Llama-3.1-8B
-  # - override /model: Llama-3.2-3B
-  - override /model: Llama-3.2-1B
+  - override /model: Llama-3.2-3B
+  # - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
@@ -13,6 +13,8 @@ defaults:
   - override /eval: null  # This disables the default TOFU evaluation
   - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
+# task_name: ${model.pretrained_model_name_or_path}_${trainer.handler}
+
 trainer:
   save_final_state: False
   args:
@@ -20,6 +22,14 @@ trainer:
     run_name: ${task_name}${oc.select:hydra:job.num,}
     do_eval: False
     # per_device_eval_batch_size: 8
+
+eval:
+  wmdp_low_mi:
+    handler: WMDPLLowMIEvaluator
+    # KL Divergence budget
+    # disr_budget: 0.005
+    disr_budget: 0.1
+    eval_mcq: true
 
 model:
   model_args:
@@ -56,16 +66,6 @@ data:
           - biology/biology_000849.jsonl
           # for cyber:
           # - computer_science_and_technology/computer_science_and_technology_000000.jsonl
-
-eval:
-  wmdp_low_mi:
-    handler: WMDPLLowMIEvaluator
-    # KL Divergence budget
-    # disr_budget: 0.005
-    # disr_budget: 0.003
-    disr_budget: 0.03
-    # disr_budget: 0.1
-    eval_mcq: true
 
 relearning_trainer:
   # default loadede from finetune.yaml

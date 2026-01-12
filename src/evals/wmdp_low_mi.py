@@ -211,8 +211,9 @@ class WMDPLLowMIEvaluator(Evaluator):
         return res
 
     def get_relearning_robustness_metric(self):
-        # if self.eval_cfg.eval_mcq:
-        #     logging.info("Using max temperature=1 accuracy as the robustness metric")
-        #     return max(res["forget_acc_t1"] for res in self.results)
-        logging.info("Using min recall loss as the robustness metric")
-        return min(res["recall_loss"] for res in self.results)
+        if self.eval_cfg.eval_mcq:
+            logging.info("Using max temperature=1 accuracy as the robustness metric")
+            return max(res["forget_acc_t1"] for res in self.results)
+        else:
+            logging.info("Using min recall loss as the robustness metric")
+            return min(res["recall_loss"] for res in self.results)
