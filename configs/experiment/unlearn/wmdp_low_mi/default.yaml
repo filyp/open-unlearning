@@ -19,7 +19,7 @@ trainer:
   save_final_state: False
   args:
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
-    run_name: ${task_name}${oc.select:hydra:job.num,}
+    run_name: ${task_name}
     do_eval: False
 
 eval:
@@ -74,7 +74,7 @@ relearning_trainer:
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
-    run_name: ${task_name}${oc.select:hydra:job.num,}
+    run_name: ${task_name}
 relearning_eval:
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator

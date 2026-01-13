@@ -3,19 +3,30 @@
 import os
 import shutil
 import subprocess
-
 from pathlib import Path
+
 import hydra
 from dotenv import load_dotenv
-from omegaconf import DictConfig
-
-from omegaconf import OmegaConf
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
 
 load_dotenv()
 
 
+def _get_run_name(cfg: DictConfig) -> str:
+    """Get run_name with hydra job number."""
+    try:
+        job_num = HydraConfig.get().job.num
+        return f"{cfg.task_name}_{job_num}"
+    except Exception:
+        return cfg.task_name
+
+
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig):
+    cfg.trainer.args.run_name = _get_run_name(cfg)
+    cfg.relearning_trainer.args.run_name = _get_run_name(cfg)
+
     comm_dir = Path(cfg.paths.tmp_comm_dir) / cfg.task_name
     comm_dir.mkdir(parents=True, exist_ok=False)
     try:
