@@ -13,8 +13,8 @@ args:
   ddp_find_unused_parameters: None
   gradient_checkpointing: False
   # optim: paged_adamw_32bit  # paging can be too aggressive, and make training unusably slow
-  optim: adamw_torch_fused
-  # optim: adamw_8bit
+  # optim: adamw_torch_fused
+  optim: adamw_8bit
   save_strategy: 'no'
   save_only_model: True
   weight_decay: 0.00

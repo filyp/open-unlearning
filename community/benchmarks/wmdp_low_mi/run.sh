@@ -48,3 +48,5 @@ $common model=Llama-3.2-3B trainer=CIR task_name=3B_CIRstrict_cyber eval.wmdp_lo
 
 # alternatively, to run on SLURM
 common="sbatch open-unlearning/job.sh"
+
+# note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
