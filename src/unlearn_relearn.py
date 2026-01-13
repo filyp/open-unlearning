@@ -31,6 +31,8 @@ def main(cfg: DictConfig):
     comm_dir.mkdir(parents=True, exist_ok=False)
     try:
         # ! unlearning #########################################################
+        if "UNL_WANDB_PROJECT" in os.environ:
+            os.environ["WANDB_PROJECT"] = os.environ["UNL_WANDB_PROJECT"]
         unlearning_cfg_path = comm_dir / "unlearning_cfg.yaml"
         OmegaConf.save(cfg, unlearning_cfg_path)
         subprocess.run(
@@ -44,8 +46,8 @@ def main(cfg: DictConfig):
         )
 
         # ! relearning #########################################################
-        if "WANDB_PROJECT" in os.environ:
-            os.environ["WANDB_PROJECT"] = "rel-" + os.environ["WANDB_PROJECT"]
+        if "REL_WANDB_PROJECT" in os.environ:
+            os.environ["WANDB_PROJECT"] = os.environ["REL_WANDB_PROJECT"]
 
         cfg.trainer = cfg.relearning_trainer
         cfg.eval = cfg.relearning_eval
