@@ -73,7 +73,7 @@ def main(cfg: DictConfig):
         trainer.evaluate(metric_key_prefix="eval")
 
     # save best model
-    comm_dir = Path(cfg.paths.tmp_comm_dir)
+    comm_dir = Path(cfg.paths.tmp_comm_dir) / cfg.task_name
     for evaluator in evaluators.values():
         if hasattr(evaluator, "best_model_state_dict"):
             # save model
