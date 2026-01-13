@@ -3,4 +3,4 @@ params:
   trainer.args.learning_rate: "tag(log, interval(0.03, 1.0))"
   trainer.method_args.cfg.act_quantile: "interval(0.7, 1)"
   trainer.method_args.cfg.act_pcs_to_use: "tag(log, range(10, 1000))"
-  trainer.method_args.cfg.grad_pcs_to_use: "tag(log, range(3, 1000))"
+  trainer.method_args.cfg.grad_pcs_to_use: "tag(log, range(1, 1000))"

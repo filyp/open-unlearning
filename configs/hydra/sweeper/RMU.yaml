@@ -1,5 +1,5 @@
 # @package hydra.sweeper
 params:
-  trainer.args.learning_rate: "tag(log, interval(1e-5, 5e-5))"
+  trainer.args.learning_rate: "tag(log, interval(5e-6, 5e-5))"
   trainer.method_args.steering_coeff: "tag(log, interval(1, 100))"
   trainer.method_args.module_regex: 'choice(model\.layers\.6, model\.layers\.11, model\.layers\.16)'
