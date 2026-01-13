@@ -21,7 +21,6 @@ trainer:
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}${oc.select:hydra:job.num,}
     do_eval: False
-    # per_device_eval_batch_size: 8
 
 eval:
   wmdp_low_mi:
@@ -69,6 +68,7 @@ data:
 
 relearning_trainer:
   # default loadede from finetune.yaml
+  save_final_state: False
   handler: FinetuneTrainer
   args:
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
