@@ -16,7 +16,7 @@ load_dotenv()
 
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig):
-    comm_dir = Path(cfg.paths.tmp_comm_dir)
+    comm_dir = Path(cfg.paths.tmp_comm_dir) / cfg.task_name
     comm_dir.mkdir(parents=True, exist_ok=False)
     try:
         # ! unlearning #########################################################

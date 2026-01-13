@@ -45,3 +45,6 @@ $common model=Llama-3.2-3B trainer=SimNPO task_name=3B_SimNPO_cyber $cyber
 $common model=Llama-3.2-3B trainer=UNDIAL task_name=3B_UNDIAL_cyber $cyber
 $common model=Llama-3.2-3B trainer=CIR task_name=3B_CIR_cyber $cyber
 $common model=Llama-3.2-3B trainer=CIR task_name=3B_CIRstrict_cyber eval.wmdp_low_mi.disr_budget=0.005 $cyber
+
+# alternatively, to run on SLURM
+common="sbatch open-unlearning/job.sh"
