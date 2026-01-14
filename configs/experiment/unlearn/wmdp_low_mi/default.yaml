@@ -27,7 +27,7 @@ eval:
     handler: WMDPLLowMIEvaluator
     # KL Divergence budget
     # disr_budget: 0.005
-    disr_budget: 0.2
+    disr_budget: 0.1
     eval_mcq: true
 
 model:
@@ -72,6 +72,7 @@ relearning_trainer:
   handler: FinetuneTrainer
   args:
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
+    learning_rate: 5e-6
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}
