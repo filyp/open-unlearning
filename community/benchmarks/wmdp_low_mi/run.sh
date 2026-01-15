@@ -29,7 +29,7 @@ common="python3 src/unlearn_relearn.py \
 experiment=unlearn/wmdp_low_mi/default"
 cyber="data.custom_loaders.wmdp_low_mi.dataset=cyber \
 data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
-ver=v2
+ver=v3
 
 $common model=Llama-3.2-3B trainer=GradDiff task_name=${ver}_3B_GradDiff_bio
 $common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPO_bio
