@@ -15,7 +15,7 @@ if command -v sbatch &> /dev/null; then
     common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
 fi
 
-$common task_name=coverage_neg_ce trainer.method_args.forget_loss=neg_cross_entropy
-$common task_name=coverage_mlp_breaking trainer.method_args.forget_loss=mlp_breaking
-$common task_name=coverage_mlp_activation_breaking trainer.method_args.forget_loss=mlp_activation_breaking
-$common task_name=coverage_gate_and_up_breaking_approx trainer.method_args.forget_loss=gate_and_up_breaking_approx
+$common task_name=coverage_neg_ce trainer.method_args.cfg.forget_loss=neg_cross_entropy
+$common task_name=coverage_mlp_breaking trainer.method_args.cfg.forget_loss=mlp_breaking
+$common task_name=coverage_mlp_activation_breaking trainer.method_args.cfg.forget_loss=mlp_activation_breaking
+$common task_name=coverage_gate_and_up_breaking_approx trainer.method_args.cfg.forget_loss=gate_and_up_breaking_approx
