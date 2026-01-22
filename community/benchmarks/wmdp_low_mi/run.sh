@@ -27,6 +27,7 @@ common="python3 src/unlearn_relearn.py \
 --multirun \
 --config-name=unlearn.yaml \
 experiment=unlearn/wmdp_low_mi/default"
+
 cyber="data.custom_loaders.wmdp_low_mi.dataset=cyber \
 data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
 ver=v3
@@ -34,6 +35,7 @@ ver=v3
 
 # Auto-detect if we're on SLURM
 if command -v sbatch &> /dev/null; then
+    echo "Running on SLURM"
     common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
 fi
 

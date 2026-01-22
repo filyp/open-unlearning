@@ -1,7 +1,7 @@
 #!/bin/bash
 
+# note no --multirun
 common="python3 src/unlearn_relearn.py \
---multirun \
 --config-name=unlearn.yaml \
 experiment=unlearn/wmdp_low_mi/default \
 model=Llama-3.2-3B \
@@ -12,6 +12,7 @@ trainer.args.num_train_epochs=50"
 
 # Auto-detect if we're on SLURM
 if command -v sbatch &> /dev/null; then
+    echo "Running on SLURM"
     common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
 fi
 
