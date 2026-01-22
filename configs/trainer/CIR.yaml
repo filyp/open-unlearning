@@ -11,19 +11,19 @@ args:
 
 method_args:
   cfg:
-    act_quantile: 0.9
+    act_quantile: 0.92
     
-    act_pcs_to_use: 400
-    grad_pcs_to_use: 50
+    act_pcs_to_use: 600
+    grad_pcs_to_use: 600
 
     target_modules:
       - gate_proj
       - up_proj
     
+    # forget_loss: neg_cross_entropy
     # forget_loss: mlp_breaking
     # forget_loss: mlp_activation_breaking
     forget_loss: gate_and_up_breaking_approx
-    # forget_loss: neg_cross_entropy
 
     # # ! retaining params
     # retaining_rate: 1e-1

@@ -31,6 +31,13 @@ cyber="data.custom_loaders.wmdp_low_mi.dataset=cyber \
 data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
 ver=v3
 
+
+# Auto-detect if we're on SLURM
+if command -v sbatch &> /dev/null; then
+    common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
+fi
+
+
 $common model=Llama-3.2-3B trainer=GradDiff task_name=${ver}_3B_GradDiff_bio
 $common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPO_bio
 $common model=Llama-3.2-3B trainer=RMU task_name=${ver}_3B_RMU_bio
@@ -38,6 +45,7 @@ $common model=Llama-3.2-3B trainer=SimNPO task_name=${ver}_3B_SimNPO_bio
 $common model=Llama-3.2-3B trainer=UNDIAL task_name=${ver}_3B_UNDIAL_bio
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIR_bio
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_bio eval.wmdp_low_mi.disr_budget=0.005
+$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_bio eval.wmdp_low_mi.disr_budget=0.005
 
 $common model=Llama-3.2-3B trainer=GradDiff task_name=${ver}_3B_GradDiff_cyber $cyber
 $common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPO_cyber $cyber
@@ -46,6 +54,7 @@ $common model=Llama-3.2-3B trainer=SimNPO task_name=${ver}_3B_SimNPO_cyber $cybe
 $common model=Llama-3.2-3B trainer=UNDIAL task_name=${ver}_3B_UNDIAL_cyber $cyber
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIR_cyber $cyber
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_cyber eval.wmdp_low_mi.disr_budget=0.005 $cyber
+$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_cyber eval.wmdp_low_mi.disr_budget=0.005 $cyber
 
 # alternatively, to run on SLURM
 common="sbatch open-unlearning/job.sh"
