@@ -93,7 +93,9 @@ def get_stats_from_studies(
         print(f"  {method}: mean={mean*100:.2f}%, sem={sem*100:.2f}%, std={std*100:.2f}%, worst={method_worst*100:.2f}%")
 
     # Find the most common value across ALL runs (baseline)
-    # These are runs that hit the disruption budget and were stopped early
+    # These are the runs where the first unlearning epoch already broke the model,
+    # so the relearning starts from the base model, which we treat as the baseline.
+    # Alternatively, (if the assert below fails), we could derive this baseline manually.
     counter = Counter(all_values)
     most_common_value, most_common_count = counter.most_common(1)[0]
 
