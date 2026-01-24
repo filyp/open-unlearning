@@ -21,8 +21,8 @@ app = modal.App("open-unlearning", image=image)
 
 
 @app.function(
-    gpu="L40S",  # 48GB
-    # gpu="A100-80GB",  # if needing 80GB
+    # gpu="L40S",  # 48GB
+    gpu="A100-80GB",  # if needing 80GB
     # gpu="H100",  # it's not any faster than L40S, at least for wmdp_low_mi
     timeout=1 * 3600,
     secrets=[modal.Secret.from_dotenv()],

@@ -56,7 +56,7 @@ def main(cfg: DictConfig):
         trainer_cfg=trainer_cfg,
         model=model,
         train_dataset=data.get("train", None),
-        eval_dataset=data.get("eval", None),
+        eval_dataset=data.get("eval", "dummy"),  # None would trigger Trainer exception
         tokenizer=tokenizer,
         data_collator=collator,
         evaluators=evaluators,
@@ -77,7 +77,6 @@ def main(cfg: DictConfig):
     for evaluator in evaluators.values():
         if hasattr(evaluator, "best_model_state_dict"):
             # save model
-            # torch.save(evaluator.best_model_state_dict, comm_dir / "best_model.pt")
             model.load_state_dict(evaluator.best_model_state_dict)
             model.save_pretrained(comm_dir / "best_model")
             break
