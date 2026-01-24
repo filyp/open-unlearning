@@ -16,14 +16,14 @@ data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_an
 
 ver=0.3_bio
 
+# ver=0.3_cyber
+# common="$common $cyber"
+
 # Auto-detect if we're on SLURM
 if command -v sbatch &> /dev/null; then
     echo "Running on SLURM"
-    common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
+    common="sbatch $HOME/open-unlearning/runners/slurm_runner.sh $common"
 fi
-
-# ver=0.3_cyber
-# common="$common $cyber"
 
 $common task_name=${ver}_coverage_neg_ce trainer.method_args.cfg.forget_loss=neg_cross_entropy
 $common task_name=${ver}_coverage_mlp_breaking trainer.method_args.cfg.forget_loss=mlp_breaking

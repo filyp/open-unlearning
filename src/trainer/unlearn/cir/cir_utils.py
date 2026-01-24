@@ -115,7 +115,7 @@ def install_hooks(model, layer_range, forget_loss):
             mlp.down_proj.register_forward_hook(hooks.save_act_output)
         elif forget_loss == "mlp_activation_breaking":
             mlp.down_proj.register_forward_hook(hooks.save_act_input)
-        elif forget_loss in ["gate_and_up_breaking", "gate_and_up_breaking_approx"]:
+        elif forget_loss.startswith("gate_and_up_breaking"):
             mlp.gate_proj.register_forward_hook(hooks.save_act_output)
             mlp.up_proj.register_forward_hook(hooks.save_act_output)
 

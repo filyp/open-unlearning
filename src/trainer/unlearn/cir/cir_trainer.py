@@ -48,6 +48,7 @@ class CIR(UnlearnTrainer):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
         self.collapsers_initialized = False
+        assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         self.layer_range = cfg.get("layer_range", [0, len(self.model.model.layers)])
         logging.info(f"loss layer range: {self.layer_range}")

@@ -36,7 +36,7 @@ ver=v3
 # Auto-detect if we're on SLURM
 if command -v sbatch &> /dev/null; then
     echo "Running on SLURM"
-    common="sbatch $HOME/open-unlearning/runners/slurm.sh $common"
+    common="sbatch $HOME/open-unlearning/runners/slurm_runner.sh $common"
 fi
 
 

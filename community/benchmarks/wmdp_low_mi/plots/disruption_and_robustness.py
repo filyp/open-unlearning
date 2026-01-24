@@ -86,7 +86,8 @@ for method_name in method_names:
         )
 
 # Set y-axis to logarithmic scale
-ax.set_yscale("log")
+if metric_name == "train/recall_loss":
+    ax.set_yscale("log")
 
 # Set axis limits with padding
 x_margin = 0.002

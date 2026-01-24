@@ -118,7 +118,7 @@ def gate_and_up_breaking(model, batch, layer_range):
 
 
 # # separate gate and up
-# def gate_and_up_breaking(model, batch, layer_range):
+# def gate_and_up_breaking_separate(model, batch, layer_range):
 #     _mask = get_token_mask(batch)
 
 #     if "org_gate_out" not in batch:  # first epoch
