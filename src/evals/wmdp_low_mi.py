@@ -82,7 +82,7 @@ def _get_loss_and_kl(model, batches, acts_to_logits):
             assert cached_logits_masked.shape == current_logits_masked.shape
             assert cached_logits_masked.ndim == 2  # (n_valid_tokens, vocab)
 
-            # # Filter out rows with NaN values
+            # # Filter out rows with NaN values - used for debugging gemma3 (currently broken)
             # valid_rows = ~(pt.isnan(cached_logits_masked).any(dim=-1))
             # # valid_rows2 = ~(pt.isnan(current_logits_masked).any(dim=-1))
             # # assert they are the same
@@ -122,13 +122,27 @@ def _create_acts_to_logits(model):
     Copies the weights so they're preserved even if the model changes during training.
     """
     model = get_lm(model)
-    if hasattr(model, "lm_head"):
-        cached_lm_head = copy.deepcopy(model.lm_head)
-        return cached_lm_head
-    else:
+    model_type = model.config.model_type
+
+    if not hasattr(model, "lm_head"):
         # MobileLLM-style: use shared embedding weights
         cached_embed_weight = model.model.embed_tokens.weight.detach().clone()
         return lambda h: F.linear(h, cached_embed_weight)
+
+    cached_lm_head = copy.deepcopy(model.lm_head)
+
+    def _acts_to_logits(hidden_states):
+        logits = cached_lm_head(hidden_states)
+
+        if model_type == "gemma2" and model.config.final_logit_softcapping is not None:
+            # based on: https://github.com/huggingface/transformers/blob/ab87f2445096554e1c28ffe896afd96fa9469444/src/transformers/models/gemma2/modeling_gemma2.py#L539-L542
+            logits = logits / model.config.final_logit_softcapping
+            logits = pt.tanh(logits)
+            logits = logits * model.config.final_logit_softcapping
+
+        return logits
+
+    return _acts_to_logits
 
 
 class WMDPLLowMIEvaluator(Evaluator):
