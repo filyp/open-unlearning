@@ -190,11 +190,6 @@ profile.prof
 .aim/
 *.lprof
 
-# dvclive
-# .dvcignore
-# dvc.yaml
-# .dvc
-
 tmp_comm/
 **/*.pkl
 community/benchmarks/wmdp_low_mi/plots/*.pdf
