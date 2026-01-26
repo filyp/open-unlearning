@@ -9,7 +9,7 @@ from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import TaskManager, get_task_dict
 
 from evals.base import Evaluator
-from trainer.unlearn.cir.cir_utils import batched, prep_batch
+from trainer.unlearn.cir.cir_utils import batched, get_lm, prep_batch
 
 logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
@@ -82,6 +82,14 @@ def _get_loss_and_kl(model, batches, acts_to_logits):
             assert cached_logits_masked.shape == current_logits_masked.shape
             assert cached_logits_masked.ndim == 2  # (n_valid_tokens, vocab)
 
+            # # Filter out rows with NaN values
+            # valid_rows = ~(pt.isnan(cached_logits_masked).any(dim=-1))
+            # # valid_rows2 = ~(pt.isnan(current_logits_masked).any(dim=-1))
+            # # assert they are the same
+            # # assert valid_rows == valid_rows2
+            # cached_logits_masked = cached_logits_masked[valid_rows]
+            # current_logits_masked = current_logits_masked[valid_rows]
+
             # KL(P || Q) using kl_div (expects log_q as input, p as target)
             log_p = pt.nn.functional.log_softmax(cached_logits_masked, dim=-1)
             log_q = pt.nn.functional.log_softmax(current_logits_masked, dim=-1)
@@ -113,6 +121,7 @@ def _create_acts_to_logits(model):
     Handles models with lm_head and models with shared embeddings (e.g., MobileLLM).
     Copies the weights so they're preserved even if the model changes during training.
     """
+    model = get_lm(model)
     if hasattr(model, "lm_head"):
         cached_lm_head = copy.deepcopy(model.lm_head)
         return cached_lm_head
@@ -141,7 +150,7 @@ class WMDPLLowMIEvaluator(Evaluator):
             # Modify the wmdp_bio task to use our custom questions
             task = self.task_dict["wmdp_bio"]
             task.dataset["test"] = data["eval_qs"]
-        
+
         self.results = []
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
@@ -192,7 +201,9 @@ class WMDPLLowMIEvaluator(Evaluator):
         self.results.append(res)
 
         if first_eval:
-            assert res["wikitext_kl"] == 0, "Initial KL should be 0"
+            assert (
+                res["wikitext_kl"] == 0
+            ), f"Initial KL should be 0, but got {res['wikitext_kl']}"
 
         if self.eval_cfg.disr_budget is None:
             # used in relearning

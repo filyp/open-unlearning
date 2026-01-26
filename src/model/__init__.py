@@ -1,5 +1,4 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from accelerate import init_empty_weights
 from omegaconf import DictConfig, open_dict
 from typing import Dict, Any
 import os

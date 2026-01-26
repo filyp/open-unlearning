@@ -1,5 +1,11 @@
 import torch as pt
-from trainer.unlearn.cir.cir_utils import get_token_mask
+from trainer.unlearn.cir.cir_utils import get_lm, get_token_mask
+
+
+def _mlp_iter(model, layer_range):
+    model = get_lm(model)
+    for layer_id in range(*layer_range):
+        yield model.model.layers[layer_id].mlp
 
 
 def mlp_breaking(model, batch, layer_range):
@@ -12,14 +18,13 @@ def mlp_breaking(model, batch, layer_range):
         batch["org_mlp_out"] = {}
 
     loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
+    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
         out = mlp.down_proj.cached_out[_mask]
 
-        if layer_id not in batch["org_mlp_out"]:  # first epoch, so cache it
-            batch["org_mlp_out"][layer_id] = out.detach().cpu()
+        if mlp_id not in batch["org_mlp_out"]:  # first epoch, so cache it
+            batch["org_mlp_out"][mlp_id] = out.detach().cpu()
 
-        org_out = batch["org_mlp_out"][layer_id].to(out.device)
+        org_out = batch["org_mlp_out"][mlp_id].to(out.device)
         org_out_norm = org_out.norm(dim=-1).mean()
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
         dotproducts = dotproducts / org_out_norm**2
@@ -37,14 +42,13 @@ def mlp_activation_breaking(model, batch, layer_range):
         batch["org_down_proj_input"] = {}
 
     loss_acc = 0
-    for layer_id in range(*layer_range):
-        down_proj = model.model.layers[layer_id].mlp.down_proj
-        act = down_proj.last_act_input[_mask]
+    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
+        act = mlp.down_proj.last_act_input[_mask]
 
-        if layer_id not in batch["org_down_proj_input"]:  # first epoch, so cache it
-            batch["org_down_proj_input"][layer_id] = act.detach().cpu()
+        if mlp_id not in batch["org_down_proj_input"]:  # first epoch, so cache it
+            batch["org_down_proj_input"][mlp_id] = act.detach().cpu()
 
-        org_act = batch["org_down_proj_input"][layer_id].to(act.device)
+        org_act = batch["org_down_proj_input"][mlp_id].to(act.device)
         org_act_norm = org_act.norm(dim=-1).mean()
         loss_acc += (act * org_act).clip(min=0).mean() / org_act_norm**2
 
@@ -61,16 +65,15 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
         batch["org_act"] = {}
 
     loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
+    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
 
-        if layer_id not in batch["org_act"]:  # first epoch, so cache it
+        if mlp_id not in batch["org_act"]:  # first epoch, so cache it
             act = gate_out.clip(min=0) * up_out
-            batch["org_act"][layer_id] = act.detach().cpu()
+            batch["org_act"][mlp_id] = act.detach().cpu()
 
-        org_act = batch["org_act"][layer_id].to(up_out.device)
+        org_act = batch["org_act"][mlp_id].to(up_out.device)
         norm = org_act.norm(dim=-1).mean()
 
         loss_acc += (up_out * org_act).clip(min=0).mean() / norm**1.5
@@ -87,19 +90,18 @@ def gate_and_up_breaking(model, batch, layer_range):
         batch["org_up_out"] = {}
 
     loss_acc = 0
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
+    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
 
         gate_out = mlp.act_fn(gate_out)
 
-        if layer_id not in batch["org_gate_out"]:  # first epoch, so cache it
-            batch["org_gate_out"][layer_id] = gate_out.detach().cpu()
-            batch["org_up_out"][layer_id] = up_out.detach().cpu()
+        if mlp_id not in batch["org_gate_out"]:  # first epoch, so cache it
+            batch["org_gate_out"][mlp_id] = gate_out.detach().cpu()
+            batch["org_up_out"][mlp_id] = up_out.detach().cpu()
 
-        org_gate_out = batch["org_gate_out"][layer_id].to(up_out.device)
-        org_up_out = batch["org_up_out"][layer_id].to(up_out.device)
+        org_gate_out = batch["org_gate_out"][mlp_id].to(up_out.device)
+        org_up_out = batch["org_up_out"][mlp_id].to(up_out.device)
         gate_norm = org_gate_out.norm(dim=-1).mean()
         up_norm = org_up_out.norm(dim=-1).mean()
 

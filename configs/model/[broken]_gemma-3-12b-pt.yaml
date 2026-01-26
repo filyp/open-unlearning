@@ -6,3 +6,4 @@ tokenizer_args:
   pretrained_model_name_or_path: "google/gemma-3-12b-pt"
 template_args:
   apply_chat_template: False
+# model_handler: Gemma3ForConditionalGeneration
