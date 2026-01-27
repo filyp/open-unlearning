@@ -9,7 +9,6 @@ import trainer.unlearn.cir.loss_fns as loss_fns
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
-    get_lm,
     get_relev_mask_with_caching,
     get_token_mask,
     install_hooks,
@@ -52,7 +51,7 @@ class CIR(UnlearnTrainer):
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         self.layer_range = cfg.get(
-            "layer_range", [0, len(get_lm(self.model).model.layers)]
+            "layer_range", [0, len(self.model.model.layers)]
         )
         logging.info(f"loss layer range: {self.layer_range}")
 
@@ -67,7 +66,7 @@ class CIR(UnlearnTrainer):
                 if int(layer_num) >= self.layer_range[1] - 1:
                     p.requires_grad = False
 
-        install_hooks(get_lm(self.model), self.layer_range, cfg.forget_loss)
+        install_hooks(self.model, self.layer_range, cfg.forget_loss)
 
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(

@@ -130,14 +130,14 @@ def install_hooks(model, layer_range, forget_loss):
         mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
 
-def get_lm(model):
-    # todo, if we end up not using gemma3, remove this
-    if hasattr(model, "model"):
-        return model
-    elif hasattr(model, "language_model"):
-        return model.language_model
-    else:
-        raise ValueError(f"Unsupported model: {model}")
+# def get_lm(model):
+#     # todo, if we end up not using gemma3, remove this
+#     if hasattr(model, "model"):
+#         return model
+#     elif hasattr(model, "language_model"):
+#         return model.language_model
+#     else:
+#         raise ValueError(f"Unsupported model: {model}")
 
 
 # # Extract eigendecomposition and apply mahalanobis projection

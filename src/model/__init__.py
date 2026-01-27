@@ -1,4 +1,4 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, Gemma3ForCausalLM
 from omegaconf import DictConfig, open_dict
 from typing import Dict, Any
 import os
@@ -105,3 +105,4 @@ def get_tokenizer(tokenizer_cfg: DictConfig):
 # register models
 _register_model(AutoModelForCausalLM)
 _register_model(ProbedLlamaForCausalLM)
+_register_model(Gemma3ForCausalLM)

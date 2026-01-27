@@ -3,7 +3,7 @@ import copy
 import torch as pt
 import torch.nn.functional as F
 
-from trainer.unlearn.cir.cir_utils import get_lm, prep_batch
+from trainer.unlearn.cir.cir_utils import prep_batch
 
 
 def cache_last_hidden_states(model, batches):
@@ -82,7 +82,6 @@ def create_acts_to_logits(model):
     To make sure that it works correctly, your evaluator should assert that on the evaluation
     before the training starts, the KL divergence is 0 (see WMDPLLowMIEvaluator).
     """
-    model = get_lm(model)
     model_type = model.config.model_type
 
     if not hasattr(model, "lm_head"):

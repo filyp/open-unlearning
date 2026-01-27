@@ -1,9 +1,8 @@
 import torch as pt
-from trainer.unlearn.cir.cir_utils import get_lm, get_token_mask
+from trainer.unlearn.cir.cir_utils import get_token_mask
 
 
 def _mlp_iter(model, layer_range):
-    model = get_lm(model)
     for layer_id in range(*layer_range):
         yield model.model.layers[layer_id].mlp
 
