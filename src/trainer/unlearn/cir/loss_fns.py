@@ -7,6 +7,23 @@ def _mlp_iter(model, layer_range):
         yield model.model.layers[layer_id].mlp
 
 
+def correct_logit(output, batch):
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
+    ids = batch["input_ids"][:, 1:].flatten()
+    true_logits = logits[pt.arange(len(ids)), ids]
+
+    # # subtract the mean (although it is not crucial)
+    # true_logits -= logits.mean(dim=-1).detach()
+
+    true_logits = true_logits.clip(min=0)
+
+    # mask out the beginning tokens
+    mask = get_token_mask(batch)
+    mask = mask[:, 1:].flatten()
+
+    return true_logits[mask].mean()
+
+
 def mlp_breaking(model, batch, layer_range):
     # note that it transports the original outputs from RAM
     # which would normally be slow, but if it is called right after model.forward(),
@@ -240,19 +257,3 @@ def gate_and_up_breaking(model, batch, layer_range):
 #     mlp.up_proj.register_forward_hook(hooks.save_act_output)
 #     # note: overlaps some collapse hooks, but that's fine:
 #     mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
-
-
-# def _correct_logit(output, batch):
-#     logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
-#     ids = batch["input_ids"][:, 1:].flatten()
-#     true_logits = logits[pt.arange(len(ids)), ids]
-#     # true_logits -= logits.mean(dim=-1)  # this is for the _minus_avg version
-#     # true_logits -= logits.mean(dim=-1).detach()
-
-#     true_logits = true_logits.clip(min=0)
-
-#     # mask out the beginning tokens
-#     mask = get_token_mask(batch)
-#     mask = mask[:, 1:].flatten()
-
-#     return true_logits[mask].mean()

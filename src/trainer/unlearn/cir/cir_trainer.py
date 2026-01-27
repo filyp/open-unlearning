@@ -65,6 +65,8 @@ class CIR(UnlearnTrainer):
                 # because for that last layer, we don't have down_proj output grads
                 if int(layer_num) >= self.layer_range[1] - 1:
                     p.requires_grad = False
+                if int(layer_num) >= cfg.train_first_n_layers:
+                    p.requires_grad = False
 
         install_hooks(self.model, self.layer_range, cfg.forget_loss)
 
@@ -106,11 +108,13 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
 
-        if hasattr(loss_fns, self.cfg.forget_loss):
-            loss_fn = getattr(loss_fns, self.cfg.forget_loss)
-            forget_loss = loss_fn(model, batch, self.layer_range)
+        if self.cfg.forget_loss == "correct_logit":
+            forget_loss = loss_fns.correct_logit(output, batch)
         elif self.cfg.forget_loss == "neg_cross_entropy":
             forget_loss = -output.loss
+        elif hasattr(loss_fns, self.cfg.forget_loss):
+            loss_fn = getattr(loss_fns, self.cfg.forget_loss)
+            forget_loss = loss_fn(model, batch, self.layer_range)
         else:
             raise ValueError(f"Unknown forget loss: {self.cfg.forget_loss}")
 
