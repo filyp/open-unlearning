@@ -107,7 +107,7 @@ def sanitize_tensor(t, epsilon):
     return t + sign * epsilon
 
 
-def install_hooks(model, layer_range, forget_loss):
+def install_hooks(model, layer_range, forget_loss, train_to_layer):
     # hooks for forget loss
     for layer_id in range(*layer_range):
         mlp = model.model.layers[layer_id].mlp
@@ -119,15 +119,21 @@ def install_hooks(model, layer_range, forget_loss):
             mlp.gate_proj.register_forward_hook(hooks.save_act_output)
             mlp.up_proj.register_forward_hook(hooks.save_act_output)
 
-    for layer_id in range(layer_range[1] - 1):
+    for mlp in mlp_iter(model, [0, train_to_layer]):
         # hooks for component collapse
-        mlp = model.model.layers[layer_id].mlp
         for module in [mlp.up_proj, mlp.gate_proj]:
             module.register_forward_hook(hooks.save_act_input)
             module.register_full_backward_hook(hooks.save_grad_output)
         # additional hooks for computing grad collapse more efficiently
         mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
         mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
+
+
+def mlp_iter(model, layer_range):
+    # if layer_range is None:
+    #     layer_range = [0, len(model.model.layers)]
+    for layer_id in range(*layer_range):
+        yield model.model.layers[layer_id].mlp
 
 
 # def get_lm(model):

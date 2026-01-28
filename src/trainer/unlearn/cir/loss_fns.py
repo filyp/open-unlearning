@@ -1,12 +1,7 @@
 import torch as pt
-from trainer.unlearn.cir.cir_utils import get_token_mask
-
 import torch.nn.functional as F
 
-
-def _mlp_iter(model, layer_range):
-    for layer_id in range(*layer_range):
-        yield model.model.layers[layer_id].mlp
+from trainer.unlearn.cir.cir_utils import get_token_mask, mlp_iter
 
 
 def get_label_logits(output, batch):
@@ -46,7 +41,7 @@ def mlp_breaking(model, batch, layer_range):
         batch["org_mlp_out"] = {}
 
     loss_acc = 0
-    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
+    for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
         out = mlp.down_proj.cached_out[_mask]
 
         if mlp_id not in batch["org_mlp_out"]:  # first epoch, so cache it
@@ -70,7 +65,7 @@ def mlp_activation_breaking(model, batch, layer_range):
         batch["org_down_proj_input"] = {}
 
     loss_acc = 0
-    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
+    for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
         act = mlp.down_proj.last_act_input[_mask]
 
         if mlp_id not in batch["org_down_proj_input"]:  # first epoch, so cache it
@@ -93,7 +88,7 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
         batch["org_act"] = {}
 
     loss_acc = 0
-    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
+    for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
 
@@ -118,7 +113,7 @@ def gate_and_up_breaking(model, batch, layer_range):
         batch["org_up_out"] = {}
 
     loss_acc = 0
-    for mlp_id, mlp in enumerate(_mlp_iter(model, layer_range)):
+    for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
         gate_out = mlp.gate_proj.cached_out[_mask]
         up_out = mlp.up_proj.cached_out[_mask]
 

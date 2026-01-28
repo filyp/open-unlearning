@@ -67,7 +67,7 @@ class CIR(UnlearnTrainer):
                 if int(layer_num) >= train_to_layer:
                     p.requires_grad = False
 
-        install_hooks(self.model, self.layer_range, cfg.forget_loss)
+        install_hooks(self.model, self.layer_range, cfg.forget_loss, train_to_layer)
 
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
