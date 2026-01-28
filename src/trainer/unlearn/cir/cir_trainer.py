@@ -152,16 +152,16 @@ class CIR(UnlearnTrainer):
             if "grad_pcs_to_use" in self.cfg:
                 grads *= grad_corrections[parent_mlp_name(name)].float()
 
+            # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
+            _up_proj_name = name.replace(".gate_proj", ".up_proj")
+            acts = self.act_collapsers[_up_proj_name].collapse(acts)
+
             if self.cfg.get("act_quantile", 0) > 0:
                 relev_mask = get_relev_mask_with_caching(
                     batch, name, acts, token_mask, self.cfg.act_quantile
                 )
                 acts = acts[relev_mask]
                 grads = grads[relev_mask]
-
-            # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
-            _up_proj_name = name.replace(".gate_proj", ".up_proj")
-            acts = self.act_collapsers[_up_proj_name].collapse(acts)
 
             # without the projections, this is equivalent to normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)

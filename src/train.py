@@ -12,10 +12,6 @@ from trainer.utils import seed_everything
 
 load_dotenv()
 
-import os
-if "UNL_WANDB_PROJECT" in os.environ:
-    os.environ["WANDB_PROJECT"] = os.environ["UNL_WANDB_PROJECT"]
-
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig):
     """Entry point of the code to train models
