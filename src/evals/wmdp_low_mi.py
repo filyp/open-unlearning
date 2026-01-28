@@ -2,8 +2,7 @@ import logging
 
 import lm_eval.tasks
 import torch as pt
-from lm_eval import evaluator
-from lm_eval.models.huggingface import HFLM
+import lm_eval
 from lm_eval.tasks import TaskManager, get_task_dict
 
 from evals.base import Evaluator
@@ -14,7 +13,7 @@ from evals.kl_utils import (
 )
 from trainer.unlearn.cir.cir_utils import batched, prep_batch
 
-logger = logging.getLogger("evaluator")
+# logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
 logging.getLogger("lm_eval.models.huggingface").setLevel(logging.ERROR)
 # Disable lm_eval spam
@@ -72,8 +71,9 @@ class WMDPLLowMIEvaluator(Evaluator):
             task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
             self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
             # Modify the wmdp_bio task to use our custom questions
-            task = self.task_dict["wmdp_bio"]
-            task.dataset["test"] = data["eval_qs"]
+            # Note that this also supports eval_qs from wmdp_cyber - we only need
+            # the task template which is the same for both tasks.
+            self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
 
         self.results = []
 
@@ -108,12 +108,12 @@ class WMDPLLowMIEvaluator(Evaluator):
 
         if self.eval_cfg.eval_mcq:
             # * eval forget acc
-            lm = HFLM(
+            lm = lm_eval.models.huggingface.HFLM(
                 pretrained=model,
                 tokenizer=kwargs["tokenizer"],
                 batch_size=trainer.args.per_device_eval_batch_size,
             )
-            lm_eval_results = evaluator.evaluate(
+            lm_eval_results = lm_eval.evaluator.evaluate(
                 lm=lm,
                 task_dict=self.task_dict,
                 log_samples=True,

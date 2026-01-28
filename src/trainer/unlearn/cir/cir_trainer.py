@@ -50,12 +50,11 @@ class CIR(UnlearnTrainer):
         self.collapsers_initialized = False
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
-        self.layer_range = cfg.get(
-            "layer_range", [0, len(self.model.model.layers)]
-        )
+        self.layer_range = cfg.get("layer_range", [0, len(self.model.model.layers)])
         logging.info(f"loss layer range: {self.layer_range}")
 
         # set trainable params
+        train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
         for n, p in self.model.named_parameters():
             p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
             if p.requires_grad:
@@ -65,7 +64,7 @@ class CIR(UnlearnTrainer):
                 # because for that last layer, we don't have down_proj output grads
                 if int(layer_num) >= self.layer_range[1] - 1:
                     p.requires_grad = False
-                if int(layer_num) >= cfg.train_first_n_layers:
+                if int(layer_num) >= train_to_layer:
                     p.requires_grad = False
 
         install_hooks(self.model, self.layer_range, cfg.forget_loss)
@@ -104,12 +103,22 @@ class CIR(UnlearnTrainer):
         model.train()
         # ! unlearning loss
         batch = inputs["forget"]
-        token_mask = get_token_mask(batch)
+        token_mask = get_token_mask(batch["labels"])
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
 
         if self.cfg.forget_loss == "correct_logit":
             forget_loss = loss_fns.correct_logit(output, batch)
+        elif self.cfg.forget_loss == "saturating_logits":
+            if "initial_label_logits" not in batch:
+                assert not self.collapsers_initialized, "epoch number != 0"
+                batch["initial_label_logits"] = loss_fns.get_label_logits(
+                    output, batch
+                ).detach()  # .cpu()
+            forget_loss = loss_fns.saturating_logits(
+                output, batch, batch["initial_label_logits"], self.cfg.sat_speed
+            )
+
         elif self.cfg.forget_loss == "neg_cross_entropy":
             forget_loss = -output.loss
         elif hasattr(loss_fns, self.cfg.forget_loss):

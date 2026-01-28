@@ -23,8 +23,8 @@ def batched(iterable, n):
         yield batch
 
 
-def get_token_mask(batch):
-    token_mask = batch["labels"] != -100
+def get_token_mask(labels):
+    token_mask = labels != -100
     token_mask[:, 0] = False  # ignore BOS token
     return token_mask
 
@@ -42,7 +42,7 @@ def compute_per_text_quantile_mask(
     Returns:
         Boolean mask of same length as dists, True for tokens above their text's quantile threshold
     """
-    # todo: apparently this is quite slow, so maybe compute only at the beginning and store the masks?
+    # apparently this is quite slow, so it's better to compute only at the beginning and store the masks
     batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
     act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
     for text_idx in batch_indices.unique():
@@ -162,14 +162,14 @@ def install_hooks(model, layer_range, forget_loss):
 #     for batch in batches:
 #         dists = batch["org_mlp_out"][layer_id].float().norm(dim=1)
 #         quantile_mask = compute_per_text_quantile_mask(
-#             dists, get_token_mask(batch), cfg.mlp_quantile
+#             dists, get_token_mask(batch["labels"]), cfg.mlp_quantile
 #         )
 #         # Zero out filtered outputs so they don't contribute to loss
 #         batch["org_mlp_out"][layer_id][~quantile_mask] = 0
 
 
 # def cb_retain_loss(output, batch, cfg):
-#     # _mask = get_token_mask(batch)  # retains only on meaningful tokens
+#     # _mask = get_token_mask(batch["labels"])  # retains only on meaningful tokens
 #     _mask = batch["attention_mask"].bool()  # retains also on template on BOS tokens
 #     loss_acc = 0
 #     for layer_id in cfg.cb_retaining_layers:

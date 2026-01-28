@@ -1,34 +1,46 @@
 import torch as pt
 from trainer.unlearn.cir.cir_utils import get_token_mask
 
+import torch.nn.functional as F
+
 
 def _mlp_iter(model, layer_range):
     for layer_id in range(*layer_range):
         yield model.model.layers[layer_id].mlp
 
 
+def get_label_logits(output, batch):
+    mask = get_token_mask(batch["labels"])
+    mask = mask[:, 1:]
+
+    labels = batch["labels"][:, 1:][mask]
+    logits = output.logits[:, :-1][mask]
+    assert labels.shape == logits.shape[:1]
+    assert len(logits.shape) == 2
+
+    return logits[pt.arange(len(labels)), labels]
+
+
+# loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
 def correct_logit(output, batch):
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
-    ids = batch["input_ids"][:, 1:].flatten()
-    true_logits = logits[pt.arange(len(ids)), ids]
+    label_logits = get_label_logits(output, batch)
+    clipped_label_logits = label_logits.clip(min=0)
+    return clipped_label_logits.float().mean()
 
-    # # subtract the mean (although it is not crucial)
-    # true_logits -= logits.mean(dim=-1).detach()
 
-    true_logits = true_logits.clip(min=0)
-
-    # mask out the beginning tokens
-    mask = get_token_mask(batch)
-    mask = mask[:, 1:].flatten()
-
-    return true_logits[mask].mean()
+def saturating_logits(output, batch, initial_label_logits, sat_speed=1):
+    label_logits = get_label_logits(output, batch)
+    initial_label_logits = initial_label_logits.to(output.logits.device)
+    diff = label_logits.float() - initial_label_logits.float()
+    unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
+    return unlearning_saturations.mean()
 
 
 def mlp_breaking(model, batch, layer_range):
     # note that it transports the original outputs from RAM
     # which would normally be slow, but if it is called right after model.forward(),
     # it is done in parallel, so causes no slowdown
-    _mask = get_token_mask(batch)
+    _mask = get_token_mask(batch["labels"])
 
     if "org_mlp_out" not in batch:  # first epoch
         batch["org_mlp_out"] = {}
@@ -52,7 +64,7 @@ def mlp_breaking(model, batch, layer_range):
 def mlp_activation_breaking(model, batch, layer_range):
     # Similar to mlp_breaking_loss but targets the down_proj input activation
     # (the intermediate MLP activation before the down projection)
-    _mask = get_token_mask(batch)
+    _mask = get_token_mask(batch["labels"])
 
     if "org_down_proj_input" not in batch:  # first epoch
         batch["org_down_proj_input"] = {}
@@ -75,7 +87,7 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
     # ignores neurons where gate activation is negative
     # this way, we can store 2x less data than in gate_and_up_breaking
     # also, it turns out, ignoring negative gates actually yields better results
-    _mask = get_token_mask(batch)
+    _mask = get_token_mask(batch["labels"])
 
     if "org_act" not in batch:  # first epoch
         batch["org_act"] = {}
@@ -99,7 +111,7 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
 
 
 def gate_and_up_breaking(model, batch, layer_range):
-    _mask = get_token_mask(batch)
+    _mask = get_token_mask(batch["labels"])
 
     if "org_gate_out" not in batch:  # first epoch
         batch["org_gate_out"] = {}
@@ -137,7 +149,7 @@ def gate_and_up_breaking(model, batch, layer_range):
 
 # # separate gate and up
 # def gate_and_up_breaking_separate(model, batch, layer_range):
-#     _mask = get_token_mask(batch)
+#     _mask = get_token_mask(batch["labels"])
 
 #     if "org_gate_out" not in batch:  # first epoch
 #         batch["org_gate_out"] = {}
@@ -175,7 +187,7 @@ def gate_and_up_breaking(model, batch, layer_range):
 #     # which suggests there's not a bug, just the gradient isn't important, and here also relying only on gradient is not sufficient.
 
 #     # On first batch, we do an extra backward pass with -output.loss to get gradients on neurons
-#     _mask = get_token_mask(batch)
+#     _mask = get_token_mask(batch["labels"])
 
 #     if "org_down_proj_grad" not in batch:  # first epoch
 #         # Do backward pass with -loss to get gradients that would decrease the loss
@@ -210,7 +222,7 @@ def gate_and_up_breaking(model, batch, layer_range):
 
 
 # def gate_and_up_breaking_grad_filtered(model, batch, layer_range, output):
-#     _mask = get_token_mask(batch)
+#     _mask = get_token_mask(batch["labels"])
 
 #     if "org_act" not in batch:  # first epoch
 #         # output.loss.backward(retain_graph=True)
