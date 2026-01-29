@@ -16,6 +16,7 @@ image = (
     #     "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.12/flash_attn-2.8.3+cu128torch2.10-cp311-cp311-linux_x86_64.whl"
     # )
     .add_local_dir("data", remote_path="/root/code/data")
+    .add_local_dir(".cache/load_hf", remote_path="/root/code/.cache/load_hf")
     .add_local_dir("configs", remote_path="/root/code/configs")
     .add_local_dir("src", remote_path="/root/code/src")
 )

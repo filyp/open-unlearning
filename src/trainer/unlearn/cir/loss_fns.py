@@ -17,7 +17,7 @@ def get_label_logits(output, batch):
 
 
 # loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
-def correct_logit(output, batch):
+def label_logits(output, batch):
     label_logits = get_label_logits(output, batch)
     clipped_label_logits = label_logits.clip(min=0)
     return clipped_label_logits.float().mean()

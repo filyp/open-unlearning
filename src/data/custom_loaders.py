@@ -8,7 +8,7 @@ from datasets import concatenate_datasets, load_dataset, load_from_disk
 
 def load_hf_cached(path, split="train", data_files=None):
     """Load a HuggingFace dataset with local disk caching for fast subsequent loads."""
-    cache_dir = ".cache/load_hf_cached/"
+    cache_dir = ".cache/load_hf/"
     cache_dir += f"{path}_{split}_{data_files}".replace("/", "_")
     if os.path.exists(cache_dir):
         logging.info(f"Loading cached dataset from {cache_dir}")

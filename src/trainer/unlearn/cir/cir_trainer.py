@@ -107,8 +107,8 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
 
-        if self.cfg.forget_loss == "correct_logit":
-            forget_loss = loss_fns.correct_logit(output, batch)
+        if self.cfg.forget_loss == "label_logits":
+            forget_loss = loss_fns.label_logits(output, batch)
         elif self.cfg.forget_loss == "saturating_logits":
             if "initial_label_logits" not in batch:
                 assert not self.collapsers_initialized, "epoch number != 0"
