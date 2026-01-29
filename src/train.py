@@ -56,7 +56,7 @@ def main(cfg: DictConfig):
         model=model,
         train_dataset=data.get("train", None),
         eval_dataset=data.get("eval", "dummy"),  # None would trigger Trainer exception
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=collator,
         evaluators=evaluators,
         template_args=template_args,
