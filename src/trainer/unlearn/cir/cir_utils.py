@@ -130,10 +130,17 @@ def install_hooks(model, layer_range, forget_loss, train_to_layer):
 
 
 def mlp_iter(model, layer_range):
+    model_type = model.config.model_type
     # if layer_range is None:
     #     layer_range = [0, len(model.model.layers)]
-    for layer_id in range(*layer_range):
-        yield model.model.layers[layer_id].mlp
+
+    if model_type in ["qwen3_moe"]:
+        for layer_id in range(*layer_range):
+            for expert in model.model.layers[layer_id].mlp.experts:
+                yield expert
+    else:
+        for layer_id in range(*layer_range):
+            yield model.model.layers[layer_id].mlp
 
 
 # def get_lm(model):

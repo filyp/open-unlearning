@@ -1,0 +1,10 @@
+model_args:
+  pretrained_model_name_or_path: "allenai/OLMoE-1B-7B-0125"
+  # # for Qwen2Noe, flash attention conflicts with right padding
+  # attn_implementation: null
+  attn_implementation: 'flash_attention_2'
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "allenai/OLMoE-1B-7B-0125"
+template_args:
+  apply_chat_template: false
