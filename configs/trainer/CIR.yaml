@@ -5,14 +5,14 @@ defaults:
 handler: CIR
 args:
   optim: sgd  # adam underperforms
-  learning_rate: 0.4  # 0.2-0.6 for other models
+  learning_rate: 0.2  # 0.2-0.6 for other models
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
 method_args:
   cfg:
-    act_pcs_to_use: 600
-    grad_pcs_to_use: 600
+    act_pcs_to_use: 500
+    grad_pcs_to_use: 500
 
     target_modules:
       - gate_proj
@@ -30,7 +30,7 @@ method_args:
     train_first_layers: 0.75
     # train_first_layers: 1
     
-    sat_speed: 0.1
+    sat_speed: 0.1  # only used for saturating_logits
 
     act_quantile: 0.5
 

@@ -1,0 +1,21 @@
+# @package eval.tofu
+
+defaults:
+  - tofu  # inherit from tofu.yaml
+  - override tofu_metrics:
+    # - forget_Q_A_Prob
+    - forget_Q_A_PARA_Prob
+    
+    # - forget_Q_A_gibberish
+
+    - ra_Q_A_Prob
+    - ra_Q_A_Prob_normalised
+
+    # - wf_Q_A_Prob
+    # - wf_Q_A_Prob_normalised
+
+    # - ra_Truth_Ratio
+    # - wf_Truth_Ratio
+    #
+    # - forget_quality ->
+    # - forget_Truth_Ratio

@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/tofu/default
+  - override /eval: tofu_simple
+
+question_key: "paraphrased_question"
+
+eval:
+  tofu:
+    batch_size: 16
+
+trainer:
+  args:
+    report_to: wandb
+    # eval_on_start: False
+
+# or just call:
+# python src/train.py --config-name=unlearn.yaml experiment=unlearn/tofu/default eval=tofu_simple question_key=paraphrased_question eval.tofu.batch_size=16 trainer.args.report_to=wandb trainer=... task_name=...
