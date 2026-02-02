@@ -6,11 +6,7 @@ import lm_eval
 from lm_eval.tasks import TaskManager, get_task_dict
 
 from evals.base import Evaluator
-from evals.kl_utils import (
-    cache_last_hidden_states,
-    create_acts_to_logits,
-    get_loss_and_kl,
-)
+from evals.kl_utils import KLComputor
 from trainer.unlearn.cir.cir_utils import batched, prep_batch
 
 # logger = logging.getLogger("evaluator")
@@ -76,6 +72,7 @@ class WMDPLLowMIEvaluator(Evaluator):
             self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
 
         self.results = []
+        self.first_eval = True
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
@@ -83,17 +80,18 @@ class WMDPLLowMIEvaluator(Evaluator):
         trainer = kwargs["trainer"]
 
         assert trainer.args.eval_on_start, "eval_on_start must be True"
-        first_eval = not hasattr(self, "acts_to_logits")
-        if first_eval:  # ! first evaluation, before training
-            # Cache last hidden states for wikitext KL divergence computation
-            cache_last_hidden_states(model, self.wikitext)
-            # Create function to convert hidden states to logits (copies weights)
-            self.acts_to_logits = create_acts_to_logits(model)
+        if self.first_eval:  # ! first evaluation, before training
+            self.kl_computor = KLComputor(model, self.wikitext)
 
         res = {}
-        res["wikitext_loss"], res["wikitext_kl"] = get_loss_and_kl(
-            model, self.wikitext, self.acts_to_logits
+        res["wikitext_loss"], res["wikitext_kl"] = self.kl_computor.get_kl_many_batches(
+            self.wikitext
         )
+        if self.first_eval:
+            assert res["wikitext_kl"] == 0, (
+                f"Initial KL should be 0, but got {res['wikitext_kl']}"
+            )
+            self.first_eval = False
 
         # collate recall samples to target batch size
         recall_batches = [
@@ -123,11 +121,6 @@ class WMDPLLowMIEvaluator(Evaluator):
 
         # ! finished evaluating, now handle the results
         self.results.append(res)
-
-        if first_eval:
-            assert (
-                res["wikitext_kl"] == 0
-            ), f"Initial KL should be 0, but got {res['wikitext_kl']}"
 
         if self.eval_cfg.disr_budget is None:
             # used in relearning

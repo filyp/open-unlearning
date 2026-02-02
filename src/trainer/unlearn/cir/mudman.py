@@ -80,7 +80,7 @@ class MUDMAN(UnlearnTrainer):
         batch = inputs["forget"]
 
         token_mask = batch["attention_mask"].bool().clone()
-        # token_mask[:, 0] = False  # ignore BOS token
+        token_mask[:, 0] = False  # ignore BOS token
 
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device), output_hidden_states=True)
