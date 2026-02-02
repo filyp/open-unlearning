@@ -61,41 +61,38 @@ class KLComputor:
         self.acts_to_logits = create_acts_to_logits(model)
 
     def get_kl(self, batch):
-        assert isinstance(batch, BatchEncoding)
+        assert isinstance(batch, (BatchEncoding, dict))
         model = self.model
-        with pt.no_grad():
-            output = model(**prep_batch(batch, model.device))
-            ce_loss = output.loss.item()
+        output = model(**prep_batch(batch, model.device))
+        ce_loss = output.loss
 
-            current_logits = output.logits.float()
+        current_logits = output.logits.float()
 
-            # Reconstruct original logits from cached hidden states
-            cached_hidden = batch["cached_last_hidden"].to(model.dtype)
-            cached_logits = self.acts_to_logits(cached_hidden).float()
-            assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
+        # Reconstruct original logits from cached hidden states
+        cached_hidden = batch["cached_last_hidden"].to(model.dtype)
+        cached_logits = self.acts_to_logits(cached_hidden).float()
+        assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
 
-            # Get mask for valid tokens (labels != -100)
-            labels = batch["labels"].to(model.device)
-            token_mask = labels != -100
-            assert token_mask.shape == current_logits.shape[:2]
+        # Get mask for valid tokens (labels != -100)
+        labels = batch["labels"].to(model.device)
+        token_mask = labels != -100
+        assert token_mask.shape == current_logits.shape[:2]
 
-            # Mask first
-            cached_logits_masked = cached_logits[token_mask]  # btw, bfloat is enough
-            current_logits_masked = current_logits[token_mask]
-            assert cached_logits_masked.shape == current_logits_masked.shape
-            assert cached_logits_masked.ndim == 2  # (n_valid_tokens, vocab)
+        # Mask first
+        cached_logits_masked = cached_logits[token_mask]  # btw, bfloat is enough
+        current_logits_masked = current_logits[token_mask]
+        assert cached_logits_masked.shape == current_logits_masked.shape
+        assert cached_logits_masked.ndim == 2  # (n_valid_tokens, vocab)
 
-            # KL(P || Q) using kl_div (expects log_q as input, p as target)
-            log_p = pt.nn.functional.log_softmax(cached_logits_masked, dim=-1)
-            log_q = pt.nn.functional.log_softmax(current_logits_masked, dim=-1)
+        # KL(P || Q) using kl_div (expects log_q as input, p as target)
+        log_p = pt.nn.functional.log_softmax(cached_logits_masked, dim=-1)
+        log_q = pt.nn.functional.log_softmax(current_logits_masked, dim=-1)
 
-            kl = pt.nn.functional.kl_div(
-                log_q, log_p, reduction="sum", log_target=True
-            ).item()
-            num_tokens = token_mask.sum().item()
+        kl = pt.nn.functional.kl_div(log_q, log_p, reduction="sum", log_target=True)
+        num_tokens = token_mask.sum()
         return kl, ce_loss, num_tokens
 
-    def get_kl_many_batches(self, batches):
+    def eval_kl_many_batches(self, batches):
         """Compute loss and KL divergence in a single pass.
 
         KL(P || Q) where P is the original model (cached) and Q is the current model.
@@ -106,12 +103,13 @@ class KLComputor:
         loss_acc = 0.0
 
         for batch in batches:
-            assert isinstance(batch, BatchEncoding)
-            kl, ce_loss, num_tokens = self.get_kl(batch)
+            assert isinstance(batch, (BatchEncoding, dict))
+            with pt.no_grad():
+                kl, ce_loss, num_tokens = self.get_kl(batch)
             total_kl += kl
             loss_acc += ce_loss
             total_tokens += num_tokens
 
         avg_loss = loss_acc / len(batches)
         avg_kl = total_kl / total_tokens
-        return avg_loss, avg_kl
+        return avg_loss.item(), avg_kl.item()

@@ -84,8 +84,8 @@ class WMDPLLowMIEvaluator(Evaluator):
             self.kl_computor = KLComputor(model, self.wikitext)
 
         res = {}
-        res["wikitext_loss"], res["wikitext_kl"] = self.kl_computor.get_kl_many_batches(
-            self.wikitext
+        res["wikitext_loss"], res["wikitext_kl"] = (
+            self.kl_computor.eval_kl_many_batches(self.wikitext)
         )
         if self.first_eval:
             assert res["wikitext_kl"] == 0, (

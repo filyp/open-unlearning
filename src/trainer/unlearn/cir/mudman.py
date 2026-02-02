@@ -53,6 +53,7 @@ class MUDMAN(UnlearnTrainer):
         )
 
         self.kl_computor = KLComputor(self.model, self.batches.retain)
+        # self.kl_computor = KLComputor(self.model, self.batches.forget)
 
         for param in self.model.parameters():
             if param.requires_grad:
@@ -68,6 +69,7 @@ class MUDMAN(UnlearnTrainer):
 
         # ! retain pass
         r_batch = inputs["retain"]
+        # r_batch = random.choice(self.batches.forget)
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(r_batch, model.device))
         kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
@@ -103,12 +105,28 @@ class MUDMAN(UnlearnTrainer):
             assert acts.shape == (token_mask.sum(), module.weight.shape[1])
             assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
-            # without the projections, this is equivalent to normal backprop
-            wgrad = pt.einsum("ti,tj->ij", grads, acts)
+            ref_grad = module.weight.reference_grad
 
-            _mask = wgrad.sign() != module.weight.reference_grad.sign()
-            wgrad[_mask] = 0
-            module.weight.grad = wgrad
+            wgrad = pt.einsum("ti,tj->ij", grads, acts)
+            
+            ref_sim = ref_grad * wgrad
+            col_mask = ref_sim.mean(dim=0, keepdim=True) > 0
+            row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
+
+            wgrad *= col_mask
+            # wgrad *= row_mask
+
+            # biggrad = pt.einsum("ti,tj->tij", grads, acts)
+            # ref_sim = pt.einsum("tij,ij->tij", biggrad, ref_grad)
+            # col_mask = ref_sim.mean(dim=1, keepdim=True) > 0
+            # row_mask = ref_sim.mean(dim=2, keepdim=True) > 0
+
+
+
+            # _mask = wgrad.sign() != ref_grad.sign()
+            # wgrad[_mask] = 0
+
+            module.weight.grad = wgrad            
 
         normalize_grads(model)
 

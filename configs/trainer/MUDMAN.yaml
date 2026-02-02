@@ -5,7 +5,8 @@ defaults:
 handler: MUDMAN
 args:
   optim: sgd  # adam underperforms
-  learning_rate: 0.005
+  # learning_rate: 0.005
+  learning_rate: 0.015
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
