@@ -1,4 +1,5 @@
 from itertools import islice
+import random
 
 import torch as pt
 
@@ -56,19 +57,14 @@ def compute_per_text_quantile_mask(
 class PreCachingDataLoader:
     def __init__(self, train_dataset, collator, batch_size):
         # * go through whole dataset, to prepare the batches in advance
-        self.forget = []
-        self.retain = []
-        for f, r in zip(
-            # prepare separately forget and retain, to support different batch sizes
-            batched(train_dataset.forget, batch_size),
-            batched(train_dataset.retain, batch_size),
-        ):
-            self.forget.append(collator(f))
-            self.retain.append(collator(r))
+        self.forget = [collator(f) for f in batched(train_dataset.forget, batch_size)]
+        self.retain = [collator(r) for r in batched(train_dataset.retain, batch_size)]
+        assert len(self.forget) <= len(self.retain)
+        print(f"{len(self.forget)=}, {len(self.retain)=}")
 
     def __iter__(self):
-        for fb, rb in zip(self.forget, self.retain):
-            yield {"forget": fb, "retain": rb}
+        for i in range(len(self.forget)):
+            yield {"forget": self.forget[i], "retain": random.choice(self.retain)}
 
     def __len__(self):
         return len(self.forget)

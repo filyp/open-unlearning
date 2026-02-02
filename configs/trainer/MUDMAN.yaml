@@ -6,10 +6,9 @@ handler: MUDMAN
 args:
   optim: sgd  # adam underperforms
   # learning_rate: 0.005
-  learning_rate: 0.05
+  learning_rate: 0.03
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
-
 
   per_device_train_batch_size: 6  # todo change back later
 
@@ -19,9 +18,10 @@ method_args:
     target_modules:
       - gate_proj
       - up_proj
+      # - down_proj
     
-    train_first_layers: 0.75
-    # train_first_layers: 1
+    train_first_layers: 0.5
+    # train_first_layers: 0.75
     
-    retain_momentum: 0.9
+    retain_momentum: 0.8
     

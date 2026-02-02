@@ -17,6 +17,10 @@ import trainer.unlearn.cir.hooks as hooks
 logging.basicConfig(level=logging.INFO)
 
 
+def layer_num(name):
+    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
+
+
 class MUDMAN(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,24 +30,16 @@ class MUDMAN(UnlearnTrainer):
 
         # set trainable params
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
-        for n, p in self.model.named_parameters():
-            p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
-            if p.requires_grad:
-                # match .layers.X. pattern
-                layer_num = re.search(r"\.layers\.(\d+)\.", n).group(1)
-                if int(layer_num) >= train_to_layer:
-                    p.requires_grad = False
-
-        # install hooks
-        for layer_id in range(train_to_layer):
-            mlp = self.model.model.layers[layer_id].mlp
-            # hooks for component collapse
-            for module in [mlp.up_proj, mlp.gate_proj]:
+        for name, module in self.model.named_modules():
+            if not hasattr(module, "weight"):
+                continue
+            module.weight.requires_grad = (
+                any(pattern in name for pattern in cfg.target_modules)
+                and layer_num(name) < train_to_layer
+            )
+            if module.weight.requires_grad:  # install hooks
                 module.register_forward_hook(hooks.save_act_input)
                 module.register_full_backward_hook(hooks.save_grad_output)
-            # additional hooks for computing grad collapse more efficiently
-            mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
-            mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
@@ -53,7 +49,6 @@ class MUDMAN(UnlearnTrainer):
         )
 
         self.kl_computor = KLComputor(self.model, self.batches.retain)
-        # self.kl_computor = KLComputor(self.model, self.batches.forget)
 
         for param in self.model.parameters():
             if param.requires_grad:
@@ -69,7 +64,6 @@ class MUDMAN(UnlearnTrainer):
 
         # ! retain pass
         r_batch = inputs["retain"]
-        # r_batch = random.choice(self.batches.forget)
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(r_batch, model.device))
         kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
@@ -100,8 +94,8 @@ class MUDMAN(UnlearnTrainer):
             if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
                 continue
 
-            acts = module.last_act_input[token_mask].detach().clone()
-            grads = module.last_grad_output[token_mask].detach().clone()
+            acts = module.last_act_input[token_mask].detach()
+            grads = module.last_grad_output[token_mask].detach()
             assert acts.shape == (token_mask.sum(), module.weight.shape[1])
             assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
@@ -110,7 +104,6 @@ class MUDMAN(UnlearnTrainer):
             # _mask = wgrad.sign() != ref_grad.sign()
             # wgrad[_mask] = 0
 
-
             # # wgrad = pt.einsum("ti,tj->ij", grads, acts)
             # wgrad = module.weight.grad
             # ref_sim = ref_grad * wgrad
@@ -118,57 +111,13 @@ class MUDMAN(UnlearnTrainer):
             # row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
             # wgrad *= col_mask
             # wgrad *= row_mask
-            # module.weight.grad = wgrad            
+            # module.weight.grad = wgrad
 
-
-            # # too slow: pertok1
-            # biggrad = pt.einsum("ti,tj->tij", grads, acts)
-            # ref_sim = pt.einsum("tij,ij->tij", biggrad, ref_grad)
-            # col_mask = ref_sim.mean(dim=1, keepdim=True) > 0
-            # row_mask = ref_sim.mean(dim=2, keepdim=True) > 0
-            # biggrad *= col_mask
-            # biggrad *= row_mask
-            # wgrad = biggrad.sum(dim=0)
-            # module.weight.grad = wgrad            
-
-            # # pertok2
-            # module.weight.grad = pt.zeros_like(module.weight)
-            # for token_id in range(acts.shape[0]):
-            #     partial_grad = pt.einsum("i,j->ij", grads[token_id], acts[token_id])
-            #     ref_sim = partial_grad * ref_grad
-            #     col_mask = ref_sim.mean(dim=0, keepdim=True) > 0
-            #     row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
-            #     partial_grad *= col_mask
-            #     partial_grad *= row_mask
-            #     module.weight.grad += partial_grad
-
-            # # pertok3
-            # module.weight.grad = pt.zeros_like(module.weight)
-            # for token_id in range(acts.shape[0]):
-            #     partial_grad = pt.einsum("i,j->ij", grads[token_id], acts[token_id])
-            #     ref_sim = partial_grad * ref_grad
-            #     col_mask = ref_sim.mean(dim=0) > 0
-            #     row_mask = ref_sim.mean(dim=1) > 0
-            #     a = acts[token_id] * col_mask
-            #     g = grads[token_id] * row_mask
-            #     module.weight.grad += pt.einsum("i,j->ij", g, a)
-
-            # # pertok4
-            # module.weight.grad = pt.zeros_like(module.weight)
-            # for token_id in range(acts.shape[0]):
-            #     row_mask = pt.einsum("ij,j->i", ref_grad, acts[token_id]) * grads[token_id] > 0
-            #     col_mask = pt.einsum("ij,i->j", ref_grad, grads[token_id]) * acts[token_id] > 0
-            #     a = acts[token_id] * col_mask
-            #     g = grads[token_id] * row_mask
-            #     module.weight.grad += pt.einsum("i,j->ij", g, a)
-
-            # pertok5
-            row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
             col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+            row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
             acts *= col_mask
             grads *= row_mask
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
-
 
         normalize_grads(model)
 
