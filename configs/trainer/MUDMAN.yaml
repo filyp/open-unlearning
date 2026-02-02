@@ -10,8 +10,6 @@ args:
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
-  per_device_train_batch_size: 6  # todo change back later
-
 method_args:
   cfg:
 

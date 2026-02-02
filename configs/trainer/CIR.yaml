@@ -17,8 +17,10 @@ method_args:
     target_modules:
       - gate_proj
       - up_proj
+
+    retain_momentum: 0.8
     
-    forget_loss: label_logits
+    # forget_loss: label_logits  # <- hardcoded now
     # forget_loss: saturating_logits
     # forget_loss: neg_cross_entropy
     # forget_loss: mlp_breaking
@@ -26,11 +28,11 @@ method_args:
     # forget_loss: gate_and_up_breaking_approx
     
     # train_first_layers: 0.375
-    # train_first_layers: 0.5
-    train_first_layers: 0.75
+    train_first_layers: 0.5
+    # train_first_layers: 0.75
     # train_first_layers: 1
     
-    sat_speed: 0.1  # only used for saturating_logits
+    # sat_speed: 0.1  # only used for saturating_logits
 
     act_quantile: 0.5
 

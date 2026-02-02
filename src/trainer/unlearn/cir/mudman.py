@@ -68,7 +68,6 @@ class MUDMAN(UnlearnTrainer):
         output = model(**prep_batch(r_batch, model.device))
         kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
         kl.backward()
-
         # output.loss.backward()
         for param in self.model.parameters():
             if param.requires_grad:
@@ -99,8 +98,6 @@ class MUDMAN(UnlearnTrainer):
             assert acts.shape == (token_mask.sum(), module.weight.shape[1])
             assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
-            ref_grad = module.weight.reference_grad
-
             # _mask = wgrad.sign() != ref_grad.sign()
             # wgrad[_mask] = 0
 
@@ -113,6 +110,7 @@ class MUDMAN(UnlearnTrainer):
             # wgrad *= row_mask
             # module.weight.grad = wgrad
 
+            ref_grad = module.weight.reference_grad
             col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
             row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
             acts *= col_mask

@@ -10,37 +10,32 @@ from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
     get_relev_mask_with_caching,
-    get_token_mask,
-    install_hooks,
     normalize_grads,
     prep_batch,
     sanitize_tensor,
 )
+from trainer.unlearn.cir.kl_utils import KLComputor
+import trainer.unlearn.cir.hooks as hooks
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 
 logging.basicConfig(level=logging.INFO)
 
 
-# # limit RAM
-# import resource  # noqa: E402
-# resource.setrlimit(resource.RLIMIT_DATA, (18 * 1024**3, 20 * 1024**3))
-
-
 class CalculateDistributionStatsCallback(TrainerCallback):
     """Callback to extract distribution stats at epoch end."""
 
-    def __init__(self, trainer):
+    def __init__(self, trainer, collapsers):
         self.trainer = trainer
+        self.collapsers = collapsers
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        if "act_pcs_to_use" in self.trainer.cfg:
-            for collapser in self.trainer.act_collapsers.values():
-                collapser.process_saved_vecs()
-        if "grad_pcs_to_use" in self.trainer.cfg:
-            for collapser in self.trainer.grad_collapsers.values():
-                collapser.process_saved_vecs()
-
+        for collapser in self.collapsers:
+            collapser.process_saved_vecs()
         self.trainer.collapsers_initialized = True
+
+
+def layer_num(name):
+    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
 
 
 class CIR(UnlearnTrainer):
@@ -50,24 +45,24 @@ class CIR(UnlearnTrainer):
         self.collapsers_initialized = False
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
-        self.layer_range = cfg.get("layer_range", [0, len(self.model.model.layers)])
-        logging.info(f"loss layer range: {self.layer_range}")
-
         # set trainable params
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
-        for n, p in self.model.named_parameters():
-            p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
-            if p.requires_grad:
-                # match .layers.X. pattern
-                layer_num = re.search(r"\.layers\.(\d+)\.", n).group(1)
-                # don't train last layer that's used for loss, and onwards
-                # because for that last layer, we don't have down_proj output grads
-                if int(layer_num) >= self.layer_range[1] - 1:
-                    p.requires_grad = False
-                if int(layer_num) >= train_to_layer:
-                    p.requires_grad = False
+        for name, module in self.model.named_modules():
+            if not hasattr(module, "weight"):
+                continue
+            module.weight.requires_grad = (
+                any(pattern in name for pattern in cfg.target_modules)
+                and layer_num(name) < train_to_layer
+            )
+            if module.weight.requires_grad:  # install hooks
+                module.register_forward_hook(hooks.save_act_input)
+                module.register_full_backward_hook(hooks.save_grad_output)
 
-        install_hooks(self.model, self.layer_range, cfg.forget_loss, train_to_layer)
+        # additional hooks for computing grad collapse more efficiently
+        for layer_id in range(train_to_layer):
+            mlp = self.model.model.layers[layer_id].mlp
+            mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
+            mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
@@ -77,23 +72,30 @@ class CIR(UnlearnTrainer):
         )
 
         # register collapsers, that calculate distribution stats, and later collapse
+        _all_collapsers = []
         if "act_pcs_to_use" in self.cfg:
             self.act_collapsers = {
                 name: MahalanobisCollapser(cfg.act_pcs_to_use, module.weight.device)
                 for name, module in self.model.named_modules()
                 if name.endswith(".up_proj")
             }
+            _all_collapsers += list(self.act_collapsers.values())
         if "grad_pcs_to_use" in self.cfg:
             self.grad_collapsers = {
                 name: MahalanobisCollapser(cfg.grad_pcs_to_use, module.weight.device)
                 for name, module in self.model.named_modules()
                 if name.endswith(".down_proj")
             }
+            _all_collapsers += list(self.grad_collapsers.values())
+            
+        self.add_callback(CalculateDistributionStatsCallback(self, _all_collapsers))
 
-        # if cfg.get("retaining_rate", 0) > 0:
-        #     cache_activations_for_cb_retain_loss(model, self.batches.retain, cfg)
-
-        self.add_callback(CalculateDistributionStatsCallback(self))
+        # ! prepare retain
+        self.kl_computor = KLComputor(self.model, self.batches.retain)
+        for param in self.model.parameters():
+            if param.requires_grad:
+                assert not hasattr(param, "reference_grad")
+                param.reference_grad = pt.zeros_like(param)
 
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
@@ -101,39 +103,28 @@ class CIR(UnlearnTrainer):
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
+
+        # ! retain pass
+        r_batch = inputs["retain"]
+        model.zero_grad(set_to_none=True)
+        output = model(**prep_batch(r_batch, model.device))
+        kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
+        kl.backward()
+        for param in self.model.parameters():
+            if param.requires_grad:
+                param.reference_grad *= self.cfg.retain_momentum
+                param.reference_grad += param.grad * (1 - self.cfg.retain_momentum)
+        model.zero_grad(set_to_none=True)
+
         # ! unlearning loss
         batch = inputs["forget"]
-        token_mask = get_token_mask(batch["labels"])
-
-        # token_mask = batch["attention_mask"].bool().clone()
-        # token_mask[:, 0] = False  # ignore BOS token
+        token_mask = batch["attention_mask"].bool().clone()
+        token_mask[:, 0] = False  # ignore BOS token
 
         model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(batch, model.device), output_hidden_states=True)
-
-        if self.cfg.forget_loss == "label_logits":
-            forget_loss = loss_fns.label_logits(output, batch)
-        elif self.cfg.forget_loss == "saturating_logits":
-            if "initial_label_logits" not in batch:
-                assert not self.collapsers_initialized, "epoch number != 0"
-                batch["initial_label_logits"] = loss_fns.get_label_logits(
-                    output, batch
-                ).detach()  # .cpu()
-            forget_loss = loss_fns.saturating_logits(
-                output, batch, batch["initial_label_logits"], self.cfg.sat_speed
-            )
-
-        elif self.cfg.forget_loss == "neg_cross_entropy":
-            forget_loss = -output.loss
-        elif hasattr(loss_fns, self.cfg.forget_loss):
-            loss_fn = getattr(loss_fns, self.cfg.forget_loss)
-            forget_loss = loss_fn(model, batch, self.layer_range)
-        else:
-            raise ValueError(f"Unknown forget loss: {self.cfg.forget_loss}")
-
+        output = model(**prep_batch(batch, model.device))
+        forget_loss = loss_fns.label_logits(output, batch)
         forget_loss.backward()
-        # we could do backward(inputs=[some_early_weight]) and delete that grad later
-        # to skip the weight.grad computation, while maintaining full backpropagation
 
         if "grad_pcs_to_use" in self.cfg:
             grad_corrections = self.get_grad_correction(token_mask)
@@ -142,8 +133,8 @@ class CIR(UnlearnTrainer):
             if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
                 continue
 
-            acts = module.last_act_input[token_mask].detach().clone().float()
-            grads = module.last_grad_output[token_mask].detach().clone().float()
+            acts = module.last_act_input[token_mask].detach()
+            grads = module.last_grad_output[token_mask].detach()
             assert acts.shape == (token_mask.sum(), module.weight.shape[1])
             assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
@@ -154,31 +145,28 @@ class CIR(UnlearnTrainer):
                 continue  # so only collect activations and not train
 
             if "grad_pcs_to_use" in self.cfg:
-                grads *= grad_corrections[parent_mlp_name(name)].float()
+                grads *= grad_corrections[parent_mlp_name(name)]
 
             # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
             _up_proj_name = name.replace(".gate_proj", ".up_proj")
-            acts = self.act_collapsers[_up_proj_name].collapse(acts)
+            acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
+            
+            # if self.cfg.get("act_quantile", 0) > 0:
+            #     relev_mask = get_relev_mask_with_caching(
+            #         batch, name, acts.float(), token_mask, self.cfg.act_quantile
+            #     )
+            #     acts = acts[relev_mask]
+            #     grads = grads[relev_mask]
 
-            if self.cfg.get("act_quantile", 0) > 0:
-                relev_mask = get_relev_mask_with_caching(
-                    batch, name, acts, token_mask, self.cfg.act_quantile
-                )
-                acts = acts[relev_mask]
-                grads = grads[relev_mask]
+            # ! MUDMAN-like operation
+            ref_grad = module.weight.reference_grad
+            col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+            row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
+            acts *= col_mask
+            grads *= row_mask
 
             # without the projections, this is equivalent to normal backprop
-            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts).to(model.dtype)
-
-        # # ! retain pass
-        # if self.cfg.get("retaining_rate", 0) > 0:
-        #     r_batch = inputs["retain"]
-        #     output = model(
-        #         **prep_batch(r_batch, model.device), output_hidden_states=True
-        #     )
-        #     retain_loss = cb_retain_loss(output, r_batch, self.cfg)
-        #     retain_loss *= self.cfg.retaining_rate
-        #     retain_loss.backward()
+            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
 
         normalize_grads(model)
 
@@ -228,14 +216,3 @@ def parent_mlp_name(name):
 # )
 # trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
-
-
-# self.steps_since_last_recalc += 1
-# if self.steps_since_last_recalc % 21 == 0:
-#     if "act_pcs_to_use" in self.cfg:
-#         for collapser in self.act_collapsers.values():
-#             collapser.process_saved_vecs()
-#     if "grad_pcs_to_use" in self.cfg:
-#         for collapser in self.grad_collapsers.values():
-#             collapser.process_saved_vecs()
-#     self.collapsers_initialized = True
