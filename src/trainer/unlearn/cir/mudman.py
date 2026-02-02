@@ -107,26 +107,68 @@ class MUDMAN(UnlearnTrainer):
 
             ref_grad = module.weight.reference_grad
 
-            wgrad = pt.einsum("ti,tj->ij", grads, acts)
-            
-            ref_sim = ref_grad * wgrad
-            col_mask = ref_sim.mean(dim=0, keepdim=True) > 0
-            row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
+            # _mask = wgrad.sign() != ref_grad.sign()
+            # wgrad[_mask] = 0
 
-            wgrad *= col_mask
+
+            # # wgrad = pt.einsum("ti,tj->ij", grads, acts)
+            # wgrad = module.weight.grad
+            # ref_sim = ref_grad * wgrad
+            # col_mask = ref_sim.mean(dim=0, keepdim=True) > 0
+            # row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
+            # wgrad *= col_mask
             # wgrad *= row_mask
+            # module.weight.grad = wgrad            
 
+
+            # # too slow: pertok1
             # biggrad = pt.einsum("ti,tj->tij", grads, acts)
             # ref_sim = pt.einsum("tij,ij->tij", biggrad, ref_grad)
             # col_mask = ref_sim.mean(dim=1, keepdim=True) > 0
             # row_mask = ref_sim.mean(dim=2, keepdim=True) > 0
+            # biggrad *= col_mask
+            # biggrad *= row_mask
+            # wgrad = biggrad.sum(dim=0)
+            # module.weight.grad = wgrad            
 
+            # # pertok2
+            # module.weight.grad = pt.zeros_like(module.weight)
+            # for token_id in range(acts.shape[0]):
+            #     partial_grad = pt.einsum("i,j->ij", grads[token_id], acts[token_id])
+            #     ref_sim = partial_grad * ref_grad
+            #     col_mask = ref_sim.mean(dim=0, keepdim=True) > 0
+            #     row_mask = ref_sim.mean(dim=1, keepdim=True) > 0
+            #     partial_grad *= col_mask
+            #     partial_grad *= row_mask
+            #     module.weight.grad += partial_grad
 
+            # # pertok3
+            # module.weight.grad = pt.zeros_like(module.weight)
+            # for token_id in range(acts.shape[0]):
+            #     partial_grad = pt.einsum("i,j->ij", grads[token_id], acts[token_id])
+            #     ref_sim = partial_grad * ref_grad
+            #     col_mask = ref_sim.mean(dim=0) > 0
+            #     row_mask = ref_sim.mean(dim=1) > 0
+            #     a = acts[token_id] * col_mask
+            #     g = grads[token_id] * row_mask
+            #     module.weight.grad += pt.einsum("i,j->ij", g, a)
 
-            # _mask = wgrad.sign() != ref_grad.sign()
-            # wgrad[_mask] = 0
+            # # pertok4
+            # module.weight.grad = pt.zeros_like(module.weight)
+            # for token_id in range(acts.shape[0]):
+            #     row_mask = pt.einsum("ij,j->i", ref_grad, acts[token_id]) * grads[token_id] > 0
+            #     col_mask = pt.einsum("ij,i->j", ref_grad, grads[token_id]) * acts[token_id] > 0
+            #     a = acts[token_id] * col_mask
+            #     g = grads[token_id] * row_mask
+            #     module.weight.grad += pt.einsum("i,j->ij", g, a)
 
-            module.weight.grad = wgrad            
+            # pertok5
+            row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
+            col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+            acts *= col_mask
+            grads *= row_mask
+            module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
+
 
         normalize_grads(model)
 
