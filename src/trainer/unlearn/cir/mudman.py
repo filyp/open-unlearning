@@ -11,6 +11,7 @@ from trainer.unlearn.cir.cir_utils import (
     normalize_grads,
     prep_batch,
 )
+from trainer.unlearn.cir.kl_utils import KLComputor
 import trainer.unlearn.cir.hooks as hooks
 
 logging.basicConfig(level=logging.INFO)
@@ -44,14 +45,15 @@ class MUDMAN(UnlearnTrainer):
             mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
             mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
-
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
             self.train_dataset,
             self.data_collator,
             self.args.per_device_train_batch_size,
         )
-        
+
+        self.kl_computor = KLComputor(self.model, self.batches.retain)
+
         for param in self.model.parameters():
             if param.requires_grad:
                 assert not hasattr(param, "reference_grad")
@@ -68,13 +70,15 @@ class MUDMAN(UnlearnTrainer):
         r_batch = inputs["retain"]
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(r_batch, model.device))
-        output.loss.backward()
+        kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
+        kl.backward()
+
+        # output.loss.backward()
         for param in self.model.parameters():
             if param.requires_grad:
                 param.reference_grad *= self.cfg.retain_momentum
                 param.reference_grad += param.grad * (1 - self.cfg.retain_momentum)
         model.zero_grad(set_to_none=True)
-
 
         # ! unlearning loss
         batch = inputs["forget"]
@@ -101,12 +105,10 @@ class MUDMAN(UnlearnTrainer):
 
             # without the projections, this is equivalent to normal backprop
             wgrad = pt.einsum("ti,tj->ij", grads, acts)
-            
+
             _mask = wgrad.sign() != module.weight.reference_grad.sign()
             wgrad[_mask] = 0
             module.weight.grad = wgrad
-            
-
 
         normalize_grads(model)
 

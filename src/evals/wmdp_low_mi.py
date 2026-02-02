@@ -1,13 +1,13 @@
 import logging
 
+import lm_eval
 import lm_eval.tasks
 import torch as pt
-import lm_eval
 from lm_eval.tasks import TaskManager, get_task_dict
 
 from evals.base import Evaluator
-from evals.kl_utils import KLComputor
 from trainer.unlearn.cir.cir_utils import batched, prep_batch
+from trainer.unlearn.cir.kl_utils import KLComputor
 
 # logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
