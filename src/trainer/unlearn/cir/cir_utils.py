@@ -143,16 +143,6 @@ def mlp_iter(model, layer_range):
             yield model.model.layers[layer_id].mlp
 
 
-# def get_lm(model):
-#     # todo, if we end up not using gemma3, remove this
-#     if hasattr(model, "model"):
-#         return model
-#     elif hasattr(model, "language_model"):
-#         return model.language_model
-#     else:
-#         raise ValueError(f"Unsupported model: {model}")
-
-
 # # Extract eigendecomposition and apply mahalanobis projection
 # # Compute covariance statistics per layer using all batches
 # if cfg.get("mlp_reg") is not None:
