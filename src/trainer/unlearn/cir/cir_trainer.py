@@ -91,11 +91,12 @@ class CIR(UnlearnTrainer):
         self.add_callback(CalculateDistributionStatsCallback(self, _all_collapsers))
 
         # ! prepare retain
-        self.kl_computor = KLComputor(self.model, self.batches.retain)
-        for param in self.model.parameters():
-            if param.requires_grad:
-                assert not hasattr(param, "reference_grad")
-                param.reference_grad = pt.zeros_like(param)
+        if "retain_momentum" in self.cfg:
+            self.kl_computor = KLComputor(self.model, self.batches.retain)
+            for param in self.model.parameters():
+                if param.requires_grad:
+                    assert not hasattr(param, "reference_grad")
+                    param.reference_grad = pt.zeros_like(param)
 
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
@@ -105,16 +106,16 @@ class CIR(UnlearnTrainer):
         model.train()
 
         # ! retain pass
-        r_batch = inputs["retain"]
-        model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(r_batch, model.device))
-        kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
-        kl.backward()
-        for param in self.model.parameters():
-            if param.requires_grad:
-                param.reference_grad *= self.cfg.retain_momentum
-                param.reference_grad += param.grad * (1 - self.cfg.retain_momentum)
-        model.zero_grad(set_to_none=True)
+        if "retain_momentum" in self.cfg:
+            r_batch = inputs["retain"]
+            model.zero_grad(set_to_none=True)
+            output = model(**prep_batch(r_batch, model.device))
+            kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
+            kl.backward()
+            for param in self.model.parameters():
+                if param.requires_grad:
+                    param.reference_grad *= self.cfg.retain_momentum
+                    param.reference_grad += param.grad * (1 - self.cfg.retain_momentum)
 
         # ! unlearning loss
         batch = inputs["forget"]
@@ -159,11 +160,12 @@ class CIR(UnlearnTrainer):
             #     grads = grads[relev_mask]
 
             # ! MUDMAN-like operation
-            ref_grad = module.weight.reference_grad
-            col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
-            row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
-            acts *= col_mask
-            grads *= row_mask
+            if "retain_momentum" in self.cfg:
+                ref_grad = module.weight.reference_grad
+                col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+                row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
+                acts *= col_mask
+                grads *= row_mask
 
             # without the projections, this is equivalent to normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
