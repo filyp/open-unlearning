@@ -125,6 +125,14 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
         forget_loss = loss_fns.label_logits(output, batch)
+        # if "initial_label_logits" not in batch:
+        #     assert not self.collapsers_initialized, "epoch number != 0"
+        #     batch["initial_label_logits"] = loss_fns.get_label_logits(
+        #         output, batch
+        #     ).detach()  # .cpu()
+        # forget_loss = loss_fns.saturating_logits(
+        #     output, batch, batch["initial_label_logits"], self.cfg.sat_speed
+        # )
         forget_loss.backward()
 
         if "grad_pcs_to_use" in self.cfg:
@@ -139,32 +147,27 @@ class CIR(UnlearnTrainer):
             assert acts.shape == (token_mask.sum(), module.weight.shape[1])
             assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
-            if name.endswith(".up_proj"):
-                self.act_collapsers[name].add_vecs(acts)
+            if "act_pcs_to_use" in self.cfg:
+                if name.endswith(".up_proj"):
+                    self.act_collapsers[name].add_vecs(acts)
 
             if not self.collapsers_initialized:
                 continue  # so only collect activations and not train
 
+            if "act_pcs_to_use" in self.cfg:
+                # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
+                _up_proj_name = name.replace(".gate_proj", ".up_proj")
+                acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
+            
             if "grad_pcs_to_use" in self.cfg:
                 grads *= grad_corrections[parent_mlp_name(name)]
-
-            # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
-            _up_proj_name = name.replace(".gate_proj", ".up_proj")
-            acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
-            
-            # if self.cfg.get("act_quantile", 0) > 0:
-            #     relev_mask = get_relev_mask_with_caching(
-            #         batch, name, acts.float(), token_mask, self.cfg.act_quantile
-            #     )
-            #     acts = acts[relev_mask]
-            #     grads = grads[relev_mask]
 
             # ! MUDMAN-like operation
             if "retain_momentum" in self.cfg:
                 ref_grad = module.weight.reference_grad
-                col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+                # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
                 row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
-                acts *= col_mask
+                # acts *= col_mask
                 grads *= row_mask
 
             # without the projections, this is equivalent to normal backprop

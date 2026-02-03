@@ -120,28 +120,41 @@ class WMDPLLowMIEvaluator(Evaluator):
             res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         # ! finished evaluating, now handle the results
-        self.results.append(res)
 
         if self.eval_cfg.disr_budget is None:
             # used in relearning
             # don't stop training, don't keep track of the best valid model state
+            self.results.append(res)
             return res
 
         # * check condition to stop training
         if res["wikitext_kl"] > self.eval_cfg.disr_budget:
             logging.info("Wikitext KL exceeded the disruption budget")
             trainer.control.should_training_stop = True
+            self.results.append(res)
             return res
 
-        # save the best model state, that doesn't exceed the disruption budget
-        # this way relearning can start from this valid model state
-        self.best_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
+        if res["forget_acc_t1"] < self.get_best_score():  # the lower the better
+            # save the best model state, that doesn't exceed the disruption budget
+            # this way relearning can start from this valid model state
+            self.best_model_state_dict = {
+                k: v.cpu() for k, v in model.state_dict().items()
+            }
+
+        self.results.append(res)
         return res
 
     def get_relearning_robustness_metric(self):
-        if self.eval_cfg.eval_mcq:
-            logging.info("Using max temperature=1 accuracy as the robustness metric")
-            return max(res["forget_acc_t1"] for res in self.results)
+        # if self.eval_cfg.eval_mcq:
+        logging.info("Using max temperature=1 accuracy as the robustness metric")
+        return max(res["forget_acc_t1"] for res in self.results)
+        # else:
+        # logging.info("Using min recall loss as the robustness metric")
+        # return min(res["recall_loss"] for res in self.results)
+
+    def get_best_score(self):
+        # using forget_acc_t1, the lower the better
+        if not self.results:
+            return float("inf")
         else:
-            logging.info("Using min recall loss as the robustness metric")
-            return min(res["recall_loss"] for res in self.results)
+            return min(res["forget_acc_t1"] for res in self.results)
