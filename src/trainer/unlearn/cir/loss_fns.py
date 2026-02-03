@@ -42,7 +42,7 @@ def mlp_breaking(model, batch, layer_range):
 
     loss_acc = 0
     for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
-        out = mlp.down_proj.cached_out[_mask]
+        out = mlp.down_proj.last_act_output[_mask]
 
         if mlp_id not in batch["org_mlp_out"]:  # first epoch, so cache it
             batch["org_mlp_out"][mlp_id] = out.detach().cpu()
@@ -89,8 +89,8 @@ def gate_and_up_breaking_approx(model, batch, layer_range):
 
     loss_acc = 0
     for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
-        gate_out = mlp.gate_proj.cached_out[_mask]
-        up_out = mlp.up_proj.cached_out[_mask]
+        gate_out = mlp.gate_proj.last_act_output[_mask]
+        up_out = mlp.up_proj.last_act_output[_mask]
 
         if mlp_id not in batch["org_act"]:  # first epoch, so cache it
             act = gate_out.clip(min=0) * up_out
@@ -114,8 +114,8 @@ def gate_and_up_breaking(model, batch, layer_range):
 
     loss_acc = 0
     for mlp_id, mlp in enumerate(mlp_iter(model, layer_range)):
-        gate_out = mlp.gate_proj.cached_out[_mask]
-        up_out = mlp.up_proj.cached_out[_mask]
+        gate_out = mlp.gate_proj.last_act_output[_mask]
+        up_out = mlp.up_proj.last_act_output[_mask]
 
         gate_out = mlp.act_fn(gate_out)
 
@@ -153,8 +153,8 @@ def gate_and_up_breaking(model, batch, layer_range):
 #     loss_acc = 0
 #     for layer_id in range(*layer_range):
 #         mlp = model.model.layers[layer_id].mlp
-#         gate_out = mlp.gate_proj.cached_out[_mask]
-#         up_out = mlp.up_proj.cached_out[_mask]
+#         gate_out = mlp.gate_proj.last_act_output[_mask]
+#         up_out = mlp.up_proj.last_act_output[_mask]
 
 #         gate_out = gate_out.clip(min=0)
 
@@ -227,8 +227,8 @@ def gate_and_up_breaking(model, batch, layer_range):
 #         batch["org_act"] = {}
 #         for layer_id in range(*layer_range):
 #             mlp = model.model.layers[layer_id].mlp
-#             gate_out = mlp.gate_proj.cached_out[_mask]
-#             up_out = mlp.up_proj.cached_out[_mask]
+#             gate_out = mlp.gate_proj.last_act_output[_mask]
+#             up_out = mlp.up_proj.last_act_output[_mask]
 #             act = gate_out.clip(min=0) * up_out
 
 #             down_proj = model.model.layers[layer_id].mlp.down_proj
@@ -246,8 +246,8 @@ def gate_and_up_breaking(model, batch, layer_range):
 #     loss_acc = 0
 #     for layer_id in range(*layer_range):
 #         mlp = model.model.layers[layer_id].mlp
-#         gate_out = mlp.gate_proj.cached_out[_mask]
-#         up_out = mlp.up_proj.cached_out[_mask]
+#         gate_out = mlp.gate_proj.last_act_output[_mask]
+#         up_out = mlp.up_proj.last_act_output[_mask]
 
 #         org_act = batch["org_act"][layer_id].to(up_out.device)
 #         norm = org_act.norm(dim=-1).mean()

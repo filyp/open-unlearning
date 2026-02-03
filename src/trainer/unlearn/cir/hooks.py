@@ -13,9 +13,9 @@ def save_act_input(module, args, output):
 def save_act_output(module, args, output):
     assert isinstance(output, pt.Tensor)
     if module.training:
-        module.cached_out = output
+        module.last_act_output = output
     else:
-        module.cached_out = None  # clean automatically
+        module.last_act_output = None  # clean automatically
 
 
 def save_grad_input(module, grad_input, grad_output):

@@ -221,3 +221,22 @@ def parent_mlp_name(name):
 # )
 # trainer = CIR(model=model, train_dataset=train_dataset)
 # trainer.train()
+
+
+            # # ref_grad = module.weight.reference_grad
+            # for ref_grad in module.weight.reference_grad:
+            #     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
+            #     _up_proj_name = name.replace(".gate_proj", ".up_proj")
+            #     collapser = self.act_collapsers[_up_proj_name]
+            #     centered = acts - collapser.mean.to(model.dtype)
+            #     eig_vec = collapser.eig_vec.to(model.dtype)
+            #     # t: tokens, d: dimension of residual stream, c: components
+            #     projected_acts = pt.einsum("td,dc->tc", centered, eig_vec)
+            #     # h: hidden dimension of the MLP
+            #     act_disruptions = pt.einsum("th,hd->td", grads, ref_grad)
+            #     projected_disrs = pt.einsum("td,dc->tc", act_disruptions, eig_vec)
+            #     mask_out = projected_acts.sign() != projected_disrs.sign()
+            #     projected_acts[mask_out] = 0
+            #     acts = pt.einsum("tc,dc->td", projected_acts, eig_vec)  # p @ eig_vec.T
+
+
