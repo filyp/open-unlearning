@@ -7,7 +7,7 @@ common="python3 src/unlearn_relearn.py \
 experiment=unlearn/wmdp_low_mi/default \
 model=Llama-3.2-3B \
 trainer=CIR \
-eval.wmdp_low_mi.disr_budget=0.005 \
+eval.wmdp_low_mi.wikitext.disr_budget=0.005 \
 trainer.args.learning_rate=0.3 \
 trainer.args.num_train_epochs=50"
 

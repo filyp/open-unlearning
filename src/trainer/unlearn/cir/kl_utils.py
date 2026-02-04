@@ -1,10 +1,19 @@
 import copy
+import logging
 
 import torch as pt
 import torch.nn.functional as F
 from transformers import BatchEncoding
 
-from trainer.unlearn.cir.cir_utils import prep_batch
+from data import custom_loaders
+
+
+def prep_batch(batch, device):
+    return dict(
+        input_ids=batch["input_ids"].to(device),
+        attention_mask=batch["attention_mask"].to(device),
+        labels=batch["labels"].to(device),
+    )
 
 
 def cache_last_hidden_states(model, batches):
@@ -113,3 +122,40 @@ class KLComputor:
         avg_loss = loss_acc / len(batches)
         avg_kl = total_kl / total_tokens
         return avg_loss.item(), avg_kl.item()
+
+
+class KLEvaluator:
+    def __init__(self, eval_cfg, **kwargs):
+        self.dataset_name = eval_cfg.dataset_name
+        self.disr_budget = eval_cfg.disr_budget
+
+        dataset_loader = getattr(custom_loaders, self.dataset_name)
+        self.dataset = dataset_loader(eval_cfg, tokenizer=kwargs["tokenizer"])
+        self.first_eval = True
+
+    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        model.eval()
+
+        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
+        if self.first_eval:  # ! first evaluation, before training
+            self.kl_computor = KLComputor(model, self.dataset)
+
+        ce_loss, kl_loss = self.kl_computor.eval_kl_many_batches(self.dataset)
+
+        if self.first_eval:
+            assert kl_loss == 0, f"Initial KL should be 0, but got {kl_loss}"
+            self.first_eval = False
+
+        too_disrupted = False
+        # disr_budget=None is used in relearning - don't stop the training there
+        if self.disr_budget is not None and kl_loss > self.disr_budget:
+            # * check condition to stop training
+            logging.info("KL exceeded the disruption budget")
+            kwargs["trainer"].control.should_training_stop = True
+            too_disrupted = True
+
+        return {
+            f"{self.dataset_name}_loss": ce_loss,
+            f"{self.dataset_name}_kl": kl_loss,
+            "too_disrupted": too_disrupted,
+        }

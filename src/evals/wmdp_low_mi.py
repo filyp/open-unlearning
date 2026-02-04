@@ -5,9 +5,8 @@ import lm_eval.tasks
 import torch as pt
 from lm_eval.tasks import TaskManager, get_task_dict
 
-from evals.base import Evaluator
 from trainer.unlearn.cir.cir_utils import batched, prep_batch
-from trainer.unlearn.cir.kl_utils import KLComputor
+from trainer.unlearn.cir.kl_utils import KLEvaluator
 
 # logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
@@ -50,13 +49,12 @@ def _get_temperature_1_accuracy(lm_eval_results):
     return target_probs.mean().item()
 
 
-class WMDPLLowMIEvaluator(Evaluator):
+class WMDPLLowMIEvaluator:
     def __init__(self, eval_cfg, data, **kwargs):
         self.eval_cfg = eval_cfg
         assert not kwargs["template_args"].apply_chat_template, "model not supported"
 
         # load data
-        self.wikitext = data["wikitext"]
         self.recall_samples = data["recall"]
         self.eval_qs = data["eval_qs"]
 
@@ -72,26 +70,15 @@ class WMDPLLowMIEvaluator(Evaluator):
             self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
 
         self.results = []
-        self.first_eval = True
+
+        self.kl_evaluator = KLEvaluator(eval_cfg.wikitext, **kwargs)
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
         trainer = kwargs["trainer"]
 
-        assert trainer.args.eval_on_start, "eval_on_start must be True"
-        if self.first_eval:  # ! first evaluation, before training
-            self.kl_computor = KLComputor(model, self.wikitext)
-
-        res = {}
-        res["wikitext_loss"], res["wikitext_kl"] = (
-            self.kl_computor.eval_kl_many_batches(self.wikitext)
-        )
-        if self.first_eval:
-            assert res["wikitext_kl"] == 0, (
-                f"Initial KL should be 0, but got {res['wikitext_kl']}"
-            )
-            self.first_eval = False
+        res = self.kl_evaluator.evaluate(model, **kwargs)
 
         # collate recall samples to target batch size
         recall_batches = [
@@ -120,21 +107,11 @@ class WMDPLLowMIEvaluator(Evaluator):
             res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         # ! finished evaluating, now handle the results
-
-        if self.eval_cfg.disr_budget is None:
-            # used in relearning
-            # don't stop training, don't keep track of the best valid model state
-            self.results.append(res)
-            return res
-
-        # * check condition to stop training
-        if res["wikitext_kl"] > self.eval_cfg.disr_budget:
-            logging.info("Wikitext KL exceeded the disruption budget")
-            trainer.control.should_training_stop = True
-            self.results.append(res)
-            return res
-
-        if res["forget_acc_t1"] < self.get_best_score():  # the lower the better
+        if (
+            self.eval_cfg.save_best_model
+            and not res["too_disrupted"]
+            and res["forget_acc_t1"] < self.get_best_score()  # the lower the better
+        ):
             # save the best model state, that doesn't exceed the disruption budget
             # this way relearning can start from this valid model state
             self.best_model_state_dict = {

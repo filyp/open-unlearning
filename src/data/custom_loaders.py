@@ -1,8 +1,6 @@
-import copy
 import logging
 import os
 
-import torch as pt
 from datasets import concatenate_datasets, load_dataset, load_from_disk
 
 
@@ -24,16 +22,15 @@ def load_hf_cached(path, split="train", data_files=None):
 # todo they don't support chat templates yet - will need to handle that using data.utils
 
 
-def _tokenize(text, tokenizer, tokenizer_args):
-    sample = tokenizer(text, **tokenizer_args)
-    sample["labels"] = copy.deepcopy(sample["input_ids"])
-    sample = {k: pt.tensor(v) for k, v in sample.items()}
+def _tokenize(text, tokenizer, tokenizer_cfg):
+    sample = tokenizer(text, return_tensors="pt", **tokenizer_cfg)
+    sample = {k: v.squeeze(0) for k, v in sample.items()}
+    sample["labels"] = sample["input_ids"].clone()
     return sample
 
 
 def load_hf_and_tokenize(cfg, **kwargs):
     corpus = load_hf_cached(**cfg.hf_args)
-
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
     corpus = corpus.shuffle(seed=42)
@@ -51,28 +48,20 @@ def wikitext(cfg, **kwargs):
         rb["labels"] = rb["input_ids"].clone()
         rb["labels"][rb["attention_mask"] == 0] = -100
 
-    return {cfg.load_as: batches}
+    return batches
 
 
-def _load_recall_samples(questions, cfg, tokenizer):
-    beginnings = []
-    fulls = []
-    for q in questions:
-        beginning = f"""\
-    {q["question"].strip()}
-    Answer:"""
-        ending = q["choices"][q["answer"]]
-        full = f"{beginning} {ending}"
-        beginnings.append(beginning)
-        fulls.append(full)
-
+def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     samples = []
-    for b_txt, f_txt in zip(beginnings, fulls):
-        sample = _tokenize(f_txt, tokenizer, cfg.tokenizer)
-        beginning_len = len(tokenizer(b_txt, **cfg.tokenizer)["input_ids"])
+    for q in questions:
+        question_txt = f"{q['question'].strip()}\nAnswer:"
+        answer_txt = q["choices"][q["answer"]]
+        full_txt = f"{question_txt} {answer_txt}"
+
+        sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
+        beginning_len = len(tokenizer(question_txt, **tokenizer_cfg)["input_ids"])
         sample["labels"][:beginning_len] = -100
         samples.append(sample)
-
     return samples
 
 
@@ -98,7 +87,7 @@ def wmdp_low_mi(cfg, **kwargs):
         for q in T
     ]
 
-    recall_samples = _load_recall_samples(eval_qs, cfg, tokenizer)
+    recall_samples = _load_recall_samples(eval_qs, cfg.tokenizer, tokenizer)
 
     return dict(
         forget=training_samples,
