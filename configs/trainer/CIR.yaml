@@ -18,8 +18,8 @@ method_args:
       - gate_proj
       - up_proj
 
-    retain_momentum: 0.8
-    
+    retain_momentum: 0.9
+
     # forget_loss: label_logits  # <- hardcoded now
     # forget_loss: saturating_logits
     

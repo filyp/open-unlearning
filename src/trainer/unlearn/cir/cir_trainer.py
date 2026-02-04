@@ -87,7 +87,7 @@ class CIR(UnlearnTrainer):
                 if name.endswith(".down_proj")
             }
             _all_collapsers += list(self.grad_collapsers.values())
-            
+
         self.add_callback(CalculateDistributionStatsCallback(self, _all_collapsers))
 
         # ! prepare retain
@@ -158,17 +158,22 @@ class CIR(UnlearnTrainer):
                 # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
                 _up_proj_name = name.replace(".gate_proj", ".up_proj")
                 acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
-            
+
             if "grad_pcs_to_use" in self.cfg:
                 grads *= grad_corrections[parent_mlp_name(name)]
 
             # ! MUDMAN-like operation
             if "retain_momentum" in self.cfg:
                 ref_grad = module.weight.reference_grad
+                token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
+                mask = token_disr > 0
+                acts = acts[mask]
+                grads = grads[mask]
+
                 # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
-                row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
+                # row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
                 # acts *= col_mask
-                grads *= row_mask
+                # grads *= row_mask
 
             # without the projections, this is equivalent to normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
@@ -223,20 +228,29 @@ def parent_mlp_name(name):
 # trainer.train()
 
 
-            # # ref_grad = module.weight.reference_grad
-            # for ref_grad in module.weight.reference_grad:
-            #     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
-            #     _up_proj_name = name.replace(".gate_proj", ".up_proj")
-            #     collapser = self.act_collapsers[_up_proj_name]
-            #     centered = acts - collapser.mean.to(model.dtype)
-            #     eig_vec = collapser.eig_vec.to(model.dtype)
-            #     # t: tokens, d: dimension of residual stream, c: components
-            #     projected_acts = pt.einsum("td,dc->tc", centered, eig_vec)
-            #     # h: hidden dimension of the MLP
-            #     act_disruptions = pt.einsum("th,hd->td", grads, ref_grad)
-            #     projected_disrs = pt.einsum("td,dc->tc", act_disruptions, eig_vec)
-            #     mask_out = projected_acts.sign() != projected_disrs.sign()
-            #     projected_acts[mask_out] = 0
-            #     acts = pt.einsum("tc,dc->td", projected_acts, eig_vec)  # p @ eig_vec.T
+# # ref_grad = module.weight.reference_grad
+# for ref_grad in module.weight.reference_grad:
+#     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
+#     _up_proj_name = name.replace(".gate_proj", ".up_proj")
+#     collapser = self.act_collapsers[_up_proj_name]
+#     centered = acts - collapser.mean.to(model.dtype)
+#     eig_vec = collapser.eig_vec.to(model.dtype)
+#     # t: tokens, d: dimension of residual stream, c: components
+#     projected_acts = pt.einsum("td,dc->tc", centered, eig_vec)
+#     # h: hidden dimension of the MLP
+#     act_disruptions = pt.einsum("th,hd->td", grads, ref_grad)
+#     projected_disrs = pt.einsum("td,dc->tc", act_disruptions, eig_vec)
+#     mask_out = projected_acts.sign() != projected_disrs.sign()
+#     projected_acts[mask_out] = 0
+#     acts = pt.einsum("tc,dc->td", projected_acts, eig_vec)  # p @ eig_vec.T
 
 
+                # if "disr_momentum" in self.cfg:
+                #     if "token_disr_acc" not in batch:
+                #         batch["token_disr_acc"] = {}
+                #     if name not in batch["token_disr_acc"]:
+                #         batch["token_disr_acc"][name] = pt.zeros_like(token_disr)
+                #     batch["token_disr_acc"][name] *= self.cfg.disr_momentum
+                #     batch["token_disr_acc"][name] += token_disr * (1 - self.cfg.disr_momentum)
+                #     mask = batch["token_disr_acc"][name] > 0
+                # else:
