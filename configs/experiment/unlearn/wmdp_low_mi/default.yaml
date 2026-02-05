@@ -22,24 +22,23 @@ trainer:
     run_name: ${task_name}
     do_eval: False
 
+tokenizer_cfg:
+  max_length: 128  # for our wmdp corpora it's more than enough
+
 eval:
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator
     eval_mcq: true
     save_best_model: true
-    wikitext:
-      dataset_name: wikitext
-      batch_size: 16
-      num_batches: 8
-      tokenizer: ${tokenizer_cfg}
-      # KL Divergence budget
-      # disr_budget: 0.005
-      disr_budget: 0.1
-
-tokenizer_cfg:
-  max_length: 128  # for our wmdp corpora it's more than enough
-  padding: true
-  truncation: true
+    kl_evals:
+      - data_loader: load_hf_and_tokenize
+        dataset_name: wikitext
+        hf_args:
+          path: filypo/wikitext_16k
+        limit: 128
+        tokenizer: ${tokenizer_cfg}
+        disr_budget: 0.005
+        # disr_budget: 0.1
 
 data:
   custom_loaders:
@@ -50,12 +49,11 @@ data:
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
     load_hf_and_tokenize:  # fineweb bio dataset
-      load_as: retain
+      dataset_name: retain
       limit: 1000
       tokenizer: ${tokenizer_cfg}
       hf_args:
         path: m-a-p/FineFineWeb
-        split: train
         data_files:
           # for bio: (just this smallest parquet file will be enough)
           - biology/biology_000849.jsonl
@@ -77,15 +75,15 @@ relearning_eval:
     handler: WMDPLLowMIEvaluator
     eval_mcq: true
     save_best_model: false
-    wikitext:
-      dataset_name: wikitext
-      batch_size: 16
-      num_batches: 8
-      tokenizer: ${tokenizer_cfg}
-      # KL Divergence budget
-      disr_budget: null  # null means training will not be terminated based on KL
-
-
+    kl_evals:
+      - data_loader: load_hf_and_tokenize
+        dataset_name: wikitext
+        hf_args:
+          path: filypo/wikitext_16k
+        limit: 128
+        tokenizer: ${tokenizer_cfg}
+        # disr_budget: 0.005
+        disr_budget: null
 
 # Optuna sweeper config (activate with --multirun flag)
 hydra:

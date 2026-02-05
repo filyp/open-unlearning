@@ -8,12 +8,15 @@ from transformers import BatchEncoding
 from data import custom_loaders
 
 
-def prep_batch(batch, device):
-    return dict(
-        input_ids=batch["input_ids"].to(device),
-        attention_mask=batch["attention_mask"].to(device),
-        labels=batch["labels"].to(device),
-    )
+from trainer.unlearn.cir.cir_utils import batched, prep_batch
+
+
+# def prep_batch(batch, device):
+#     return dict(
+#         input_ids=batch["input_ids"].to(device),
+#         attention_mask=batch["attention_mask"].to(device),
+#         labels=batch["labels"].to(device),
+#     )
 
 
 def cache_last_hidden_states(model, batches):
@@ -64,7 +67,7 @@ class KLComputor:
     def __init__(self, model, batches):
         self.model = model
 
-        # Cache last hidden states for wikitext KL divergence computation
+        # Cache last hidden states for KL divergence computation
         cache_last_hidden_states(model, batches)
         # Create function to convert hidden states to logits (copies weights)
         self.acts_to_logits = create_acts_to_logits(model)
@@ -125,37 +128,45 @@ class KLComputor:
 
 
 class KLEvaluator:
-    def __init__(self, eval_cfg, **kwargs):
+    def __init__(self, eval_cfg, tokenizer, **kwargs):
         self.dataset_name = eval_cfg.dataset_name
         self.disr_budget = eval_cfg.disr_budget
-
-        dataset_loader = getattr(custom_loaders, self.dataset_name)
-        self.dataset = dataset_loader(eval_cfg, tokenizer=kwargs["tokenizer"])
         self.first_eval = True
+
+        dataset_loader = getattr(custom_loaders, eval_cfg.data_loader)
+        self.samples = dataset_loader(eval_cfg, tokenizer=tokenizer)[self.dataset_name]
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
+        trainer = kwargs["trainer"]
 
-        assert kwargs["trainer"].args.eval_on_start, "eval_on_start must be True"
+        assert trainer.args.eval_on_start, "eval_on_start must be True"
         if self.first_eval:  # ! first evaluation, before training
-            self.kl_computor = KLComputor(model, self.dataset)
+            # these operations require an initialized model, so can't be done in __init__
+            self.batches = [
+                trainer.data_collator(samples)
+                for samples in batched(
+                    self.samples, trainer.args.per_device_eval_batch_size
+                )
+            ]
+            self.kl_computor = KLComputor(model, self.batches)
 
-        ce_loss, kl_loss = self.kl_computor.eval_kl_many_batches(self.dataset)
+        ce_loss, kl_loss = self.kl_computor.eval_kl_many_batches(self.batches)
 
         if self.first_eval:
             assert kl_loss == 0, f"Initial KL should be 0, but got {kl_loss}"
             self.first_eval = False
 
-        too_disrupted = False
+        broken = False
         # disr_budget=None is used in relearning - don't stop the training there
         if self.disr_budget is not None and kl_loss > self.disr_budget:
             # * check condition to stop training
             logging.info("KL exceeded the disruption budget")
             kwargs["trainer"].control.should_training_stop = True
-            too_disrupted = True
+            broken = True
 
         return {
             f"{self.dataset_name}_loss": ce_loss,
             f"{self.dataset_name}_kl": kl_loss,
-            "too_disrupted": too_disrupted,
+            f"{self.dataset_name}_broken": broken,
         }

@@ -111,7 +111,7 @@ class CIR(UnlearnTrainer):
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
             kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
-            print(f"retain kl: {kl}, ce_loss: {ce_loss}, num_tokens: {num_tokens}")
+            # print(f"retain kl: {kl}, ce_loss: {ce_loss}, num_tokens: {num_tokens}")
             kl.backward()
             for param in self.model.parameters():
                 if param.requires_grad:

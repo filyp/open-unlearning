@@ -24,20 +24,21 @@ trainer:
 
 eval:
   wikitext:
+    data_loader: load_hf_and_tokenize
     handler: KLEvaluator
     dataset_name: wikitext
-    batch_size: 16
-    num_batches: 8
+    hf_args:
+      path: filypo/wikitext_16k
+    limit: 128
     tokenizer: ${tokenizer_cfg}
     # KL Divergence budget
     disr_budget: 0.005
   beavertails:
-    handler: BeaverTailsEvaluator
+    handler: LossEvaluator
+    dataset_name: beavertails_safe
 
 tokenizer_cfg:
   max_length: 128  # for our wmdp corpora it's more than enough
-  padding: true
-  truncation: true
 
 data:
   custom_loaders:

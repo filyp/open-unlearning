@@ -71,14 +71,18 @@ class WMDPLLowMIEvaluator:
 
         self.results = []
 
-        self.kl_evaluator = KLEvaluator(eval_cfg.wikitext, **kwargs)
+        self.kl_evaluators = [
+            KLEvaluator(kl_eval, **kwargs) for kl_eval in eval_cfg.kl_evals
+        ]
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
         trainer = kwargs["trainer"]
 
-        res = self.kl_evaluator.evaluate(model, **kwargs)
+        res = {}
+        for kl_evaluator in self.kl_evaluators:
+            res.update(kl_evaluator.evaluate(model, **kwargs))
 
         # collate recall samples to target batch size
         recall_batches = [
@@ -107,9 +111,10 @@ class WMDPLLowMIEvaluator:
             res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
 
         # ! finished evaluating, now handle the results
+        broken = any(v for k, v in res.items() if k.endswith("_broken"))
         if (
             self.eval_cfg.save_best_model
-            and not res["too_disrupted"]
+            and not broken
             and res["forget_acc_t1"] < self.get_best_score()  # the lower the better
         ):
             # save the best model state, that doesn't exceed the disruption budget

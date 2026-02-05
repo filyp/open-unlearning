@@ -29,13 +29,15 @@ def _tokenize(text, tokenizer, tokenizer_cfg):
     return sample
 
 
-def load_hf_and_tokenize(cfg, **kwargs):
+def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
     corpus = load_hf_cached(**cfg.hf_args)
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
     corpus = corpus.shuffle(seed=42)
-    samples = [_tokenize(x["text"], kwargs["tokenizer"], cfg.tokenizer) for x in corpus]
-    return {cfg.load_as: samples}
+    samples = [_tokenize(x["text"], tokenizer, cfg.tokenizer) for x in corpus]
+    return {cfg.dataset_name: samples}
+
+
 
 
 def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
@@ -116,7 +118,7 @@ def beavertails(cfg, **kwargs):  # handler
     target = load_beavertails_samples(
         cfg.category, tokenizer, cfg.tokenizer, cfg.target_limit * 2
     )
-    eval_ = load_beavertails_samples(
+    safe = load_beavertails_samples(
         cfg.category, tokenizer, cfg.tokenizer, cfg.eval_limit, split="330k_test"
     )
     retain = load_beavertails_samples(
@@ -124,31 +126,17 @@ def beavertails(cfg, **kwargs):  # handler
     )
     assert len(target) == cfg.target_limit * 2
     assert len(retain) == cfg.retain_limit
-    assert len(eval_) == cfg.eval_limit
+    assert len(safe) == cfg.eval_limit
 
     return dict(
         forget=target[: cfg.target_limit],
         relearn=target[cfg.target_limit :],
-        eval=eval_,
+        beavertails_safe=safe,
         retain=retain,
     )
 
 
 ########################## OTHER HANDLERS ###########################
-
-
-def wikitext(cfg, **kwargs):  # handler
-    # todo make it use load_hf_and_tokenize, batch later
-    wikitext = load_hf_cached(path="filypo/wikitext_16k", split="train")
-    batches = [
-        kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
-        for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
-    ]
-    for rb in batches:
-        rb["labels"] = rb["input_ids"].clone()
-        rb["labels"][rb["attention_mask"] == 0] = -100
-
-    return batches
 
 
 # def _load_from_repo(path, repo="filyp/unlearning"):
