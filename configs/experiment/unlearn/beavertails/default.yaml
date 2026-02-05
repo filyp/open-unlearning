@@ -1,45 +1,48 @@
 # @package _global_
- 
+
 defaults:
   - /trainer@relearning_trainer: finetune
-  # - override /model: Llama-3.1-8B
-  - override /model: Llama-3.2-3B
-  # - override /model: Llama-3.2-1B
+  - override /model: Llama-3.2-1B
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
   - override /data/datasets@data.forget: null
   - override /data/datasets@data.retain: null
-  - override /eval: null  # This disables the default TOFU evaluation
-  - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
+  - override /eval: null # This disables the default TOFU evaluation
+  - override /hydra/sweeper: optuna # Use Optuna sweeper for --multirun
 
 # task_name: ${model.pretrained_model_name_or_path}_${trainer.handler}
 
 trainer:
   save_final_state: False
   args:
-    report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
+    report_to: wandb # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}
     do_eval: False
+    # per_device_eval_batch_size: 8  # tmp
 
 eval:
   wikitext:
     handler: KLEvaluator
     dataset_name: wikitext
     disr_budget: 0.005
-  beavertails:
-    handler: LossEvaluator
-    dataset_name: eval
+  holdout_harmful:
+    handler: KLEvaluator
+    dataset_name: holdout_harmful
+    disr_budget: null
+  safe_eval:
+    handler: KLEvaluator
+    dataset_name: safe_eval
+    disr_budget: 0.01
 
 tokenizer_cfg:
-  max_length: 128  # for our wmdp corpora it's more than enough
-
+  max_length: 128 # for our wmdp corpora it's more than enough
 
 data:
   custom_loaders:
     - loader: beavertails
-      target_limit: 1024
-      eval_limit: 256
+      target_limit: 512
+      eval_limit: 64
       split: 330k_train
       category: animal_abuse
       tokenizer: ${tokenizer_cfg}
@@ -51,16 +54,19 @@ data:
       category: safe
       tokenizer: ${tokenizer_cfg}
 
+    - loader: beavertails_single
+      dataset_name: safe_eval
+      limit: 64
+      split: 330k_test
+      category: safe
+      tokenizer: ${tokenizer_cfg}
+
     - loader: load_hf_and_tokenize
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      limit: 128
+      limit: 32
       tokenizer: ${tokenizer_cfg}
-
-
-
-
 
 # categories = [
 #     "animal_abuse",
@@ -78,8 +84,6 @@ data:
 #     "terrorism,organized_crime",
 #     "violence,aiding_and_abetting,incitement",
 # ]
-
-
 
 # relearning_trainer:
 #   # default loadede from finetune.yaml
@@ -104,8 +108,6 @@ data:
 #       # KL Divergence budget
 #       disr_budget: null  # null means training will not be terminated based on KL
 
-
-
 # # Optuna sweeper config (activate with --multirun flag)
 # hydra:
 #   sweeper:
@@ -120,4 +122,4 @@ data:
 #       _target_: optuna.samplers.TPESampler
 #       seed: ${trainer.args.seed}  # deterministic
 #       # seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
- 
+

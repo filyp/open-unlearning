@@ -120,7 +120,7 @@ def beavertails(cfg, tokenizer, **kwargs):
     return dict(
         forget=samples[: cfg.target_limit],
         relearn=samples[cfg.target_limit : 2 * cfg.target_limit],
-        eval=samples[2 * cfg.target_limit :],
+        holdout_harmful=samples[2 * cfg.target_limit :],
     )
 
 
