@@ -1,9 +1,9 @@
 import torch as pt
 
-from trainer.unlearn.cir.cir_utils import batched, prep_batch
+from data.utils import batched, prep_batch
 
 
-def _get_loss(model, batches):
+def get_loss(model, batches):
     loss_acc = 0
     for batch in batches:
         with pt.no_grad():
@@ -28,4 +28,4 @@ class LossEvaluator:
                 self.eval_samples, trainer.args.per_device_eval_batch_size
             )
         ]
-        return {f"{self.dataset_name}_loss": _get_loss(model, eval_batches)}
+        return {f"{self.dataset_name}_loss": get_loss(model, eval_batches)}

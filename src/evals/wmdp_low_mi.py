@@ -5,9 +5,6 @@ import lm_eval.tasks
 import torch as pt
 from lm_eval.tasks import TaskManager, get_task_dict
 
-from trainer.unlearn.cir.cir_utils import batched, prep_batch
-from trainer.unlearn.cir.kl_utils import KLEvaluator
-
 # logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
 logging.getLogger("lm_eval.models.huggingface").setLevel(logging.ERROR)
@@ -29,15 +26,6 @@ hf_module.tqdm = _disabled_tqdm
 # fmt: on
 
 
-def _get_loss(model, batches):
-    loss_acc = 0
-    for batch in batches:
-        with pt.no_grad():
-            output = model(**prep_batch(batch, model.device))
-            loss_acc += output.loss.item()
-    return loss_acc / len(batches)
-
-
 def _get_temperature_0_accuracy(lm_eval_results):
     return lm_eval_results["results"]["wmdp_bio"]["acc,none"]
 
@@ -55,88 +43,42 @@ class WMDPLLowMIEvaluator:
         assert not kwargs["template_args"].apply_chat_template, "model not supported"
 
         # load data
-        self.recall_samples = data["recall"]
         self.eval_qs = data["eval_qs"]
 
-        if self.eval_cfg.eval_mcq:
-            # Get the wmdp_bio task (uses the standard template)
-            # Use include_defaults=False and only include wmdp tasks for a much faster init
-            wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
-            task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-            self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
-            # Modify the wmdp_bio task to use our custom questions
-            # Note that this also supports eval_qs from wmdp_cyber - we only need
-            # the task template which is the same for both tasks.
-            self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
-
-        self.results = []
-
-        self.kl_evaluators = [
-            KLEvaluator(kl_eval, data=data, **kwargs) for kl_eval in eval_cfg.kl_evals
-        ]
+        # Get the wmdp_bio task (uses the standard template)
+        # Use include_defaults=False and only include wmdp tasks for a much faster init
+        wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
+        task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
+        self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
+        # Modify the wmdp_bio task to use our custom questions
+        # Note that this also supports eval_qs from wmdp_cyber - we only need
+        # the task template which is the same for both tasks.
+        self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
         trainer = kwargs["trainer"]
 
-        res = {}
-        for kl_evaluator in self.kl_evaluators:
-            res.update(kl_evaluator.evaluate(model, **kwargs))
+        # * eval forget acc
+        lm = lm_eval.models.huggingface.HFLM(
+            pretrained=model,
+            tokenizer=kwargs["tokenizer"],
+            batch_size=trainer.args.per_device_eval_batch_size,
+        )
+        lm_eval_results = lm_eval.evaluator.evaluate(
+            lm=lm,
+            task_dict=self.task_dict,
+            log_samples=True,
+        )
 
-        # collate recall samples to target batch size
-        recall_batches = [
-            trainer.data_collator(samples)
-            for samples in batched(
-                self.recall_samples, trainer.args.per_device_eval_batch_size
-            )
-        ]
-        res["recall_loss"] = _get_loss(model, recall_batches)
+        return dict(
+            forget_acc_t0=_get_temperature_0_accuracy(lm_eval_results),
+            forget_acc_t1=_get_temperature_1_accuracy(lm_eval_results),
+        )
 
-        # res["retain_loss"] = _get_loss(model, [x["retain"] for x in train_dataset[:nb]])
-
-        if self.eval_cfg.eval_mcq:
-            # * eval forget acc
-            lm = lm_eval.models.huggingface.HFLM(
-                pretrained=model,
-                tokenizer=kwargs["tokenizer"],
-                batch_size=trainer.args.per_device_eval_batch_size,
-            )
-            lm_eval_results = lm_eval.evaluator.evaluate(
-                lm=lm,
-                task_dict=self.task_dict,
-                log_samples=True,
-            )
-            res["forget_acc_t0"] = _get_temperature_0_accuracy(lm_eval_results)
-            res["forget_acc_t1"] = _get_temperature_1_accuracy(lm_eval_results)
-
-        # ! finished evaluating, now handle the results
-        broken = any(v for k, v in res.items() if k.endswith("_broken"))
-        if (
-            self.eval_cfg.save_best_model
-            and not broken
-            and res["forget_acc_t1"] < self.get_best_score()  # the lower the better
-        ):
-            # save the best model state, that doesn't exceed the disruption budget
-            # this way relearning can start from this valid model state
-            self.best_model_state_dict = {
-                k: v.cpu() for k, v in model.state_dict().items()
-            }
-
-        self.results.append(res)
-        return res
-
-    def get_relearning_robustness_metric(self):
-        # if self.eval_cfg.eval_mcq:
+    def get_relearning_robustness_metric(self, eval_results_history):
         logging.info("Using max temperature=1 accuracy as the robustness metric")
-        return max(res["forget_acc_t1"] for res in self.results)
-        # else:
+        return max(res["forget_acc_t1"] for res in eval_results_history)
         # logging.info("Using min recall loss as the robustness metric")
         # return min(res["recall_loss"] for res in self.results)
-
-    def get_best_score(self):
-        # using forget_acc_t1, the lower the better
-        if not self.results:
-            return float("inf")
-        else:
-            return min(res["forget_acc_t1"] for res in self.results)

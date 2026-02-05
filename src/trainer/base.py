@@ -16,6 +16,8 @@ class FinetuneTrainer(Trainer):
     def __init__(self, evaluators=None, template_args=None, *args, **kwargs):
         self.evaluators = evaluators
         self.template_args = template_args
+        self.eval_results_history = []
+        self.last_valid_model_state = None
         super().__init__(*args, **kwargs)
 
     def evaluate(
@@ -47,6 +49,18 @@ class FinetuneTrainer(Trainer):
                     "trainer": self,
                 }
                 eval_metrics.update(evaluator.evaluate(**eval_args))
+
+            # Track results history
+            self.eval_results_history.append(eval_metrics)
+
+            # Save last valid model state (only when disruption tracking is enabled)
+            broken_metrics = {k: v for k, v in eval_metrics.items() if k.endswith("_broken")}
+            broken = any(broken_metrics.values())
+            if broken_metrics and not broken:
+                self.last_valid_model_state = {
+                    k: v.cpu() for k, v in self.model.state_dict().items()
+                }
+
             self.log(eval_metrics)
             return eval_metrics
 

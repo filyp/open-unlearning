@@ -29,28 +29,36 @@ eval:
     disr_budget: 0.005
   beavertails:
     handler: LossEvaluator
-    dataset_name: beavertails_safe
+    dataset_name: eval
 
 tokenizer_cfg:
   max_length: 128  # for our wmdp corpora it's more than enough
 
+
 data:
   custom_loaders:
     - loader: beavertails
-      category: animal_abuse
-      eval_limit: 256
       target_limit: 1024
-      retain_limit: 1024
-      # eval_limit: 64
-      # target_limit: 128
-      # retain_limit: 128
+      eval_limit: 256
+      split: 330k_train
+      category: animal_abuse
       tokenizer: ${tokenizer_cfg}
+
+    - loader: beavertails_single
+      dataset_name: retain
+      limit: 1024
+      split: 330k_train
+      category: safe
+      tokenizer: ${tokenizer_cfg}
+
     - loader: load_hf_and_tokenize
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
       limit: 128
       tokenizer: ${tokenizer_cfg}
+
+
 
 
 

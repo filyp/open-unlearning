@@ -7,11 +7,10 @@ from transformers import TrainerCallback
 
 import trainer.unlearn.cir.loss_fns as loss_fns
 from trainer.unlearn.base import UnlearnTrainer
+from data.utils import prep_batch
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
-    get_relev_mask_with_caching,
     normalize_grads,
-    prep_batch,
     sanitize_tensor,
 )
 from trainer.unlearn.cir.kl_utils import KLComputor

@@ -1,3 +1,5 @@
+from itertools import islice
+
 import torch
 import datasets
 import numpy as np
@@ -190,3 +192,21 @@ def add_dataset_index(dataset):
     indexing = np.arange(len(dataset))
     dataset = dataset.add_column("index", indexing)
     return dataset
+
+
+def prep_batch(batch, device):
+    return dict(
+        input_ids=batch["input_ids"].to(device),
+        attention_mask=batch["attention_mask"].to(device),
+        labels=batch["labels"].to(device),
+    )
+
+
+def batched(iterable, n):
+    """Batch an iterable into chunks of size n.
+
+    In python>=3.12, it can be replaced with itertools.batched
+    """
+    it = iter(iterable)
+    while batch := list(islice(it, n)):
+        yield batch

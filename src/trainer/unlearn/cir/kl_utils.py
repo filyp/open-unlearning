@@ -5,15 +5,7 @@ import torch as pt
 import torch.nn.functional as F
 from transformers import BatchEncoding
 
-from trainer.unlearn.cir.cir_utils import batched, prep_batch
-
-
-# def prep_batch(batch, device):
-#     return dict(
-#         input_ids=batch["input_ids"].to(device),
-#         attention_mask=batch["attention_mask"].to(device),
-#         labels=batch["labels"].to(device),
-#     )
+from data.utils import batched, prep_batch
 
 
 def cache_last_hidden_states(model, batches):

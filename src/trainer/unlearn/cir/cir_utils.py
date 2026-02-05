@@ -1,27 +1,9 @@
-from itertools import islice
 import random
 
 import torch as pt
 
 import trainer.unlearn.cir.hooks as hooks
-
-
-def prep_batch(batch, device):
-    return dict(
-        input_ids=batch["input_ids"].to(device),
-        attention_mask=batch["attention_mask"].to(device),
-        labels=batch["labels"].to(device),
-    )
-
-
-def batched(iterable, n):
-    """Batch an iterable into chunks of size n.
-
-    In python>=3.12,  it can be replaced with itertools.batched
-    """
-    it = iter(iterable)
-    while batch := list(islice(it, n)):
-        yield batch
+from data.utils import batched
 
 
 def get_token_mask(labels):

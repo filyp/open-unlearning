@@ -28,12 +28,13 @@ tokenizer_cfg:
 eval:
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator
-    eval_mcq: true
-    save_best_model: true
-    kl_evals:
-      - dataset_name: wikitext
-        disr_budget: 0.005
-        # disr_budget: 0.1
+  recall_loss:
+    handler: LossEvaluator
+    dataset_name: recall
+  wikitext_kl:
+    handler: KLEvaluator
+    dataset_name: wikitext
+    disr_budget: 0.005
 
 data:
   custom_loaders:
@@ -74,12 +75,13 @@ relearning_trainer:
 relearning_eval:
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator
-    eval_mcq: true
-    save_best_model: false
-    kl_evals:
-      - dataset_name: wikitext
-        # disr_budget: 0.005
-        disr_budget: null
+  recall_loss:
+    handler: LossEvaluator
+    dataset_name: recall
+  wikitext_kl:
+    handler: KLEvaluator
+    dataset_name: wikitext
+    disr_budget: null
 
 # Optuna sweeper config (activate with --multirun flag)
 hydra:

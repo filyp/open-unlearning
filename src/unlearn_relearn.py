@@ -53,7 +53,7 @@ def main(cfg: DictConfig):
         cfg.eval = cfg.relearning_eval
         cfg.mode = "relearn"
         cfg.model.model_args.pretrained_model_name_or_path = str(
-            (comm_dir / "best_model").absolute()
+            (comm_dir / "last_valid_model").absolute()
         )
 
         relearning_cfg_path = comm_dir / "relearning_cfg.yaml"

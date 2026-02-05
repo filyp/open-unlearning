@@ -2,6 +2,7 @@ import logging
 import os
 
 from datasets import concatenate_datasets, load_dataset, load_from_disk
+from omegaconf import open_dict
 
 
 def load_hf_cached(path, split="train", data_files=None):
@@ -16,10 +17,6 @@ def load_hf_cached(path, split="train", data_files=None):
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         ds.save_to_disk(cache_dir)
         return ds
-
-
-############## WMDP LOW MI ##############
-# todo they don't support chat templates yet - will need to handle that using data.utils
 
 
 def _tokenize(text, tokenizer, tokenizer_cfg):
@@ -38,6 +35,8 @@ def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
     return {cfg.dataset_name: samples}
 
 
+############## WMDP LOW MI ##############
+# todo they don't support chat templates yet - will need to handle that using data.utils
 
 
 def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
@@ -54,9 +53,7 @@ def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     return samples
 
 
-def wmdp_low_mi(cfg, **kwargs):  # handler
-    tokenizer = kwargs["tokenizer"]
-
+def wmdp_low_mi(cfg, tokenizer, **kwargs):  # handler
     T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")
     V = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_V", split="train")
 
@@ -89,54 +86,42 @@ def wmdp_low_mi(cfg, **kwargs):  # handler
 ########################### BEAVERTTAILS ###########################
 
 
-def load_beavertails_samples(
-    category_name, tokenizer, tokenizer_cfg, limit=1000, split="330k_train"
-):
+def beavertails_single(cfg, tokenizer, **kwargs):
     # splits: 330k_train, 330k_test, 30k_train, 30k_test
-    full_bt = load_hf_cached("PKU-Alignment/BeaverTails", split=split)
+    full_bt = load_hf_cached("PKU-Alignment/BeaverTails", split=cfg.split)
 
-    if category_name == "safe":
+    if cfg.category == "safe":
         texts = full_bt.filter(lambda x: x["is_safe"])
     else:
-        texts = full_bt.filter(lambda x: x["category"][category_name])
+        texts = full_bt.filter(lambda x: x["category"][cfg.category])
 
+    logging.info(f"{cfg.dataset_name} {cfg.limit}/{len(texts)}")
     samples = []
-    for text in texts.select(range(limit)):
+    for text in texts.select(range(cfg.limit)):
         # we don't use "Question:...\nAnswer:..." format, to not have unlearning base too much on these tokens
-        question_txt = text['prompt']
+        question_txt = text["prompt"]
         answer_txt = text["response"]
         full_txt = f"{question_txt} {answer_txt}"
-        sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
-        beginning_len = len(tokenizer(question_txt, **tokenizer_cfg)["input_ids"])
+        sample = _tokenize(full_txt, tokenizer, cfg.tokenizer)
+        beginning_len = len(tokenizer(question_txt, **cfg.tokenizer)["input_ids"])
         sample["labels"][:beginning_len] = -100
         samples.append(sample)
-    return samples
+    assert len(samples) == cfg.limit
+    return {cfg.dataset_name: samples}
 
 
-def beavertails(cfg, **kwargs):  # handler
-    tokenizer = kwargs["tokenizer"]
-    target = load_beavertails_samples(
-        cfg.category, tokenizer, cfg.tokenizer, cfg.target_limit * 2
-    )
-    safe = load_beavertails_samples(
-        cfg.category, tokenizer, cfg.tokenizer, cfg.eval_limit, split="330k_test"
-    )
-    retain = load_beavertails_samples(
-        "safe", tokenizer, cfg.tokenizer, cfg.retain_limit
-    )
-    assert len(target) == cfg.target_limit * 2
-    assert len(retain) == cfg.retain_limit
-    assert len(safe) == cfg.eval_limit
+def beavertails(cfg, tokenizer, **kwargs):
+    with open_dict(cfg):
+        cfg["limit"] = cfg["target_limit"] * 2 + cfg["eval_limit"]
+        cfg["dataset_name"] = "tmp"
+
+    samples = beavertails_single(cfg, tokenizer)["tmp"]
 
     return dict(
-        forget=target[: cfg.target_limit],
-        relearn=target[cfg.target_limit :],
-        beavertails_safe=safe,
-        retain=retain,
+        forget=samples[: cfg.target_limit],
+        relearn=samples[cfg.target_limit : 2 * cfg.target_limit],
+        eval=samples[2 * cfg.target_limit :],
     )
-
-
-########################## OTHER HANDLERS ###########################
 
 
 # def _load_from_repo(path, repo="filyp/unlearning"):

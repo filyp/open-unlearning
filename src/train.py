@@ -12,6 +12,7 @@ from trainer.utils import seed_everything
 
 load_dotenv()
 
+
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig):
     """Entry point of the code to train models
@@ -71,20 +72,19 @@ def main(cfg: DictConfig):
     if trainer_args.do_eval:
         trainer.evaluate(metric_key_prefix="eval")
 
-    # save best model
+    # save last valid model (before any metric broke)
     comm_dir = Path(cfg.paths.tmp_comm_dir) / cfg.task_name
-    for evaluator in evaluators.values():
-        if hasattr(evaluator, "best_model_state_dict"):
-            # save model
-            model.load_state_dict(evaluator.best_model_state_dict)
-            model.save_pretrained(comm_dir / "best_model")
-            break
+    if trainer.last_valid_model_state is not None:
+        model.load_state_dict(trainer.last_valid_model_state)
+        model.save_pretrained(comm_dir / "last_valid_model")
 
     # * get the final score (if defined), and save to file
     if mode == "relearn":
         for evaluator in evaluators.values():
             if hasattr(evaluator, "get_relearning_robustness_metric"):
-                robustness = evaluator.get_relearning_robustness_metric()
+                robustness = evaluator.get_relearning_robustness_metric(
+                    trainer.eval_results_history
+                )
                 (comm_dir / "robustness.txt").write_text(str(robustness))
 
 
