@@ -5,9 +5,6 @@ import torch as pt
 import torch.nn.functional as F
 from transformers import BatchEncoding
 
-from data import custom_loaders
-
-
 from trainer.unlearn.cir.cir_utils import batched, prep_batch
 
 
@@ -128,13 +125,11 @@ class KLComputor:
 
 
 class KLEvaluator:
-    def __init__(self, eval_cfg, tokenizer, **kwargs):
+    def __init__(self, eval_cfg, data, **kwargs):
         self.dataset_name = eval_cfg.dataset_name
         self.disr_budget = eval_cfg.disr_budget
         self.first_eval = True
-
-        dataset_loader = getattr(custom_loaders, eval_cfg.data_loader)
-        self.samples = dataset_loader(eval_cfg, tokenizer=tokenizer)[self.dataset_name]
+        self.samples = data[self.dataset_name]
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()

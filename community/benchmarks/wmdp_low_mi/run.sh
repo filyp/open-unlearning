@@ -28,8 +28,8 @@ common="python3 src/unlearn_relearn.py \
 --config-name=unlearn.yaml \
 experiment=unlearn/wmdp_low_mi/default"
 
-cyber="data.custom_loaders.wmdp_low_mi.dataset=cyber \
-data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
+cyber="data.custom_loaders.0.dataset=cyber \
+data.custom_loaders.1.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
 ver=v3
 
 
@@ -46,8 +46,8 @@ $common model=Llama-3.2-3B trainer=RMU task_name=${ver}_3B_RMU_bio
 $common model=Llama-3.2-3B trainer=SimNPO task_name=${ver}_3B_SimNPO_bio
 $common model=Llama-3.2-3B trainer=UNDIAL task_name=${ver}_3B_UNDIAL_bio
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIR_bio
-$common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_bio eval.wmdp_low_mi.wikitext.disr_budget=0.005
-$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_bio eval.wmdp_low_mi.wikitext.disr_budget=0.005
+$common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_bio eval.wmdp_low_mi.kl_evals.0.disr_budget=0.005
+$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_bio eval.wmdp_low_mi.kl_evals.0.disr_budget=0.005
 
 $common model=Llama-3.2-3B trainer=GradDiff task_name=${ver}_3B_GradDiff_cyber $cyber
 $common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPO_cyber $cyber
@@ -55,8 +55,8 @@ $common model=Llama-3.2-3B trainer=RMU task_name=${ver}_3B_RMU_cyber $cyber
 $common model=Llama-3.2-3B trainer=SimNPO task_name=${ver}_3B_SimNPO_cyber $cyber
 $common model=Llama-3.2-3B trainer=UNDIAL task_name=${ver}_3B_UNDIAL_cyber $cyber
 $common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIR_cyber $cyber
-$common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_cyber eval.wmdp_low_mi.wikitext.disr_budget=0.005 $cyber
-$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_cyber eval.wmdp_low_mi.wikitext.disr_budget=0.005 $cyber
+$common model=Llama-3.2-3B trainer=CIR task_name=${ver}_3B_CIRstrict_cyber eval.wmdp_low_mi.kl_evals.0.disr_budget=0.005 $cyber
+$common model=Llama-3.2-3B trainer=NPO task_name=${ver}_3B_NPOstrict_cyber eval.wmdp_low_mi.kl_evals.0.disr_budget=0.005 $cyber
 
 # alternatively, to run on SLURM
 common="sbatch open-unlearning/job.sh"

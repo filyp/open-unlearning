@@ -24,14 +24,8 @@ trainer:
 
 eval:
   wikitext:
-    data_loader: load_hf_and_tokenize
     handler: KLEvaluator
     dataset_name: wikitext
-    hf_args:
-      path: filypo/wikitext_16k
-    limit: 128
-    tokenizer: ${tokenizer_cfg}
-    # KL Divergence budget
     disr_budget: 0.005
   beavertails:
     handler: LossEvaluator
@@ -42,7 +36,7 @@ tokenizer_cfg:
 
 data:
   custom_loaders:
-    beavertails:
+    - loader: beavertails
       category: animal_abuse
       eval_limit: 256
       target_limit: 1024
@@ -50,6 +44,12 @@ data:
       # eval_limit: 64
       # target_limit: 128
       # retain_limit: 128
+      tokenizer: ${tokenizer_cfg}
+    - loader: load_hf_and_tokenize
+      dataset_name: wikitext
+      hf_args:
+        path: filypo/wikitext_16k
+      limit: 128
       tokenizer: ${tokenizer_cfg}
 
 

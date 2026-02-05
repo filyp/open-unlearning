@@ -51,13 +51,13 @@ def get_data(data_cfg: DictConfig, mode="train", **kwargs):
     data = {}
     data_cfg = dict(data_cfg)
     anchor = data_cfg.pop("anchor", "forget")
-    custom_loaders_cfg = data_cfg.pop("custom_loaders", {})
+    custom_loaders_cfg = data_cfg.pop("custom_loaders", [])
     for split, dataset_cfgs in data_cfg.items():
         data[split] = get_datasets(dataset_cfgs, **kwargs)
-    if custom_loaders_cfg:
-        for loader_name, loader_cfg in custom_loaders_cfg.items():
-            fn = getattr(custom_loaders, loader_name)
-            data.update(fn(loader_cfg, **kwargs))
+    # custom_loaders is a list of dicts, each with a "loader" key specifying the function
+    for loader_cfg in custom_loaders_cfg:
+        fn = getattr(custom_loaders, loader_cfg.loader)
+        data.update(fn(loader_cfg, **kwargs))
     if mode == "train":
         return data
     elif mode == "unlearn":

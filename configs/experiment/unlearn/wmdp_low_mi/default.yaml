@@ -31,24 +31,19 @@ eval:
     eval_mcq: true
     save_best_model: true
     kl_evals:
-      - data_loader: load_hf_and_tokenize
-        dataset_name: wikitext
-        hf_args:
-          path: filypo/wikitext_16k
-        limit: 128
-        tokenizer: ${tokenizer_cfg}
+      - dataset_name: wikitext
         disr_budget: 0.005
         # disr_budget: 0.1
 
 data:
   custom_loaders:
-    wmdp_low_mi:
+    - loader: wmdp_low_mi
       dataset: bio
       # dataset: cyber
       eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
-    load_hf_and_tokenize:  # fineweb bio dataset
+    - loader: load_hf_and_tokenize  # fineweb bio dataset
       dataset_name: retain
       limit: 1000
       tokenizer: ${tokenizer_cfg}
@@ -59,6 +54,12 @@ data:
           - biology/biology_000849.jsonl
           # for cyber:
           # - computer_science_and_technology/computer_science_and_technology_000000.jsonl
+    - loader: load_hf_and_tokenize  # wikitext for KL eval
+      dataset_name: wikitext
+      hf_args:
+        path: filypo/wikitext_16k
+      limit: 128
+      tokenizer: ${tokenizer_cfg}
 
 relearning_trainer:
   # default loadede from finetune.yaml
@@ -76,12 +77,7 @@ relearning_eval:
     eval_mcq: true
     save_best_model: false
     kl_evals:
-      - data_loader: load_hf_and_tokenize
-        dataset_name: wikitext
-        hf_args:
-          path: filypo/wikitext_16k
-        limit: 128
-        tokenizer: ${tokenizer_cfg}
+      - dataset_name: wikitext
         # disr_budget: 0.005
         disr_budget: null
 

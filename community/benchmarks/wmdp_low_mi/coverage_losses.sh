@@ -7,12 +7,13 @@ common="python3 src/unlearn_relearn.py \
 experiment=unlearn/wmdp_low_mi/default \
 model=Llama-3.2-3B \
 trainer=CIR \
-eval.wmdp_low_mi.wikitext.disr_budget=0.005 \
+eval.wmdp_low_mi.kl_evals.0.disr_budget=0.005 \
 trainer.args.learning_rate=0.3 \
 trainer.args.num_train_epochs=50"
 
-cyber="data.custom_loaders.wmdp_low_mi.dataset=cyber \
-data.custom_loaders.load_hf_and_tokenize.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
+# todo, just have another config, with cyber override
+cyber="data.custom_loaders.0.dataset=cyber \
+data.custom_loaders.1.hf_args.data_files=[computer_science_and_technology/computer_science_and_technology_000000.jsonl]"
 
 ver=0.3_bio
 

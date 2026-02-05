@@ -72,7 +72,7 @@ class WMDPLLowMIEvaluator:
         self.results = []
 
         self.kl_evaluators = [
-            KLEvaluator(kl_eval, **kwargs) for kl_eval in eval_cfg.kl_evals
+            KLEvaluator(kl_eval, data=data, **kwargs) for kl_eval in eval_cfg.kl_evals
         ]
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
