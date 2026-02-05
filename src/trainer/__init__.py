@@ -16,7 +16,6 @@ from trainer.unlearn.satimp import SatImp
 from trainer.unlearn.wga import WGA
 from trainer.unlearn.pdu import PDU
 from trainer.unlearn.cir.cir_trainer import CIR
-from trainer.unlearn.cir.mudman import MUDMAN
 
 
 import logging
@@ -102,4 +101,3 @@ _register_trainer(SatImp)
 _register_trainer(WGA)
 _register_trainer(PDU)
 _register_trainer(CIR)
-_register_trainer(MUDMAN)

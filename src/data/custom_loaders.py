@@ -38,19 +38,6 @@ def load_hf_and_tokenize(cfg, **kwargs):
     return {cfg.load_as: samples}
 
 
-def wikitext(cfg, **kwargs):
-    wikitext = load_hf_cached(path="filypo/wikitext_16k", split="train")
-    batches = [
-        kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
-        for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
-    ]
-    for rb in batches:
-        rb["labels"] = rb["input_ids"].clone()
-        rb["labels"][rb["attention_mask"] == 0] = -100
-
-    return batches
-
-
 def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     samples = []
     for q in questions:
@@ -65,7 +52,7 @@ def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     return samples
 
 
-def wmdp_low_mi(cfg, **kwargs):
+def wmdp_low_mi(cfg, **kwargs):  # handler
     tokenizer = kwargs["tokenizer"]
 
     T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")
@@ -95,6 +82,73 @@ def wmdp_low_mi(cfg, **kwargs):
         recall=recall_samples,
         eval_qs=eval_qs,
     )
+
+
+########################### BEAVERTTAILS ###########################
+
+
+def load_beavertails_samples(
+    category_name, tokenizer, tokenizer_cfg, limit=1000, split="330k_train"
+):
+    # splits: 330k_train, 330k_test, 30k_train, 30k_test
+    full_bt = load_hf_cached("PKU-Alignment/BeaverTails", split=split)
+
+    if category_name == "safe":
+        texts = full_bt.filter(lambda x: x["is_safe"])
+    else:
+        texts = full_bt.filter(lambda x: x["category"][category_name])
+
+    samples = []
+    for text in texts.select(range(limit)):
+        # we don't use "Question:...\nAnswer:..." format, to not have unlearning base too much on these tokens
+        question_txt = text['prompt']
+        answer_txt = text["response"]
+        full_txt = f"{question_txt} {answer_txt}"
+        sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
+        beginning_len = len(tokenizer(question_txt, **tokenizer_cfg)["input_ids"])
+        sample["labels"][:beginning_len] = -100
+        samples.append(sample)
+    return samples
+
+
+def beavertails(cfg, **kwargs):  # handler
+    tokenizer = kwargs["tokenizer"]
+    target = load_beavertails_samples(
+        cfg.category, tokenizer, cfg.tokenizer, cfg.target_limit * 2
+    )
+    eval_ = load_beavertails_samples(
+        cfg.category, tokenizer, cfg.tokenizer, cfg.eval_limit, split="330k_test"
+    )
+    retain = load_beavertails_samples(
+        "safe", tokenizer, cfg.tokenizer, cfg.retain_limit
+    )
+    assert len(target) == cfg.target_limit * 2
+    assert len(retain) == cfg.retain_limit
+    assert len(eval_) == cfg.eval_limit
+
+    return dict(
+        forget=target[: cfg.target_limit],
+        relearn=target[cfg.target_limit :],
+        eval=eval_,
+        retain=retain,
+    )
+
+
+########################## OTHER HANDLERS ###########################
+
+
+def wikitext(cfg, **kwargs):  # handler
+    # todo make it use load_hf_and_tokenize, batch later
+    wikitext = load_hf_cached(path="filypo/wikitext_16k", split="train")
+    batches = [
+        kwargs["tokenizer"](x["text"], return_tensors="pt", **cfg.tokenizer)
+        for x in wikitext.shuffle(seed=42).batch(cfg.batch_size).take(cfg.num_batches)
+    ]
+    for rb in batches:
+        rb["labels"] = rb["input_ids"].clone()
+        rb["labels"][rb["attention_mask"] == 0] = -100
+
+    return batches
 
 
 # def _load_from_repo(path, repo="filyp/unlearning"):
