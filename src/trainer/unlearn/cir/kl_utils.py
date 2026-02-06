@@ -139,21 +139,17 @@ class KLEvaluator:
             self.kl_computor = KLComputor(model, self.batches)
 
         ce_loss, kl_loss = self.kl_computor.eval_kl_many_batches(self.batches)
+        res = {f"{self.dataset_name}_loss": ce_loss, f"{self.dataset_name}_kl": kl_loss}
 
         if self.first_eval:
             assert kl_loss == 0, f"Initial KL should be 0, but got {kl_loss}"
             self.first_eval = False
 
-        broken = False
-        # disr_budget=None is used in relearning - don't stop the training there
-        if self.disr_budget is not None and kl_loss > self.disr_budget:
-            # * check condition to stop training
-            logging.info("KL exceeded the disruption budget")
-            kwargs["trainer"].control.should_training_stop = True
-            broken = True
+        if self.disr_budget is not None:
+            # disr_budget=None is used in relearning - don't stop the training there
+            res[f"{self.dataset_name}_broken"] = kl_loss > self.disr_budget
+            if res[f"{self.dataset_name}_broken"]:
+                logging.info("KL exceeded the disruption budget")
+                trainer.control.should_training_stop = True
 
-        return {
-            f"{self.dataset_name}_loss": ce_loss,
-            f"{self.dataset_name}_kl": kl_loss,
-            f"{self.dataset_name}_broken": broken,
-        }
+        return res

@@ -95,18 +95,6 @@ data:
 #     lr_scheduler_type: constant
 #     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
 #     run_name: ${task_name}
-# relearning_eval:
-#   wmdp_low_mi:
-#     handler: WMDPLLowMIEvaluator
-#     eval_mcq: true
-#     save_best_model: false
-#     wikitext:
-#       dataset_name: wikitext
-#       batch_size: 16
-#       num_batches: 8
-#       tokenizer: ${tokenizer_cfg}
-#       # KL Divergence budget
-#       disr_budget: null  # null means training will not be terminated based on KL
 
 # # Optuna sweeper config (activate with --multirun flag)
 # hydra:

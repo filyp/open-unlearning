@@ -2,11 +2,7 @@
  
 defaults:
   - /trainer@relearning_trainer: finetune
-  # - override /model: Llama-3.1-8B
   - override /model: Llama-3.2-3B
-  # - override /model: Llama-3.2-1B
-  # - override /model: MobileLLM-125M
-  # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml
   - override /data/datasets@data.forget: null
   - override /data/datasets@data.retain: null
@@ -72,25 +68,18 @@ relearning_trainer:
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}
-relearning_eval:
-  wmdp_low_mi:
-    handler: WMDPLLowMIEvaluator
-  recall_loss:
-    handler: LossEvaluator
-    dataset_name: recall
-  wikitext_kl:
-    handler: KLEvaluator
-    dataset_name: wikitext
-    disr_budget: null
-
 # Optuna sweeper config (activate with --multirun flag)
+# metric_to_optimize: forget_acc_t1
+# optimize_direction: minimize
+metric_to_optimize: recall_loss
+optimize_direction: maximize
 hydra:
   sweeper:
     # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
     storage: ${oc.env:OPTUNA_STORAGE_URL}
     study_name: ${task_name}
-    direction: minimize
+    direction: ${optimize_direction}
     n_trials: 50
     n_jobs: 1
     sampler:

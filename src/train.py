@@ -78,14 +78,18 @@ def main(cfg: DictConfig):
         model.load_state_dict(trainer.last_valid_model_state)
         model.save_pretrained(comm_dir / "last_valid_model")
 
-    # * get the final score (if defined), and save to file
+    # * get the final score (if defined), and save to file for the unlearn_relearn script
     if mode == "relearn":
-        for evaluator in evaluators.values():
-            if hasattr(evaluator, "get_relearning_robustness_metric"):
-                robustness = evaluator.get_relearning_robustness_metric(
-                    trainer.eval_results_history
-                )
-                (comm_dir / "robustness.txt").write_text(str(robustness))
+        target_metric = cfg.metric_to_optimize
+        # relearning optimizes in the opposite direction to unlearning and the sweeper
+        # so for example when unlearning maximizes loss, then robutsness=min(relearning loss)
+        if cfg.optimize_direction == "minimize":
+            robustness = max(res[target_metric] for res in trainer.eval_results_history)
+        elif cfg.optimize_direction == "maximize":
+            robustness = min(res[target_metric] for res in trainer.eval_results_history)
+        
+        (comm_dir / "robustness.txt").write_text(str(robustness))
+        
 
 
 if __name__ == "__main__":

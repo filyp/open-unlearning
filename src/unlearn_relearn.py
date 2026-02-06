@@ -50,7 +50,13 @@ def main(cfg: DictConfig):
             os.environ["WANDB_PROJECT"] = os.environ["REL_WANDB_PROJECT"]
 
         cfg.trainer = cfg.relearning_trainer
-        cfg.eval = cfg.relearning_eval
+        
+        # in relearning, disable disruption budget
+        for eval_conf in cfg.eval.values():
+            if "disr_budget" in eval_conf:
+                eval_conf.disr_budget = None
+
+        # cfg.eval = cfg.relearning_eval
         cfg.mode = "relearn"
         cfg.model.model_args.pretrained_model_name_or_path = str(
             (comm_dir / "last_valid_model").absolute()
