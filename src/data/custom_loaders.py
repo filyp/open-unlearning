@@ -27,6 +27,7 @@ def _tokenize(text, tokenizer, tokenizer_cfg):
 
 
 def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
+    assert not kwargs["template_args"].apply_chat_template, "model not supported"
     corpus = load_hf_cached(**cfg.hf_args)
     if "limit" in cfg:
         corpus = corpus.select(range(cfg.limit))
@@ -54,6 +55,8 @@ def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
 
 
 def wmdp_low_mi(cfg, tokenizer, **kwargs):  # handler
+    assert not kwargs["template_args"].apply_chat_template, "model not supported"
+
     T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")
     V = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_V", split="train")
 
@@ -87,6 +90,8 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):  # handler
 
 
 def beavertails_single(cfg, tokenizer, **kwargs):
+    assert not kwargs["template_args"].apply_chat_template, "model not supported"
+
     # splits: 330k_train, 330k_test, 30k_train, 30k_test
     full_bt = load_hf_cached("PKU-Alignment/BeaverTails", split=cfg.split)
 

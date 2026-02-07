@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# !!!!!!!!!!! this file uses deprecated config options
+
 # note no --multirun
 # we use more epochs, to make sure we hit the disruption budget
 common="python3 src/unlearn_relearn.py \

@@ -39,9 +39,6 @@ def _get_temperature_1_accuracy(lm_eval_results):
 
 class WMDPLLowMIEvaluator:
     def __init__(self, eval_cfg, data, **kwargs):
-        self.eval_cfg = eval_cfg
-        assert not kwargs["template_args"].apply_chat_template, "model not supported"
-
         # load data
         self.eval_qs = data["eval_qs"]
 
@@ -55,15 +52,14 @@ class WMDPLLowMIEvaluator:
         # the task template which is the same for both tasks.
         self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
 
-    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+    def evaluate(self, model, tokenizer, trainer, **kwargs):
         model.eval()
         model.zero_grad(set_to_none=True)
-        trainer = kwargs["trainer"]
 
         # * eval forget acc
         lm = lm_eval.models.huggingface.HFLM(
             pretrained=model,
-            tokenizer=kwargs["tokenizer"],
+            tokenizer=tokenizer,
             batch_size=trainer.args.per_device_eval_batch_size,
         )
         lm_eval_results = lm_eval.evaluator.evaluate(

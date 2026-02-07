@@ -3,13 +3,14 @@
 defaults:
   - /trainer@relearning_trainer: finetune
   - override /model: Llama-3.2-3B
+  # - override /model: Qwen3-0.6B-Base
   # Delete inherited TOFU datasets from base data/unlearn.yaml
   - override /data/datasets@data.forget: null
   - override /data/datasets@data.retain: null
   - override /eval: null  # This disables the default TOFU evaluation
   - override /hydra/sweeper: optuna  # Use Optuna sweeper for --multirun
 
-# task_name: ${model.pretrained_model_name_or_path}_${trainer.handler}
+# task_name: ${trainer.handler}_${wmdp_domain}_${model.pretrained_model_name_or_path}
 
 trainer:
   save_final_state: False
@@ -32,31 +33,50 @@ eval:
     dataset_name: wikitext
     disr_budget: 0.005
 
+# CLI: wmdp_domain=cyber to switch domain
+wmdp_domain: bio
+_wmdp_retain_files:
+  bio:
+    - biology/biology_000849.jsonl
+  cyber:
+    - computer_science_and_technology/computer_science_and_technology_000000.jsonl
+
 data:
   custom_loaders:
     - loader: wmdp_low_mi
-      dataset: bio
-      # dataset: cyber
+      dataset: ${wmdp_domain}
       eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
-    - loader: load_hf_and_tokenize  # fineweb bio dataset
+
+    - loader: load_hf_and_tokenize  # fineweb retain dataset (domain-matched)
       dataset_name: retain
       limit: 1000
       tokenizer: ${tokenizer_cfg}
       hf_args:
         path: m-a-p/FineFineWeb
-        data_files:
-          # for bio: (just this smallest parquet file will be enough)
-          - biology/biology_000849.jsonl
-          # for cyber:
-          # - computer_science_and_technology/computer_science_and_technology_000000.jsonl
+        data_files: ${_wmdp_retain_files.${wmdp_domain}}
+    
     - loader: load_hf_and_tokenize  # wikitext for KL eval
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
       limit: 128
       tokenizer: ${tokenizer_cfg}
+
+    # # alternative retain datasets:
+    # - loader: load_hf_and_tokenize  # wikitext for KL eval
+    #   dataset_name: retain
+    #   hf_args:
+    #     path: filypo/wikitext_16k
+    #   limit: 1024
+    #   tokenizer: ${tokenizer_cfg}
+    # - loader: beavertails_single
+    #   dataset_name: retain
+    #   limit: 1024
+    #   split: 330k_train
+    #   category: safe
+    #   tokenizer: ${tokenizer_cfg}
 
 relearning_trainer:
   # default loadede from finetune.yaml
@@ -68,6 +88,7 @@ relearning_trainer:
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}
+
 # Optuna sweeper config (activate with --multirun flag)
 # metric_to_optimize: forget_acc_t1
 # optimize_direction: minimize
