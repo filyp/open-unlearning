@@ -48,6 +48,7 @@ class CIR(UnlearnTrainer):
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
         for name, module in self.model.named_modules():
             if not hasattr(module, "weight"):
+                # logging.info(f"Skipping {name} because it doesn't have a weight")
                 continue
             module.weight.requires_grad = (
                 any(pattern in name for pattern in cfg.target_modules)
@@ -245,12 +246,24 @@ def parent_mlp_name(name):
 #     acts = pt.einsum("tc,dc->td", projected_acts, eig_vec)  # p @ eig_vec.T
 
 
-                # if "disr_momentum" in self.cfg:
-                #     if "token_disr_acc" not in batch:
-                #         batch["token_disr_acc"] = {}
-                #     if name not in batch["token_disr_acc"]:
-                #         batch["token_disr_acc"][name] = pt.zeros_like(token_disr)
-                #     batch["token_disr_acc"][name] *= self.cfg.disr_momentum
-                #     batch["token_disr_acc"][name] += token_disr * (1 - self.cfg.disr_momentum)
-                #     mask = batch["token_disr_acc"][name] > 0
-                # else:
+# if "disr_momentum" in self.cfg:
+#     if "token_disr_acc" not in batch:
+#         batch["token_disr_acc"] = {}
+#     if name not in batch["token_disr_acc"]:
+#         batch["token_disr_acc"][name] = pt.zeros_like(token_disr)
+#     batch["token_disr_acc"][name] *= self.cfg.disr_momentum
+#     batch["token_disr_acc"][name] += token_disr * (1 - self.cfg.disr_momentum)
+#     mask = batch["token_disr_acc"][name] > 0
+# else:
+
+# # for calculating distribution stats on the RETAIN set
+# token_mask = r_batch["attention_mask"].bool().clone()
+# token_mask[:, 0] = False  # ignore BOS token
+# if "act_pcs_to_use" in self.cfg and self.cfg.distribution == "retain":
+#     for name, module in model.named_modules():
+#         if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
+#             continue
+#         acts = module.last_act_input[token_mask].detach()
+#         # grads = module.last_grad_output[token_mask].detach()
+#         if name.endswith(".up_proj"):
+#             self.act_collapsers[name].add_vecs(acts)

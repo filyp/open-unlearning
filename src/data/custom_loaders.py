@@ -120,7 +120,7 @@ def beavertails(cfg, tokenizer, **kwargs):
         cfg["limit"] = cfg["target_limit"] * 2 + cfg["eval_limit"]
         cfg["dataset_name"] = "tmp"
 
-    samples = beavertails_single(cfg, tokenizer)["tmp"]
+    samples = beavertails_single(cfg, tokenizer, **kwargs)["tmp"]
 
     return dict(
         forget=samples[: cfg.target_limit],
