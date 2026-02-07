@@ -3,6 +3,7 @@
 defaults:
   - /trainer@relearning_trainer: finetune
   - override /model: Llama-3.2-1B
+  # - override /model: Qwen3-0.6B-Base
   # - override /model: MobileLLM-125M
   # - override /model: MobileLLM-600M
   # Delete inherited TOFU datasets from base data/unlearn.yaml

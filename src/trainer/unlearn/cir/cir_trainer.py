@@ -10,6 +10,7 @@ from trainer.unlearn.base import UnlearnTrainer
 from data.utils import prep_batch
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
+    save_kl_mask,
     normalize_grads,
     sanitize_tensor,
 )
@@ -31,10 +32,6 @@ class CalculateDistributionStatsCallback(TrainerCallback):
         for collapser in self.collapsers:
             collapser.process_saved_vecs()
         self.trainer.collapsers_initialized = True
-
-
-def layer_num(name):
-    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
 
 
 class CIR(UnlearnTrainer):
@@ -167,9 +164,11 @@ class CIR(UnlearnTrainer):
             if "retain_momentum" in self.cfg:
                 ref_grad = module.weight.reference_grad
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
-                mask = token_disr > 0
-                acts = acts[mask]
-                grads = grads[mask]
+                kl_mask = token_disr > 0
+                _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
+                save_kl_mask(batch, token_mask, kl_mask, _path)
+                acts = acts[kl_mask]
+                grads = grads[kl_mask]
 
                 # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
                 # row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
@@ -219,6 +218,10 @@ def parent_mlp_name(name):
     parent_name = name.rsplit(".", 1)[0]
     assert parent_name.endswith(".mlp")
     return parent_name
+
+
+def layer_num(name):
+    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
 
 
 # # minimal steps to run:

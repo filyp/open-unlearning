@@ -1,8 +1,9 @@
 import random
+from datetime import datetime
+from pathlib import Path
 
 import torch as pt
 
-import trainer.unlearn.cir.hooks as hooks
 from data.utils import batched
 
 
@@ -10,30 +11,6 @@ def get_token_mask(labels):
     token_mask = labels != -100
     token_mask[:, 0] = False  # ignore BOS token
     return token_mask
-
-
-def compute_per_text_quantile_mask(
-    dists: pt.Tensor, token_mask: pt.Tensor, quantile: float
-) -> pt.Tensor:
-    """Compute quantile threshold per text in batch and return relevance mask.
-
-    Args:
-        dists: Distance values for each token (1D tensor of length N where N is number of True values in token_mask)
-        token_mask: Boolean mask indicating which tokens are valid (as in labels != -100) (2D tensor of shape [batch_size, seq_len])
-        quantile: Quantile threshold (0-1) for filtering
-
-    Returns:
-        Boolean mask of same length as dists, True for tokens above their text's quantile threshold
-    """
-    # apparently this is quite slow, so it's better to compute only at the beginning and store the masks
-    batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
-    act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
-    for text_idx in batch_indices.unique():
-        text_mask = batch_indices == text_idx
-        text_dists = dists[text_mask]
-        threshold = text_dists.quantile(quantile)
-        act_relev_mask[text_mask] = text_dists > threshold
-    return act_relev_mask
 
 
 class PreCachingDataLoader:
@@ -45,8 +22,12 @@ class PreCachingDataLoader:
         print(f"{len(self.forget)=}, {len(self.retain)=}")
 
     def __iter__(self):
-        for i in range(len(self.forget)):
-            yield {"forget": self.forget[i], "retain": random.choice(self.retain)}
+        for idx in range(len(self.forget)):
+            yield {
+                "forget": self.forget[idx],
+                "retain": random.choice(self.retain),
+                "idx": idx,
+            }
 
     def __len__(self):
         return len(self.forget)
@@ -56,55 +37,21 @@ def normalize_grads(model):
     # L2 norm of weight.grad, computed across all the trainable weights
     update_norm = pt.sqrt(
         sum(
-            p.grad.float().norm() ** 2 for p in model.parameters() if p.grad is not None
+            param.grad.float().norm() ** 2
+            for param in model.parameters()
+            if param.grad is not None
         )
     )
     # normalize the grads
-    for p in model.parameters():
-        if p.grad is not None:
-            p.grad /= update_norm
-
-
-def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
-    if "relev_mask" not in batch:
-        batch["relev_mask"] = {}
-
-    if name in batch["relev_mask"]:
-        # we use the caching, because recalculating these can be slow
-        relev_mask = batch["relev_mask"][name]
-    else:
-        norms = acts.norm(dim=1)
-        relev_mask = compute_per_text_quantile_mask(norms, token_mask, quantile)
-        batch["relev_mask"][name] = relev_mask
-    return relev_mask
+    for param in model.parameters():
+        if param.grad is not None:
+            param.grad /= update_norm
 
 
 def sanitize_tensor(t, epsilon):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
-
-
-def install_hooks(model, layer_range, forget_loss, train_to_layer):
-    # hooks for forget loss
-    for layer_id in range(*layer_range):
-        mlp = model.model.layers[layer_id].mlp
-        if forget_loss == "mlp_breaking":
-            mlp.down_proj.register_forward_hook(hooks.save_act_output)
-        elif forget_loss == "mlp_activation_breaking":
-            mlp.down_proj.register_forward_hook(hooks.save_act_input)
-        elif forget_loss.startswith("gate_and_up_breaking"):
-            mlp.gate_proj.register_forward_hook(hooks.save_act_output)
-            mlp.up_proj.register_forward_hook(hooks.save_act_output)
-
-    for mlp in mlp_iter(model, [0, train_to_layer]):
-        # hooks for component collapse
-        for module in [mlp.up_proj, mlp.gate_proj]:
-            module.register_forward_hook(hooks.save_act_input)
-            module.register_full_backward_hook(hooks.save_grad_output)
-        # additional hooks for computing grad collapse more efficiently
-        mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
-        mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
 
 def mlp_iter(model, layer_range):
@@ -119,6 +66,88 @@ def mlp_iter(model, layer_range):
     else:
         for layer_id in range(*layer_range):
             yield model.model.layers[layer_id].mlp
+
+
+def save_kl_mask(inputs, token_mask, kl_mask, save_path):
+    masks_path = Path(save_path)
+    masks_path.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mask_path = masks_path / f"{timestamp}.pt"
+
+    token_mask_indices = token_mask.nonzero()
+    kl_mask_indices = token_mask_indices[kl_mask.cpu()]
+    kl_mask_2d = pt.zeros_like(token_mask)
+    kl_mask_2d[kl_mask_indices[:, 0], kl_mask_indices[:, 1]] = 1
+    kl_mask_2d = kl_mask_2d & token_mask
+
+    pt.save(
+        {
+            "input_ids": inputs["input_ids"].cpu(),
+            "attention_mask": inputs["attention_mask"].cpu(),
+            "kl_mask_2d": kl_mask_2d.cpu(),
+        },
+        mask_path,
+    )
+
+
+# def install_hooks(model, layer_range, forget_loss, train_to_layer):
+#     # hooks for forget loss
+#     for layer_id in range(*layer_range):
+#         mlp = model.model.layers[layer_id].mlp
+#         if forget_loss == "mlp_breaking":
+#             mlp.down_proj.register_forward_hook(hooks.save_act_output)
+#         elif forget_loss == "mlp_activation_breaking":
+#             mlp.down_proj.register_forward_hook(hooks.save_act_input)
+#         elif forget_loss.startswith("gate_and_up_breaking"):
+#             mlp.gate_proj.register_forward_hook(hooks.save_act_output)
+#             mlp.up_proj.register_forward_hook(hooks.save_act_output)
+
+#     for mlp in mlp_iter(model, [0, train_to_layer]):
+#         # hooks for component collapse
+#         for module in [mlp.up_proj, mlp.gate_proj]:
+#             module.register_forward_hook(hooks.save_act_input)
+#             module.register_full_backward_hook(hooks.save_grad_output)
+#         # additional hooks for computing grad collapse more efficiently
+#         mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
+#         mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
+
+
+# def get_relev_mask_with_caching(batch, name, acts, token_mask, quantile):
+#     if "relev_mask" not in batch:
+#         batch["relev_mask"] = {}
+
+#     if name in batch["relev_mask"]:
+#         # we use the caching, because recalculating these can be slow
+#         relev_mask = batch["relev_mask"][name]
+#     else:
+#         norms = acts.norm(dim=1)
+#         relev_mask = compute_per_text_quantile_mask(norms, token_mask, quantile)
+#         batch["relev_mask"][name] = relev_mask
+#     return relev_mask
+
+
+# def compute_per_text_quantile_mask(
+#     dists: pt.Tensor, token_mask: pt.Tensor, quantile: float
+# ) -> pt.Tensor:
+#     """Compute quantile threshold per text in batch and return relevance mask.
+
+#     Args:
+#         dists: Distance values for each token (1D tensor of length N where N is number of True values in token_mask)
+#         token_mask: Boolean mask indicating which tokens are valid (as in labels != -100) (2D tensor of shape [batch_size, seq_len])
+#         quantile: Quantile threshold (0-1) for filtering
+
+#     Returns:
+#         Boolean mask of same length as dists, True for tokens above their text's quantile threshold
+#     """
+#     # apparently this is quite slow, so it's better to compute only at the beginning and store the masks
+#     batch_indices = pt.nonzero(token_mask)[:, 0].to(dists.device)
+#     act_relev_mask = pt.zeros(len(dists), dtype=pt.bool, device=dists.device)
+#     for text_idx in batch_indices.unique():
+#         text_mask = batch_indices == text_idx
+#         text_dists = dists[text_mask]
+#         threshold = text_dists.quantile(quantile)
+#         act_relev_mask[text_mask] = text_dists > threshold
+#     return act_relev_mask
 
 
 # # Extract eigendecomposition and apply mahalanobis projection
