@@ -68,7 +68,7 @@ def mlp_iter(model, layer_range):
             yield model.model.layers[layer_id].mlp
 
 
-def save_kl_mask(inputs, token_mask, kl_mask, save_path):
+def save_kl_mask(inputs, token_mask, kl_mask, save_path, token_loss_delta=None):
     masks_path = Path(save_path)
     masks_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,14 +80,14 @@ def save_kl_mask(inputs, token_mask, kl_mask, save_path):
     kl_mask_2d[kl_mask_indices[:, 0], kl_mask_indices[:, 1]] = 1
     kl_mask_2d = kl_mask_2d & token_mask
 
-    pt.save(
-        {
-            "input_ids": inputs["input_ids"].cpu(),
-            "attention_mask": inputs["attention_mask"].cpu(),
-            "kl_mask_2d": kl_mask_2d.cpu(),
-        },
-        mask_path,
-    )
+    data = {
+        "input_ids": inputs["input_ids"].cpu(),
+        "attention_mask": inputs["attention_mask"].cpu(),
+        "kl_mask_2d": kl_mask_2d.cpu(),
+    }
+    if token_loss_delta is not None:
+        data["token_loss_delta"] = token_loss_delta.cpu()
+    pt.save(data, mask_path)
 
 
 # def install_hooks(model, layer_range, forget_loss, train_to_layer):

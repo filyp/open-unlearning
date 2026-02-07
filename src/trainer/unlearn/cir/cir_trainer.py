@@ -3,6 +3,7 @@ import logging
 import re
 
 import torch as pt
+import torch.nn.functional as F
 from transformers import TrainerCallback
 
 import trainer.unlearn.cir.loss_fns as loss_fns
@@ -29,6 +30,8 @@ class CalculateDistributionStatsCallback(TrainerCallback):
         self.collapsers = collapsers
 
     def on_epoch_end(self, args, state, control, **kwargs):
+        # if self.trainer.collapsers_initialized:
+        #     return
         for collapser in self.collapsers:
             collapser.process_saved_vecs()
         self.trainer.collapsers_initialized = True
@@ -123,6 +126,7 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
         forget_loss = loss_fns.label_logits(output, batch)
+
         # if "initial_label_logits" not in batch:
         #     assert not self.collapsers_initialized, "epoch number != 0"
         #     batch["initial_label_logits"] = loss_fns.get_label_logits(
@@ -166,7 +170,7 @@ class CIR(UnlearnTrainer):
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
                 kl_mask = token_disr > 0
                 _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
-                save_kl_mask(batch, token_mask, kl_mask, _path)
+                # save_kl_mask(batch, token_mask, kl_mask, _path, token_loss_delta)
                 acts = acts[kl_mask]
                 grads = grads[kl_mask]
 
@@ -270,3 +274,19 @@ def layer_num(name):
 #         # grads = module.last_grad_output[token_mask].detach()
 #         if name.endswith(".up_proj"):
 #             self.act_collapsers[name].add_vecs(acts)
+
+# # per-token CE loss [B, S], position i = loss for predicting token i
+# with pt.no_grad():
+#     logits = output.logits[:, :-1]
+#     labels = batch["labels"][:, 1:].to(logits.device)
+#     ce = F.cross_entropy(
+#         logits.reshape(-1, logits.size(-1)),
+#         labels.reshape(-1),
+#         ignore_index=-100,
+#         reduction="none",
+#     ).reshape(logits.shape[:2])
+#     per_token_loss = pt.zeros(batch["input_ids"].shape, device=ce.device)
+#     per_token_loss[:, 1:] = ce
+# if "initial_token_loss" not in batch:
+#     batch["initial_token_loss"] = per_token_loss.cpu()
+# token_loss_delta = per_token_loss.cpu() - batch["initial_token_loss"]
