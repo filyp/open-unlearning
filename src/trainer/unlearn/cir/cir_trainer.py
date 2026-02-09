@@ -3,21 +3,21 @@ import logging
 import re
 
 import torch as pt
-import torch.nn.functional as F
+from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from transformers import TrainerCallback
 
+import trainer.unlearn.cir.hooks as hooks
 import trainer.unlearn.cir.loss_fns as loss_fns
-from trainer.unlearn.base import UnlearnTrainer
 from data.utils import prep_batch
+from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
-    save_kl_mask,
     normalize_grads,
     sanitize_tensor,
+    save_kl_mask,
 )
-from trainer.unlearn.cir.kl_utils import KLComputor
-import trainer.unlearn.cir.hooks as hooks
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
+from trainer.unlearn.cir.kl_utils import KLComputor
 
 logging.basicConfig(level=logging.INFO)
 
@@ -95,8 +95,8 @@ class CIR(UnlearnTrainer):
             self.kl_computor = KLComputor(self.model, self.batches.retain)
             for param in self.model.parameters():
                 if param.requires_grad:
-                    assert not hasattr(param, "reference_grad")
-                    param.reference_grad = pt.zeros_like(param)
+                    assert not hasattr(param, "ref_grad")
+                    param.ref_grad = quantize_blockwise(pt.zeros_like(param))
 
     def get_train_dataloader(self):
         """Return dataloader over pre-batched forget/retain pairs."""
@@ -115,8 +115,10 @@ class CIR(UnlearnTrainer):
             kl.backward()
             for param in self.model.parameters():
                 if param.requires_grad:
-                    param.reference_grad *= self.cfg.retain_momentum
-                    param.reference_grad += param.grad * (1 - self.cfg.retain_momentum)
+                    ref = dequantize_blockwise(*param.ref_grad)
+                    ref *= self.cfg.retain_momentum
+                    ref += param.grad * (1 - self.cfg.retain_momentum)
+                    param.ref_grad = quantize_blockwise(ref)
 
         # ! unlearning loss
         batch = inputs["forget"]
@@ -166,7 +168,7 @@ class CIR(UnlearnTrainer):
 
             # ! MUDMAN-like operation
             if "retain_momentum" in self.cfg:
-                ref_grad = module.weight.reference_grad
+                ref_grad = dequantize_blockwise(*module.weight.ref_grad).to(model.dtype)
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
                 kl_mask = token_disr > 0
                 _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
@@ -236,8 +238,8 @@ def layer_num(name):
 # trainer.train()
 
 
-# # ref_grad = module.weight.reference_grad
-# for ref_grad in module.weight.reference_grad:
+# # ref_grad = module.weight.ref_grad
+# for ref_grad in module.weight.ref_grad:
 #     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
 #     _up_proj_name = name.replace(".gate_proj", ".up_proj")
 #     collapser = self.act_collapsers[_up_proj_name]
