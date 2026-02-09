@@ -42,15 +42,15 @@ tokenizer_cfg:
 data:
   custom_loaders:
     - loader: beavertails
-      target_limit: 512  # size of the unlearning and relearning datasets
-      eval_limit: 32  # size of the holdout harmful dataset
+      target_limit: 1536  # size of the unlearning and relearning datasets
+      eval_limit: 64  # size of the holdout harmful dataset
       split: 330k_train
       category: animal_abuse
       tokenizer: ${tokenizer_cfg}
 
     - loader: beavertails_single
       dataset_name: retain
-      limit: 1024
+      limit: 2048
       split: 330k_train
       category: safe
       tokenizer: ${tokenizer_cfg}
@@ -66,7 +66,7 @@ data:
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      limit: 32
+      limit: 64
       tokenizer: ${tokenizer_cfg}
 
 # categories = [

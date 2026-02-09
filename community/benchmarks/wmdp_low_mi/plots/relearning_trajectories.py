@@ -41,6 +41,9 @@ metrics_names = [
     "train/wikitext_loss",
     "train/wikitext_kl",
 ]
+file_name = f"{version}_3B__{split}"
+
+# %% load from wandb
 
 method_histories = {}
 for method_name in method_names:
@@ -74,13 +77,10 @@ for method_name in method_names:
         method_histories[method_name].append((unlearn_history, relearn_history))
 
 
-file_name = f"{version}_3B__{split}"
-
-# %%
 with open(f"{file_name}.pkl", "wb") as f:
     pickle.dump(method_histories, f)
 
-# %%
+# %% simply load instead from a file
 with open(f"{file_name}.pkl", "rb") as f:
     method_histories = pickle.load(f)
 

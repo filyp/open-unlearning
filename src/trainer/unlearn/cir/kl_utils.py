@@ -31,15 +31,21 @@ def create_acts_to_logits(model):
     """
     model_type = model.config.model_type
 
-    if not hasattr(model, "lm_head"):
-        # MobileLLM-style: use shared embedding weights
-        cached_embed_weight = model.model.embed_tokens.weight.detach().clone()
-        return lambda h: F.linear(h, cached_embed_weight)
+    # if not hasattr(model, "lm_head"):
+    #     # MobileLLM-style: use shared embedding weights
+    #     cached_embed_weight = model.model.embed_tokens.weight.detach().clone()
+    #     return lambda h: F.linear(h, cached_embed_weight)
 
-    cached_lm_head = copy.deepcopy(model.lm_head)
+    # Store cached_lm_head in a plain dict so that multiple KLComputors share one copy
+    # (lm_head can be ~1GB). Using a dict instead of a direct attribute prevents PyTorch
+    # from registering it as a submodule, which would pollute state_dict/save_pretrained.
+    if not hasattr(model, "_kl_cache"):
+        cached = copy.deepcopy(model.lm_head)
+        cached.requires_grad_(False)
+        model._kl_cache = {"lm_head": cached}
 
     def _acts_to_logits(hidden_states):
-        logits = cached_lm_head(hidden_states)
+        logits = model._kl_cache["lm_head"](hidden_states)
 
         if model_type == "gemma2" and model.config.final_logit_softcapping is not None:
             # based on: https://github.com/huggingface/transformers/blob/ab87f2445096554e1c28ffe896afd96fa9469444/src/transformers/models/gemma2/modeling_gemma2.py#L539-L542

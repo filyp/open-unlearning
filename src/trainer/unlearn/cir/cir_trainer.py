@@ -14,7 +14,6 @@ from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
     normalize_grads,
     sanitize_tensor,
-    save_kl_mask,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
@@ -106,7 +105,7 @@ class CIR(UnlearnTrainer):
         model.train()
 
         # ! retain pass
-        if "retain_momentum" in self.cfg:
+        if "retain_momentum" in self.cfg and self.collapsers_initialized:
             r_batch = inputs["retain"]
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
@@ -128,15 +127,6 @@ class CIR(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
         forget_loss = loss_fns.label_logits(output, batch)
-
-        # if "initial_label_logits" not in batch:
-        #     assert not self.collapsers_initialized, "epoch number != 0"
-        #     batch["initial_label_logits"] = loss_fns.get_label_logits(
-        #         output, batch
-        #     ).detach()  # .cpu()
-        # forget_loss = loss_fns.saturating_logits(
-        #     output, batch, batch["initial_label_logits"], self.cfg.sat_speed
-        # )
         forget_loss.backward()
 
         if "grad_pcs_to_use" in self.cfg:
@@ -292,3 +282,12 @@ def layer_num(name):
 # if "initial_token_loss" not in batch:
 #     batch["initial_token_loss"] = per_token_loss.cpu()
 # token_loss_delta = per_token_loss.cpu() - batch["initial_token_loss"]
+
+        # if "initial_label_logits" not in batch:
+        #     assert not self.collapsers_initialized, "epoch number != 0"
+        #     batch["initial_label_logits"] = loss_fns.get_label_logits(
+        #         output, batch
+        #     ).detach()  # .cpu()
+        # forget_loss = loss_fns.saturating_logits(
+        #     output, batch, batch["initial_label_logits"], self.cfg.sat_speed
+        # )
