@@ -7,8 +7,8 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from transformers import TrainerCallback
 
 import trainer.unlearn.cir.hooks as hooks
-import trainer.unlearn.cir.loss_fns as loss_fns
 from data.utils import prep_batch
+from trainer.utils import label_logits
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
@@ -29,18 +29,16 @@ class CalculateDistributionStatsCallback(TrainerCallback):
         self.collapsers = collapsers
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        # if self.trainer.collapsers_initialized:
-        #     return
         for collapser in self.collapsers:
             collapser.process_saved_vecs()
-        self.trainer.collapsers_initialized = True
+        self.trainer.after_first_epoch = True
 
 
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-        self.collapsers_initialized = False
+        self.after_first_epoch = False
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
@@ -105,7 +103,7 @@ class CIR(UnlearnTrainer):
         model.train()
 
         # ! retain pass
-        if "retain_momentum" in self.cfg and self.collapsers_initialized:
+        if "retain_momentum" in self.cfg and self.after_first_epoch:
             r_batch = inputs["retain"]
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
@@ -126,7 +124,7 @@ class CIR(UnlearnTrainer):
 
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
-        forget_loss = loss_fns.label_logits(output, batch)
+        forget_loss = label_logits(output.logits, batch["labels"])
         forget_loss.backward()
 
         if "grad_pcs_to_use" in self.cfg:
@@ -145,7 +143,7 @@ class CIR(UnlearnTrainer):
                 if name.endswith(".up_proj"):
                     self.act_collapsers[name].add_vecs(acts)
 
-            if not self.collapsers_initialized:
+            if not self.after_first_epoch:
                 continue  # so only collect activations and not train
 
             if "act_pcs_to_use" in self.cfg:
@@ -159,24 +157,27 @@ class CIR(UnlearnTrainer):
             # ! MUDMAN-like operation
             if "retain_momentum" in self.cfg:
                 ref_grad = dequantize_blockwise(*module.weight.ref_grad).to(model.dtype)
+
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
                 kl_mask = token_disr > 0
-                _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
+                # _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
                 # save_kl_mask(batch, token_mask, kl_mask, _path, token_loss_delta)
                 acts = acts[kl_mask]
                 grads = grads[kl_mask]
 
-                # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
+                # # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
                 # row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
-                # acts *= col_mask
+                # # acts *= col_mask
                 # grads *= row_mask
 
             # without the projections, this is equivalent to normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
+            # would be possible to optimize training by disabling the first grad computation,
+            # since we discard these grads anyway
 
         normalize_grads(model)
 
-        if not self.collapsers_initialized:
+        if not self.after_first_epoch:
             # zero gradients so that optimizer.step() is no-op
             model.zero_grad()
 
@@ -198,7 +199,7 @@ class CIR(UnlearnTrainer):
 
             self.grad_collapsers[name].add_vecs(grad_output)
 
-            if not self.collapsers_initialized:
+            if not self.after_first_epoch:
                 continue  # first epoch, so only collect activations and not train
 
             out_collapsed = (
@@ -283,11 +284,38 @@ def layer_num(name):
 #     batch["initial_token_loss"] = per_token_loss.cpu()
 # token_loss_delta = per_token_loss.cpu() - batch["initial_token_loss"]
 
-        # if "initial_label_logits" not in batch:
-        #     assert not self.collapsers_initialized, "epoch number != 0"
-        #     batch["initial_label_logits"] = loss_fns.get_label_logits(
-        #         output, batch
-        #     ).detach()  # .cpu()
-        # forget_loss = loss_fns.saturating_logits(
-        #     output, batch, batch["initial_label_logits"], self.cfg.sat_speed
-        # )
+# if "initial_label_logits" not in batch:
+#     assert not self.after_first_epoch, "epoch number != 0"
+#     batch["initial_label_logits"] = loss_fns.get_label_logits(
+#         output, batch
+#     ).detach()  # .cpu()
+# forget_loss = loss_fns.saturating_logits(
+#     output.logits, batch["labels"], batch["initial_label_logits"], self.cfg.sat_speed
+# )
+
+
+# def create_optimizer(self):
+#     params = [p for p in self.model.parameters() if p.requires_grad]
+#     self.optimizer = pt.optim.SGD(
+#         params,
+#         lr=self.args.learning_rate,
+#         momentum=self.cfg.get("sgd_momentum", 0.0),
+#     )
+#     return self.optimizer
+# # sgd_momentum: 0.9
+
+
+# per_seq_losses = []
+# for i in range(output.logits.shape[0]):
+#     s_logits = output.logits[i].unsqueeze(0)
+#     s_labels = batch["labels"][i].unsqueeze(0)
+#     s_forget_loss = loss_fns.label_logits(s_logits, s_labels)
+#     per_seq_losses.append(s_forget_loss)
+# per_seq_losses = pt.stack(per_seq_losses)
+# if not self.after_first_epoch:
+#     assert "init_seq_losses" not in batch
+#     batch["init_seq_losses"] = per_seq_losses.detach()
+# diff = per_seq_losses - batch["init_seq_losses"]
+# sat_speed = 0.1
+# unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
+# forget_loss = unlearning_saturations.mean()

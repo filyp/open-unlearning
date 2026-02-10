@@ -1,8 +1,10 @@
-import torch
 import random
+
 import numpy as np
-from torch import nn
+import torch
+import torch as pt
 import torch.nn.functional as F
+from torch import nn
 
 
 def seed_everything(seed=42):
@@ -132,3 +134,30 @@ def compute_satimp_loss(model, inputs, beta1, beta2):
         shift_labels.view(-1) != -100
     ].mean()
     return forget_loss, outputs
+
+
+def _get_label_logits(logits, labels):
+    mask = labels != -100
+    mask = mask[:, 1:]
+
+    labels = labels[:, 1:][mask]
+    logits = logits[:, :-1][mask]
+    assert labels.shape == logits.shape[:1]
+    assert len(logits.shape) == 2
+
+    return logits[pt.arange(len(labels)), labels]
+
+
+def label_logits(logits, labels):
+    label_logits = _get_label_logits(logits, labels)
+    clipped_label_logits = label_logits.clip(min=0)
+    return clipped_label_logits.float().mean()
+
+
+# # loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
+# def saturating_logits(logits, labels, initial_label_logits, sat_speed=1):
+#     label_logits = _get_label_logits(logits, labels)
+#     initial_label_logits = initial_label_logits.to(logits.device)
+#     diff = label_logits.float() - initial_label_logits.float()
+#     unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
+#     return unlearning_saturations.mean()

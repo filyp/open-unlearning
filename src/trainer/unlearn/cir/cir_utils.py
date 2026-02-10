@@ -7,12 +7,6 @@ import torch as pt
 from data.utils import batched
 
 
-def get_token_mask(labels):
-    token_mask = labels != -100
-    token_mask[:, 0] = False  # ignore BOS token
-    return token_mask
-
-
 class PreCachingDataLoader:
     def __init__(self, train_dataset, collator, batch_size):
         # * go through whole dataset, to prepare the batches in advance

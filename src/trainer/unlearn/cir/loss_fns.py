@@ -1,34 +1,15 @@
 import torch as pt
-import torch.nn.functional as F
 
-from trainer.unlearn.cir.cir_utils import get_token_mask, mlp_iter
-
-
-def get_label_logits(output, batch):
-    mask = get_token_mask(batch["labels"])
-    mask = mask[:, 1:]
-
-    labels = batch["labels"][:, 1:][mask]
-    logits = output.logits[:, :-1][mask]
-    assert labels.shape == logits.shape[:1]
-    assert len(logits.shape) == 2
-
-    return logits[pt.arange(len(labels)), labels]
+from trainer.unlearn.cir.cir_utils import mlp_iter
 
 
-# loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
-def label_logits(output, batch):
-    label_logits = get_label_logits(output, batch)
-    clipped_label_logits = label_logits.clip(min=0)
-    return clipped_label_logits.float().mean()
+# todo, this file can be archived
 
 
-def saturating_logits(output, batch, initial_label_logits, sat_speed=1):
-    label_logits = get_label_logits(output, batch)
-    initial_label_logits = initial_label_logits.to(output.logits.device)
-    diff = label_logits.float() - initial_label_logits.float()
-    unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
-    return unlearning_saturations.mean()
+def get_token_mask(labels):
+    token_mask = labels != -100
+    token_mask[:, 0] = False  # ignore BOS token
+    return token_mask
 
 
 def mlp_breaking(model, batch, layer_range):
