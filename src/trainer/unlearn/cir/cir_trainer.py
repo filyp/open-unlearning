@@ -29,6 +29,7 @@ class CalculateDistributionStatsCallback(TrainerCallback):
         self.collapsers = collapsers
 
     def on_epoch_end(self, args, state, control, **kwargs):
+        # todo: simplify, and store collapsers inside modules, like in CIR_MoE
         for collapser in self.collapsers:
             collapser.process_saved_vecs()
         self.trainer.after_first_epoch = True
@@ -42,6 +43,7 @@ class CIR(UnlearnTrainer):
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
+        self.model.requires_grad_(False)  # to be sure bias params are not trained
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
         for name, module in self.model.named_modules():
             if not hasattr(module, "weight"):
@@ -108,8 +110,7 @@ class CIR(UnlearnTrainer):
             r_batch = inputs["retain"]
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
-            kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
-            # print(f"retain kl: {kl}, ce_loss: {ce_loss}, num_tokens: {num_tokens}")
+            kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
             for param in self.model.parameters():
                 if param.requires_grad:
@@ -218,8 +219,8 @@ def parent_mlp_name(name):
     return parent_name
 
 
-def layer_num(name):
-    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
+def layer_num(module_name):
+    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
 
 
 # # minimal steps to run:

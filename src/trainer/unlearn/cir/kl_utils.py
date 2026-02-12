@@ -13,6 +13,7 @@ def cache_last_hidden_states(model, batches):
 
     Note: If GPU memory is tight, you may want to move them to RAM.
     """
+    model.eval()
     for batch in batches:
         with pt.no_grad():
             output = model(**prep_batch(batch, model.device), output_hidden_states=True)

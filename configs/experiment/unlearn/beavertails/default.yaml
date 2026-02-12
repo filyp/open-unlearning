@@ -27,12 +27,14 @@ eval:
     handler: KLEvaluator
     dataset_name: wikitext
     disr_budget: 0.01
+    # disr_budget: 0.15
   safe_eval:
     handler: KLEvaluator
     dataset_name: safe_eval  # like retain, but different split
     disr_budget: 0.01
+    # disr_budget: 0.15
   holdout_harmful:
-    handler: LossEvaluator
+    handler: KLEvaluator
     dataset_name: holdout_harmful
     disr_budget: null
 
@@ -43,6 +45,7 @@ data:
   custom_loaders:
     - loader: beavertails
       target_limit: 1536  # size of the unlearning and relearning datasets
+      # target_limit: 256
       eval_limit: 64  # size of the holdout harmful dataset
       split: 330k_train
       category: animal_abuse
@@ -51,6 +54,7 @@ data:
     - loader: beavertails_single
       dataset_name: retain
       limit: 2048
+      # limit: 256
       split: 330k_train
       category: safe
       tokenizer: ${tokenizer_cfg}

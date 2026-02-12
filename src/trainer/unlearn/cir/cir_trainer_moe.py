@@ -13,7 +13,6 @@ from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.cir_utils import (
     PreCachingDataLoader,
     normalize_grads,
-    sanitize_tensor,
 )
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
@@ -24,13 +23,15 @@ logging.basicConfig(level=logging.INFO)
 class CalculateDistributionStatsCallback(TrainerCallback):
     """Callback to extract distribution stats at epoch end."""
 
-    def __init__(self, trainer, collapsers):
+    def __init__(self, trainer):
         self.trainer = trainer
-        self.collapsers = collapsers
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        for collapser in self.collapsers:
-            collapser.process_saved_vecs()
+        for module in self.trainer.model.modules():
+            if hasattr(module, "act_collapser"):
+                module.act_collapser.process_saved_vecs()
+            if hasattr(module, "grad_collapser"):
+                module.grad_collapser.process_saved_vecs()
         self.trainer.after_first_epoch = True
 
 
@@ -42,6 +43,7 @@ class CIR_MoE(UnlearnTrainer):
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
+        self.model.requires_grad_(False)  # to be sure bias params are not trained
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
         for name, module in self.model.named_modules():
             if not hasattr(module, "weight"):
@@ -51,16 +53,21 @@ class CIR_MoE(UnlearnTrainer):
                 any(pattern in name for pattern in cfg.target_modules)
                 and layer_num(name) < train_to_layer
             )
-            if module.weight.requires_grad:  # install hooks
+            if module.weight.requires_grad:
+                # install hooks
                 module.register_forward_hook(hooks.save_act_input)
                 module.register_full_backward_hook(hooks.save_grad_output)
+                module.last_act_input = None
+                module.last_grad_output = None
+                # install collapsers
+                if "act_pcs_to_use" in self.cfg:
+                    pass
+                if "grad_pcs_to_use" in self.cfg:
+                    module.grad_collapser = MahalanobisCollapser(
+                        cfg.grad_pcs_to_use, module.weight.device
+                    )
 
-        # additional hooks for computing grad collapse more efficiently
-        if "grad_pcs_to_use" in self.cfg:
-            for layer_id in range(train_to_layer):
-                mlp = self.model.model.layers[layer_id].mlp
-                mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
-                mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
+        self.add_callback(CalculateDistributionStatsCallback(self))
 
         # pre-cache batches (handy for storing batch-related data later)
         self.batches = PreCachingDataLoader(
@@ -68,25 +75,6 @@ class CIR_MoE(UnlearnTrainer):
             self.data_collator,
             self.args.per_device_train_batch_size,
         )
-
-        # register collapsers, that calculate distribution stats, and later collapse
-        _all_collapsers = []
-        if "act_pcs_to_use" in self.cfg:
-            self.act_collapsers = {
-                name: MahalanobisCollapser(cfg.act_pcs_to_use, module.weight.device)
-                for name, module in self.model.named_modules()
-                if name.endswith(".up_proj")
-            }
-            _all_collapsers += list(self.act_collapsers.values())
-        if "grad_pcs_to_use" in self.cfg:
-            self.grad_collapsers = {
-                name: MahalanobisCollapser(cfg.grad_pcs_to_use, module.weight.device)
-                for name, module in self.model.named_modules()
-                if name.endswith(".down_proj")
-            }
-            _all_collapsers += list(self.grad_collapsers.values())
-
-        self.add_callback(CalculateDistributionStatsCallback(self, _all_collapsers))
 
         # ! prepare retain
         if "retain_momentum" in self.cfg:
@@ -108,8 +96,7 @@ class CIR_MoE(UnlearnTrainer):
             r_batch = inputs["retain"]
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
-            kl, ce_loss, num_tokens = self.kl_computor.get_kl(r_batch)
-            # print(f"retain kl: {kl}, ce_loss: {ce_loss}, num_tokens: {num_tokens}")
+            kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
             for param in self.model.parameters():
                 if param.requires_grad:
@@ -122,55 +109,62 @@ class CIR_MoE(UnlearnTrainer):
         batch = inputs["forget"]
         token_mask = batch["attention_mask"].bool().clone()
         token_mask[:, 0] = False  # ignore BOS token
+        # todo, implement token masking for moe
 
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
         forget_loss = label_logits(output.logits, batch["labels"])
         forget_loss.backward()
 
-        if "grad_pcs_to_use" in self.cfg:
-            grad_corrections = self.get_grad_correction(token_mask)
-
         for name, module in model.named_modules():
             if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
                 continue
 
-            acts = module.last_act_input[token_mask].detach()
-            grads = module.last_grad_output[token_mask].detach()
-            assert acts.shape == (token_mask.sum(), module.weight.shape[1])
-            assert grads.shape == (token_mask.sum(), module.weight.shape[0])
+            # acts = module.last_act_input[token_mask].detach()
+            # grads = module.last_grad_output[token_mask].detach()
+            # assert acts.shape == (token_mask.sum(), module.weight.shape[1])
+            # assert grads.shape == (token_mask.sum(), module.weight.shape[0])
 
-            if "act_pcs_to_use" in self.cfg:
-                if name.endswith(".up_proj"):
-                    self.act_collapsers[name].add_vecs(acts)
+            if module.last_act_input is None or module.last_grad_output is None:
+                # some experts may be never chosen, and so have no acts and grads
+                continue
+
+            acts = module.last_act_input.detach()
+            grads = module.last_grad_output.detach()
+            module.last_act_input = None
+            module.last_grad_output = None
+            # we need to cast, because sometimes the router causes upcast to float32
+            acts = acts.to(model.dtype)
+            grads = grads.to(model.dtype)
+
+            # if "act_pcs_to_use" in self.cfg:
+            #     if name.endswith(".up_proj"):
+            #         self.act_collapsers[name].add_vecs(acts)
+            if "grad_pcs_to_use" in self.cfg:
+                module.grad_collapser.add_vecs(grads)
 
             if not self.after_first_epoch:
                 continue  # so only collect activations and not train
 
-            if "act_pcs_to_use" in self.cfg:
-                # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
-                _up_proj_name = name.replace(".gate_proj", ".up_proj")
-                acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
-
+            # if "act_pcs_to_use" in self.cfg:
+            #     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
+            #     _up_proj_name = name.replace(".gate_proj", ".up_proj")
+            #     acts = self.act_collapsers[_up_proj_name].collapse(acts).to(model.dtype)
             if "grad_pcs_to_use" in self.cfg:
-                grads *= grad_corrections[parent_mlp_name(name)]
+                if not hasattr(module.grad_collapser, "mean"):
+                    breakpoint()
+                grads = module.grad_collapser.collapse(grads).to(model.dtype)
 
             # ! MUDMAN-like operation
             if "retain_momentum" in self.cfg:
                 ref_grad = dequantize_blockwise(*module.weight.ref_grad).to(model.dtype)
-
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
                 kl_mask = token_disr > 0
-                # _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
-                # save_kl_mask(batch, token_mask, kl_mask, _path, token_loss_delta)
                 acts = acts[kl_mask]
                 grads = grads[kl_mask]
 
-                # # col_mask = pt.einsum("ij,ti->tj", ref_grad, grads) * acts > 0
-                # row_mask = pt.einsum("ij,tj->ti", ref_grad, acts) * grads > 0
-                # # acts *= col_mask
-                # grads *= row_mask
-
+            # if acts.dtype != grads.dtype:
+            #     breakpoint()
             # without the projections, this is equivalent to normal backprop
             module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
             # would be possible to optimize training by disabling the first grad computation,
@@ -184,42 +178,15 @@ class CIR_MoE(UnlearnTrainer):
 
         return forget_loss.detach()
 
-    def get_grad_correction(self, token_mask):
-        grad_corrections = {}
-        for name, module in self.model.named_modules():
-            if not name.endswith(".down_proj"):
-                continue
-            up_proj = self.model.get_submodule(name.replace(".down_proj", ".up_proj"))
-            if not up_proj.weight.requires_grad:
-                continue
 
-            grad_input = module.last_grad_input[token_mask].detach().clone()
-            grad_output = module.last_grad_output[token_mask].detach().clone()
-            assert grad_input.shape == (token_mask.sum(), module.weight.shape[1])
-            assert grad_output.shape == (token_mask.sum(), module.weight.shape[0])
-
-            self.grad_collapsers[name].add_vecs(grad_output)
-
-            if not self.after_first_epoch:
-                continue  # first epoch, so only collect activations and not train
-
-            out_collapsed = (
-                self.grad_collapsers[name].collapse(grad_output).to(module.weight.dtype)
-            )
-            in_collapsed = out_collapsed @ module.weight  # backpropagation
-            grad_correction = in_collapsed / sanitize_tensor(grad_input, 1e-6)
-            grad_corrections[parent_mlp_name(name)] = grad_correction
-        return grad_corrections
+# def parent_mlp_name(name):
+#     parent_name = name.rsplit(".", 1)[0]
+#     assert parent_name.endswith(".mlp")
+#     return parent_name
 
 
-def parent_mlp_name(name):
-    parent_name = name.rsplit(".", 1)[0]
-    assert parent_name.endswith(".mlp")
-    return parent_name
-
-
-def layer_num(name):
-    return int(re.search(r"\.layers\.(\d+)\.", name).group(1))
+def layer_num(module_name):
+    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
 
 
 # # minimal steps to run:
