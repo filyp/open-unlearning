@@ -1,0 +1,26 @@
+defaults:
+  - finetune
+  - /hydra/sweeper: CIR  # same as non-MoE CIR
+
+handler: CIR_MoE
+args:
+  optim: sgd  # adam underperforms
+  learning_rate: 0.001
+  lr_scheduler_type: constant
+  gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
+
+method_args:
+  cfg:
+    # act_pcs_to_use: 500
+    # grad_pcs_to_use: 100
+
+    target_modules:
+      - gate_proj
+      - up_proj
+
+    # retain_momentum: 0.9
+
+    # train_first_layers: 0.5
+    train_first_layers: 0.75
+    # train_first_layers: 1
+    

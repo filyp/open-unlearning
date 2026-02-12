@@ -1,0 +1,16 @@
+model_args:
+  pretrained_model_name_or_path: "microsoft/Phi-tiny-MoE-instruct"
+  # for this model, flash attention conflicts with right padding
+  attn_implementation: null
+  torch_dtype: bfloat16
+  trust_remote_code: true
+tokenizer_args:
+  pretrained_model_name_or_path: "microsoft/Phi-tiny-MoE-instruct"
+template_args:
+  apply_chat_template: False
+  # todo: this is actually an instruct model, so we should add a template
+  # user_start_tag: "Question: "
+  # user_end_tag: "\n"
+  # asst_start_tag: "Answer: "
+  # asst_end_tag: "\n\n"
+# note: 4.51.3 supports this model, but newer 4.57 fails

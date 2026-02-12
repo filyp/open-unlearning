@@ -34,7 +34,7 @@ class CalculateDistributionStatsCallback(TrainerCallback):
         self.trainer.after_first_epoch = True
 
 
-class CIR(UnlearnTrainer):
+class CIR_MoE(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg

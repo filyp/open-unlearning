@@ -76,40 +76,40 @@ class MahalanobisCollapser:
     # mahal_dirs = (projected / (self.eig_val + _reg)) @ self.eig_vec.T  # works similarly good to clamping
 
 
-class ApproxMahalanobisCollapser:
-    def __init__(self, num_proj: int, device: str):
-        self.num_proj = num_proj
-        self.device = device
-        self._reset_vecs()
+# class ApproxMahalanobisCollapser:
+#     def __init__(self, num_proj: int, device: str):
+#         self.num_proj = num_proj
+#         self.device = device
+#         self._reset_vecs()
 
-    def _reset_vecs(self):
-        # Reset grads list for next epoch
-        self.cache = []
+#     def _reset_vecs(self):
+#         # Reset grads list for next epoch
+#         self.cache = []
 
-    def add_vecs(self, vecs):
-        # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
-        self.cache.append(vecs)
+#     def add_vecs(self, vecs):
+#         # self.cache.append(vecs.cpu())  # if VRAM not enough, move to RAM
+#         self.cache.append(vecs)
 
-    def process_saved_vecs(self):
-        # Compute PCA projections for gradients (to collapse)
-        if not self.cache:
-            return
-        vectors_flattened = pt.cat(self.cache)
+#     def process_saved_vecs(self):
+#         # Compute PCA projections for gradients (to collapse)
+#         if not self.cache:
+#             return
+#         vectors_flattened = pt.cat(self.cache)
 
-        vectors_flattened = vectors_flattened.to(self.device).float()
-        self.mean = vectors_flattened.mean(axis=0)
+#         vectors_flattened = vectors_flattened.to(self.device).float()
+#         self.mean = vectors_flattened.mean(axis=0)
 
-        centered_vectors = vectors_flattened - self.mean
-        _, S, V = pt.pca_lowrank(centered_vectors, self.num_proj)
-        self.eig_val = S
-        self.pca_components = V
+#         centered_vectors = vectors_flattened - self.mean
+#         _, S, V = pt.pca_lowrank(centered_vectors, self.num_proj)
+#         self.eig_val = S
+#         self.pca_components = V
 
-        self._reset_vecs()
+#         self._reset_vecs()
 
-    def collapse(self, vecs):
-        centered = vecs - self.mean
-        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.pca_components)
-        return _proj_to_mahal_dirs(centered, mahal_dirs)
+#     def collapse(self, vecs):
+#         centered = vecs - self.mean
+#         mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.pca_components)
+#         return _proj_to_mahal_dirs(centered, mahal_dirs)
 
 
 # class MahalanobisCollapserInvCov:
