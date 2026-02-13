@@ -137,10 +137,6 @@ def compute_satimp_loss(model, inputs, beta1, beta2):
     return forget_loss, outputs
 
 
-def layer_num(module_name):
-    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
-
-
 def _get_label_logits(logits, labels):
     mask = labels != -100
     mask = mask[:, 1:]
@@ -166,3 +162,24 @@ def label_logits(logits, labels):
 #     diff = label_logits.float() - initial_label_logits.float()
 #     unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
 #     return unlearning_saturations.mean()
+
+
+def normalize_grads(model):
+    # L2 norm of weight.grad, computed across all the trainable weights
+    update_norm = pt.sqrt(
+        sum(
+            param.grad.float().norm() ** 2
+            for param in model.parameters()
+            if param.grad is not None
+        )
+    )
+    # normalize the grads
+    for param in model.parameters():
+        if param.grad is not None:
+            param.grad /= update_norm
+
+
+def sanitize_tensor(t, epsilon=1e-6):
+    sign = t.sign()
+    sign[sign == 0] = 1
+    return t + sign * epsilon

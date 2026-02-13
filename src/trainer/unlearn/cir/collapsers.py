@@ -37,9 +37,9 @@ class MahalanobisCollapser:
 
     def process_saved_vecs(self):
         # Extract distribution stats from online covariance
-        if self.online_cov.mean is None:
-            # todo, don't fail silently here, better to explicitly avoid this
-            return
+        # if self.online_cov.mean is None:
+        #     # todo, don't fail silently here, better to explicitly avoid this
+        #     return
         self.mean = self.online_cov.mean
         self.eig_val = self.online_cov.eig_val[-self.PCs_to_use :]
         self.eig_vec = self.online_cov.eig_vec[:, -self.PCs_to_use :]

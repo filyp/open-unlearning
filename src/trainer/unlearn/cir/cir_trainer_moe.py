@@ -8,9 +8,8 @@ from transformers import TrainerCallback
 
 import trainer.unlearn.cir.hooks as hooks
 from data.utils import batched, prep_batch
-from trainer.utils import label_logits, layer_num
+from trainer.utils import label_logits, normalize_grads
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_utils import normalize_grads
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
 
@@ -40,7 +39,7 @@ class CIR_MoE(UnlearnTrainer):
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
-        self.model.requires_grad_(False)  # to be sure bias params are not trained
+        self.model.requires_grad_(False)  # train only modules that we specify
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
         for name, module in self.model.named_modules():
             if not hasattr(module, "weight"):
