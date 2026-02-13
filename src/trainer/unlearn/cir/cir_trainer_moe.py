@@ -93,7 +93,6 @@ class CIR_MoE(UnlearnTrainer):
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
-            output = model(**prep_batch(r_batch, model.device))
             kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
             for param in self.model.parameters():

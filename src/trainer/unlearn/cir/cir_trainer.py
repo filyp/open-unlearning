@@ -74,7 +74,6 @@ class CIR(UnlearnTrainer):
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
-            output = model(**prep_batch(r_batch, model.device))
             kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
             for param in self.model.parameters():
@@ -91,21 +90,25 @@ class CIR(UnlearnTrainer):
 
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(batch, model.device))
+        stashed_params = [p for p in model.parameters() if p.requires_grad]
+        model.requires_grad_(False)
+        batch = prep_batch(batch, model.device)
+
+        # get embeddings and make them require grad
+        embeds = model.get_input_embeddings()(batch["input_ids"])
+        embeds = embeds.detach().requires_grad_(True)
+        # now even with all weights.requires_grad=False, backward will flow
+        # because embeds.requires_grad=True creates a computation graph
+        output = model(inputs_embeds=embeds, attention_mask=batch["attention_mask"])
         forget_loss = label_logits(output.logits, batch["labels"])
         forget_loss.backward()
+
+        for p in stashed_params:  # re-enable weight gradients computation
+            p.requires_grad = True
         self.use_hooks = False
 
-        for p in model.parameters():
-            if hasattr(p, "tmpgrad"):
-                p.grad = p.tmpgrad
-                p.tmpgrad = None
-
-        normalize_grads(model)
-
-        if not self.after_first_epoch:
-            # zero gradients so that optimizer.step() is no-op
-            model.zero_grad()
+        if self.after_first_epoch:
+            normalize_grads(model)
 
         return forget_loss.detach()
 
@@ -149,9 +152,7 @@ class CIR(UnlearnTrainer):
             grads = grads[kl_mask]
 
         # without the projections, this is equivalent to normal backprop
-        module.weight.tmpgrad = pt.einsum("ti,tj->ij", grads, acts)
-        # would be possible to optimize training by disabling the first grad computation,
-        # since we discard these grads anyway
+        module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
 
     def grad_correction_hook(self, module, grad_input, grad_output):
         """Supposed to be run on down_proj. It will collapse the MLP output gradients,
