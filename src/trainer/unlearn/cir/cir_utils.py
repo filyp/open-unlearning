@@ -1,30 +1,7 @@
-import random
 from datetime import datetime
 from pathlib import Path
 
 import torch as pt
-
-from data.utils import batched
-
-
-class PreCachingDataLoader:
-    def __init__(self, train_dataset, collator, batch_size):
-        # * go through whole dataset, to prepare the batches in advance
-        self.forget = [collator(f) for f in batched(train_dataset.forget, batch_size)]
-        self.retain = [collator(r) for r in batched(train_dataset.retain, batch_size)]
-        assert len(self.forget) <= len(self.retain)
-        print(f"{len(self.forget)=}, {len(self.retain)=}")
-
-    def __iter__(self):
-        for idx in range(len(self.forget)):
-            yield {
-                "forget": self.forget[idx],
-                "retain": random.choice(self.retain),
-                "idx": idx,
-            }
-
-    def __len__(self):
-        return len(self.forget)
 
 
 def normalize_grads(model):
@@ -48,20 +25,9 @@ def sanitize_tensor(t, epsilon):
     return t + sign * epsilon
 
 
-def mlp_iter(model, layer_range):
-    model_type = model.config.model_type
-    # if layer_range is None:
-    #     layer_range = [0, len(model.model.layers)]
-
-    if model_type in ["qwen3_moe"]:
-        for layer_id in range(*layer_range):
-            for expert in model.model.layers[layer_id].mlp.experts:
-                yield expert
-    else:
-        for layer_id in range(*layer_range):
-            yield model.model.layers[layer_id].mlp
-
-
+# # do it in retain_momentum masking block:
+# _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
+# save_kl_mask(batch, token_mask, kl_mask, _path, token_loss_delta)
 def save_kl_mask(inputs, token_mask, kl_mask, save_path, token_loss_delta=None):
     masks_path = Path(save_path)
     masks_path.mkdir(parents=True, exist_ok=True)
@@ -82,6 +48,20 @@ def save_kl_mask(inputs, token_mask, kl_mask, save_path, token_loss_delta=None):
     if token_loss_delta is not None:
         data["token_loss_delta"] = token_loss_delta.cpu()
     pt.save(data, mask_path)
+
+
+# def mlp_iter(model, layer_range):
+#     model_type = model.config.model_type
+#     # if layer_range is None:
+#     #     layer_range = [0, len(model.model.layers)]
+
+#     if model_type in ["qwen3_moe"]:
+#         for layer_id in range(*layer_range):
+#             for expert in model.model.layers[layer_id].mlp.experts:
+#                 yield expert
+#     else:
+#         for layer_id in range(*layer_range):
+#             yield model.model.layers[layer_id].mlp
 
 
 # def install_hooks(model, layer_range, forget_loss, train_to_layer):
@@ -213,3 +193,23 @@ def save_kl_mask(inputs, token_mask, kl_mask, save_path, token_loss_delta=None):
 #         yield
 #     finally:
 #         model.model.layers = all_layers
+
+
+# class PreCachingDataLoader:
+#     def __init__(self, train_dataset, collator, batch_size):
+#         # * go through whole dataset, to prepare the batches in advance
+#         self.forget = [collator(f) for f in batched(train_dataset.forget, batch_size)]
+#         self.retain = [collator(r) for r in batched(train_dataset.retain, batch_size)]
+#         assert len(self.forget) <= len(self.retain)
+#         print(f"{len(self.forget)=}, {len(self.retain)=}")
+
+#     def __iter__(self):
+#         for idx in range(len(self.forget)):
+#             yield {
+#                 "forget": self.forget[idx],
+#                 "retain": random.choice(self.retain),
+#                 "idx": idx,
+#             }
+
+#     def __len__(self):
+#         return len(self.forget)

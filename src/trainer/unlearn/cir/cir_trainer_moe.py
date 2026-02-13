@@ -1,19 +1,16 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
-import re
+import random
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from transformers import TrainerCallback
 
 import trainer.unlearn.cir.hooks as hooks
-from data.utils import prep_batch
-from trainer.utils import label_logits
+from data.utils import batched, prep_batch
+from trainer.utils import label_logits, layer_num
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_utils import (
-    PreCachingDataLoader,
-    normalize_grads,
-)
+from trainer.unlearn.cir.cir_utils import normalize_grads
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
 
@@ -70,14 +67,15 @@ class CIR_MoE(UnlearnTrainer):
         self.add_callback(CalculateDistributionStatsCallback(self))
 
         # pre-cache batches (handy for storing batch-related data later)
-        self.batches = PreCachingDataLoader(
-            self.train_dataset,
-            self.data_collator,
-            self.args.per_device_train_batch_size,
-        )
-
         # ! prepare retain
         if "retain_momentum" in self.cfg:
+            # pre-cache retain batches (needed for storing data for KL computation)
+            self.retain_batches = [
+                self.data_collator(r)
+                for r in batched(
+                    self.train_dataset.retain, self.args.per_device_train_batch_size
+                )
+            ]
             self.kl_computor = KLComputor(self.model, self.batches.retain)
             for param in self.model.parameters():
                 if param.requires_grad:
@@ -93,7 +91,8 @@ class CIR_MoE(UnlearnTrainer):
 
         # ! retain pass
         if "retain_momentum" in self.cfg and self.after_first_epoch:
-            r_batch = inputs["retain"]
+            # we ignore the input["retain"], and instead use the cached retain batches
+            r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
             kl, _, _ = self.kl_computor.get_kl(r_batch)
@@ -183,10 +182,6 @@ class CIR_MoE(UnlearnTrainer):
 #     parent_name = name.rsplit(".", 1)[0]
 #     assert parent_name.endswith(".mlp")
 #     return parent_name
-
-
-def layer_num(module_name):
-    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
 
 
 # # minimal steps to run:

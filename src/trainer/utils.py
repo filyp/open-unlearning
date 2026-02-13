@@ -1,4 +1,5 @@
 import random
+import re
 
 import numpy as np
 import torch
@@ -134,6 +135,10 @@ def compute_satimp_loss(model, inputs, beta1, beta2):
         shift_labels.view(-1) != -100
     ].mean()
     return forget_loss, outputs
+
+
+def layer_num(module_name):
+    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
 
 
 def _get_label_logits(logits, labels):

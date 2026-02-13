@@ -1,22 +1,18 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
-import re
+import random
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from transformers import TrainerCallback
 
 import trainer.unlearn.cir.hooks as hooks
-from data.utils import prep_batch
-from trainer.utils import label_logits
+from data.utils import batched, prep_batch
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.cir_utils import (
-    PreCachingDataLoader,
-    normalize_grads,
-    sanitize_tensor,
-)
+from trainer.unlearn.cir.cir_utils import normalize_grads, sanitize_tensor
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
+from trainer.utils import label_logits, layer_num
 
 logging.basicConfig(level=logging.INFO)
 
@@ -64,13 +60,6 @@ class CIR(UnlearnTrainer):
                 mlp.down_proj.register_full_backward_hook(hooks.save_grad_input)
                 mlp.down_proj.register_full_backward_hook(hooks.save_grad_output)
 
-        # pre-cache batches (handy for storing batch-related data later)
-        self.batches = PreCachingDataLoader(
-            self.train_dataset,
-            self.data_collator,
-            self.args.per_device_train_batch_size,
-        )
-
         # register collapsers, that calculate distribution stats, and later collapse
         _all_collapsers = []
         if "act_pcs_to_use" in self.cfg:
@@ -92,22 +81,26 @@ class CIR(UnlearnTrainer):
 
         # ! prepare retain
         if "retain_momentum" in self.cfg:
-            self.kl_computor = KLComputor(self.model, self.batches.retain)
+            # pre-cache retain batches (needed for storing data for KL computation)
+            self.retain_batches = [
+                self.data_collator(r)
+                for r in batched(
+                    self.train_dataset.retain, self.args.per_device_train_batch_size
+                )
+            ]
+            self.kl_computor = KLComputor(self.model, self.retain_batches)
             for param in self.model.parameters():
                 if param.requires_grad:
                     assert not hasattr(param, "ref_grad")
                     param.ref_grad = quantize_blockwise(pt.zeros_like(param))
-
-    def get_train_dataloader(self):
-        """Return dataloader over pre-batched forget/retain pairs."""
-        return self.batches
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
 
         # ! retain pass
         if "retain_momentum" in self.cfg and self.after_first_epoch:
-            r_batch = inputs["retain"]
+            # we ignore the input["retain"], and instead use the cached retain batches
+            r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
             output = model(**prep_batch(r_batch, model.device))
             kl, _, _ = self.kl_computor.get_kl(r_batch)
@@ -162,8 +155,6 @@ class CIR(UnlearnTrainer):
 
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
                 kl_mask = token_disr > 0
-                # _path = f"{self.args.output_dir}/masks/{inputs['idx']}/{name}"
-                # save_kl_mask(batch, token_mask, kl_mask, _path, token_loss_delta)
                 acts = acts[kl_mask]
                 grads = grads[kl_mask]
 
@@ -217,10 +208,6 @@ def parent_mlp_name(name):
     parent_name = name.rsplit(".", 1)[0]
     assert parent_name.endswith(".mlp")
     return parent_name
-
-
-def layer_num(module_name):
-    return int(re.search(r"\.layers\.(\d+)\.", module_name).group(1))
 
 
 # # minimal steps to run:
