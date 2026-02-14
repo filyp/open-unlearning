@@ -45,7 +45,7 @@ data:
   custom_loaders:
     - loader: beavertails
       target_limit: 1536  # size of the unlearning and relearning datasets
-      # target_limit: 256
+      # target_limit: 512
       eval_limit: 64  # size of the holdout harmful dataset
       split: 330k_train
       category: animal_abuse
@@ -53,8 +53,7 @@ data:
 
     - loader: beavertails_single
       dataset_name: retain
-      limit: 2048
-      # limit: 256
+      limit: 1024
       split: 330k_train
       category: safe
       tokenizer: ${tokenizer_cfg}

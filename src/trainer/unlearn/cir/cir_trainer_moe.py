@@ -16,21 +16,6 @@ from trainer.unlearn.cir.kl_utils import KLComputor
 logging.basicConfig(level=logging.INFO)
 
 
-class CalculateDistributionStatsCallback(TrainerCallback):
-    """Callback to extract distribution stats at epoch end."""
-
-    def __init__(self, trainer):
-        self.trainer = trainer
-
-    def on_epoch_end(self, args, state, control, **kwargs):
-        for module in self.trainer.model.modules():
-            if hasattr(module, "act_collapser"):
-                module.act_collapser.process_saved_vecs()
-            if hasattr(module, "grad_collapser"):
-                module.grad_collapser.process_saved_vecs()
-        self.trainer.after_first_epoch = True
-
-
 class CIR_MoE(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -176,107 +161,16 @@ class CIR_MoE(UnlearnTrainer):
         return forget_loss.detach()
 
 
-# def parent_mlp_name(name):
-#     parent_name = name.rsplit(".", 1)[0]
-#     assert parent_name.endswith(".mlp")
-#     return parent_name
+class CalculateDistributionStatsCallback(TrainerCallback):
+    """Callback to extract distribution stats at epoch end."""
 
+    def __init__(self, trainer):
+        self.trainer = trainer
 
-# # minimal steps to run:
-# model = AutoModelForCausalLM.from_pretrained(
-#     cfg.model_id, torch_dtype=pt.bfloat16
-# )
-# trainer = CIR(model=model, train_dataset=train_dataset)
-# trainer.train()
-
-
-# # ref_grad = module.weight.ref_grad
-# for ref_grad in module.weight.ref_grad:
-#     # gate_proj shares inputs with up_proj, so we can use up_proj's collapser
-#     _up_proj_name = name.replace(".gate_proj", ".up_proj")
-#     collapser = self.act_collapsers[_up_proj_name]
-#     centered = acts - collapser.mean.to(model.dtype)
-#     eig_vec = collapser.eig_vec.to(model.dtype)
-#     # t: tokens, d: dimension of residual stream, c: components
-#     projected_acts = pt.einsum("td,dc->tc", centered, eig_vec)
-#     # h: hidden dimension of the MLP
-#     act_disruptions = pt.einsum("th,hd->td", grads, ref_grad)
-#     projected_disrs = pt.einsum("td,dc->tc", act_disruptions, eig_vec)
-#     mask_out = projected_acts.sign() != projected_disrs.sign()
-#     projected_acts[mask_out] = 0
-#     acts = pt.einsum("tc,dc->td", projected_acts, eig_vec)  # p @ eig_vec.T
-
-
-# if "disr_momentum" in self.cfg:
-#     if "token_disr_acc" not in batch:
-#         batch["token_disr_acc"] = {}
-#     if name not in batch["token_disr_acc"]:
-#         batch["token_disr_acc"][name] = pt.zeros_like(token_disr)
-#     batch["token_disr_acc"][name] *= self.cfg.disr_momentum
-#     batch["token_disr_acc"][name] += token_disr * (1 - self.cfg.disr_momentum)
-#     mask = batch["token_disr_acc"][name] > 0
-# else:
-
-# # for calculating distribution stats on the RETAIN set
-# token_mask = r_batch["attention_mask"].bool().clone()
-# token_mask[:, 0] = False  # ignore BOS token
-# if "act_pcs_to_use" in self.cfg and self.cfg.distribution == "retain":
-#     for name, module in model.named_modules():
-#         if (not hasattr(module, "weight")) or (not module.weight.requires_grad):
-#             continue
-#         acts = module.last_act_input[token_mask].detach()
-#         # grads = module.last_grad_output[token_mask].detach()
-#         if name.endswith(".up_proj"):
-#             self.act_collapsers[name].add_vecs(acts)
-
-# # per-token CE loss [B, S], position i = loss for predicting token i
-# with pt.no_grad():
-#     logits = output.logits[:, :-1]
-#     labels = batch["labels"][:, 1:].to(logits.device)
-#     ce = F.cross_entropy(
-#         logits.reshape(-1, logits.size(-1)),
-#         labels.reshape(-1),
-#         ignore_index=-100,
-#         reduction="none",
-#     ).reshape(logits.shape[:2])
-#     per_token_loss = pt.zeros(batch["input_ids"].shape, device=ce.device)
-#     per_token_loss[:, 1:] = ce
-# if "initial_token_loss" not in batch:
-#     batch["initial_token_loss"] = per_token_loss.cpu()
-# token_loss_delta = per_token_loss.cpu() - batch["initial_token_loss"]
-
-# if "initial_label_logits" not in batch:
-#     assert not self.after_first_epoch, "epoch number != 0"
-#     batch["initial_label_logits"] = loss_fns.get_label_logits(
-#         output, batch
-#     ).detach()  # .cpu()
-# forget_loss = loss_fns.saturating_logits(
-#     output.logits, batch["labels"], batch["initial_label_logits"], self.cfg.sat_speed
-# )
-
-
-# def create_optimizer(self):
-#     params = [p for p in self.model.parameters() if p.requires_grad]
-#     self.optimizer = pt.optim.SGD(
-#         params,
-#         lr=self.args.learning_rate,
-#         momentum=self.cfg.get("sgd_momentum", 0.0),
-#     )
-#     return self.optimizer
-# # sgd_momentum: 0.9
-
-
-# per_seq_losses = []
-# for i in range(output.logits.shape[0]):
-#     s_logits = output.logits[i].unsqueeze(0)
-#     s_labels = batch["labels"][i].unsqueeze(0)
-#     s_forget_loss = loss_fns.label_logits(s_logits, s_labels)
-#     per_seq_losses.append(s_forget_loss)
-# per_seq_losses = pt.stack(per_seq_losses)
-# if not self.after_first_epoch:
-#     assert "init_seq_losses" not in batch
-#     batch["init_seq_losses"] = per_seq_losses.detach()
-# diff = per_seq_losses - batch["init_seq_losses"]
-# sat_speed = 0.1
-# unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
-# forget_loss = unlearning_saturations.mean()
+    def on_epoch_end(self, args, state, control, **kwargs):
+        for module in self.trainer.model.modules():
+            if hasattr(module, "act_collapser"):
+                module.act_collapser.process_saved_vecs()
+            if hasattr(module, "grad_collapser"):
+                module.grad_collapser.process_saved_vecs()
+        self.trainer.after_first_epoch = True

@@ -30,16 +30,14 @@ class MahalanobisCollapser:
 
     def _reset_vecs(self):
         # Reset online covariance for next epoch
-        self.online_cov = OnlineCovariance(device=self.device, dtype=pt.float32)
+        self.online_cov = OnlineCovariance(device=self.device, dtype=pt.bfloat16)
 
     def add_vecs(self, vecs):
         self.online_cov.add_all(vecs)
 
     def process_saved_vecs(self):
         # Extract distribution stats from online covariance
-        # if self.online_cov.mean is None:
-        #     # todo, don't fail silently here, better to explicitly avoid this
-        #     return
+        self.online_cov.to_inplace(dtype=pt.float32)
         self.mean = self.online_cov.mean
         self.eig_val = self.online_cov.eig_val[-self.PCs_to_use :]
         self.eig_vec = self.online_cov.eig_vec[:, -self.PCs_to_use :]

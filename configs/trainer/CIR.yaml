@@ -5,23 +5,18 @@ defaults:
 handler: CIR
 args:
   optim: sgd  # adam underperforms
-  learning_rate: 0.15
+  learning_rate: 0.2
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
 method_args:
   cfg:
     act_pcs_to_use: 500
-    grad_pcs_to_use: 100
+    # grad_pcs_to_use: 30
 
-    retain_momentum: 0.9
+    retain_momentum: 0.95
 
-    # forget_loss: label_logits  # <- hardcoded now
-    # forget_loss: saturating_logits
-    
-    # train_first_layers: 0.5
     train_first_layers: 0.75
     # train_first_layers: 1
     
-    # # inactive
-    # sat_speed: 0.1  # only used for saturating_logits
+    recompute_every: 64

@@ -165,7 +165,9 @@ def label_logits(logits, labels):
 
 
 def normalize_grads(model):
-    # L2 norm of weight.grad, computed across all the trainable weights
+    """L2 norm of weight.grad, computed across all the trainable weights."""
+    if all(param.grad is None for param in model.parameters()):
+        return
     update_norm = pt.sqrt(
         sum(
             param.grad.float().norm() ** 2
