@@ -10,7 +10,12 @@ from data.utils import batched, prep_batch
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.collapsers import MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
-from trainer.utils import label_logits, normalize_grads, sanitize_tensor
+from trainer.utils import (
+    label_logits,
+    no_weight_grads,
+    normalize_grads,
+    sanitize_tensor,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,10 +66,6 @@ class CIR(UnlearnTrainer):
                 )
             ]
             self.kl_computor = KLComputor(self.model, self.retain_batches)
-            for param in self.model.parameters():
-                if param.requires_grad:
-                    assert not hasattr(param, "ref_grad")
-                    param.ref_grad = quantize_blockwise(pt.zeros_like(param))
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
@@ -78,10 +79,13 @@ class CIR(UnlearnTrainer):
             kl.backward()
             for param in self.model.parameters():
                 if param.requires_grad:
-                    ref = dequantize_blockwise(*param.ref_grad)
+                    if hasattr(param, "ref_grad"):
+                        ref = dequantize_blockwise(*param.ref_grad)
+                    else:  # initialize
+                        ref = pt.zeros_like(param)
                     momentum = self.cfg.retain_momentum
                     ref = ref * momentum + param.grad * (1 - momentum)
-                    param.ref_grad = quantize_blockwise(ref)
+                    param.ref_grad = quantize_blockwise(ref)  # 8-bit quantization
 
         # ! unlearning loss
         batch = inputs["forget"]
@@ -90,21 +94,13 @@ class CIR(UnlearnTrainer):
 
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
-        stashed_params = [p for p in model.parameters() if p.requires_grad]
-        model.requires_grad_(False)
-        batch = prep_batch(batch, model.device)
-
-        # get embeddings and make them require grad
-        embeds = model.get_input_embeddings()(batch["input_ids"])
-        embeds = embeds.detach().requires_grad_(True)
-        # now even with all weights.requires_grad=False, backward will flow
-        # because embeds.requires_grad=True creates a computation graph
-        output = model(inputs_embeds=embeds, attention_mask=batch["attention_mask"])
+        output = model(**prep_batch(batch, model.device))
         forget_loss = label_logits(output.logits, batch["labels"])
-        forget_loss.backward()
-
-        for p in stashed_params:  # re-enable weight gradients computation
-            p.requires_grad = True
+        with no_weight_grads(model):
+            # we will backpropagate because the graph has been built by the forward pass
+            # but backward() itself will not compute weight gradients
+            # instead, weights will remain with grad computed by the collapse_hook
+            forget_loss.backward()
         self.use_hooks = False
 
         if self.after_first_epoch:

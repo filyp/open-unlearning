@@ -1,5 +1,5 @@
 import random
-import re
+from contextlib import contextmanager
 
 import numpy as np
 import torch
@@ -183,3 +183,19 @@ def sanitize_tensor(t, epsilon=1e-6):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
+
+
+@contextmanager
+def no_weight_grads(model):
+    """Temporarily disables weight gradients computation for the given model.
+
+    Compared to pt.no_grad(), it can still allow for the backward pass.
+    Useful if we want to trigger backwards hooks, but not compute weight gradients.
+    """
+    stashed_params = [p for p in model.parameters() if p.requires_grad]
+    model.requires_grad_(False)
+    try:
+        yield
+    finally:
+        for p in stashed_params:
+            p.requires_grad = True
