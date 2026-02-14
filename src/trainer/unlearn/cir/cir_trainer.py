@@ -16,11 +16,11 @@ logging.basicConfig(level=logging.INFO)
 
 class CIR(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
-        self.use_hooks = False
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-        assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
+        self.use_hooks = False
         self.batch_idx = 0
+        assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
         self.model.requires_grad_(False)  # train only modules that we specify
