@@ -11,7 +11,7 @@ args:
 
 method_args:
   cfg:
-    # act_pcs_to_use: 500
+    # act_pcs_to_use: 30
     grad_pcs_to_use: 100
 
     retain_momentum: 0.9

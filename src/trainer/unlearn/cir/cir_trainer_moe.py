@@ -29,11 +29,11 @@ class CIR_MoE(UnlearnTrainer):
         for layer_num in range(train_to_layer):
             mlp = self.model.model.layers[layer_num].block_sparse_moe
 
-            # if "act_pcs_to_use" in self.cfg:
-            #     mlp.register_forward_hook(self.save_add_vecs_hook)
-            #     mlp.act_collapser = MahalanobisCollapser(
-            #         cfg.act_pcs_to_use, self.model.device
-            #     )
+            if "act_pcs_to_use" in self.cfg:
+                mlp.register_forward_hook(self.save_add_vecs_hook)
+                mlp.act_collapser = MahalanobisCollapser(
+                    cfg.act_pcs_to_use, self.model.device
+                )
 
             for expert in mlp.experts:
                 for module in [expert.w1, expert.w3]:
@@ -46,11 +46,10 @@ class CIR_MoE(UnlearnTrainer):
                     #         cfg.act_pcs_to_use, self.model.device
                     #     )
 
-
                     # install hooks
                     module.register_forward_hook(self.save_act_input_hook)
                     module.register_full_backward_hook(self.collapse_hook)
-                    # object.__setattr__(module, "mlp_ref", mlp)  # give it mlp access
+                    object.__setattr__(module, "mlp_ref", mlp)  # give it mlp access
                     # install collapsers
                     if "grad_pcs_to_use" in self.cfg:
                         module.grad_collapser = MahalanobisCollapser(
@@ -92,7 +91,7 @@ class CIR_MoE(UnlearnTrainer):
         # ! unlearning loss
         batch = inputs["forget"]
         self.token_mask = batch["attention_mask"].bool().clone()
-        self.token_mask[:, 0] = False  # ignore BOS token
+        # self.token_mask[:, 0] = False  # ignore BOS token
         # todo, implement token masking for moe
 
         self.use_hooks = True
@@ -126,9 +125,9 @@ class CIR_MoE(UnlearnTrainer):
         if not self.use_hooks:
             return
         last_act_input = args[0].detach()
-        # acts = last_act_input[self.token_mask]
-        # module.act_collapser.add_vecs(acts)
-        module.act_collapser.add_vecs(last_act_input)
+        acts = last_act_input[self.token_mask]
+        module.act_collapser.add_vecs(acts)
+        # module.act_collapser.add_vecs(last_act_input)
 
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
@@ -138,15 +137,21 @@ class CIR_MoE(UnlearnTrainer):
         grads = grad_output[0]
         module.last_act_input = None
 
+        token_mask = grads.norm(dim=1) != 0
+        acts = acts[token_mask]
+        grads = grads[token_mask]
+
         if "grad_pcs_to_use" in self.cfg:
             module.grad_collapser.add_vecs(grads)
 
         if not hasattr(module.grad_collapser, "eig_val"):
-        # if not hasattr(module.act_collapser, "eig_val"):
+            # if not hasattr(module.act_collapser, "eig_val"):
             return  # not initialized yet, so only collect activations and not train
 
-        # acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
-        grads = module.grad_collapser.collapse(grads).to(module.weight.dtype)
+        if "act_pcs_to_use" in self.cfg:
+            acts = module.mlp_ref.act_collapser.collapse(acts).to(module.weight.dtype)
+        if "grad_pcs_to_use" in self.cfg:
+            grads = module.grad_collapser.collapse(grads).to(module.weight.dtype)
 
         # we need to cast, because sometimes the router causes upcast to float32
         acts = acts.to(module.weight.dtype)
