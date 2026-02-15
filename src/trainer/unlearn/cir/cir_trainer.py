@@ -154,9 +154,4 @@ class CIR(UnlearnTrainer):
         if not self.use_hooks:
             return
         grads = grad_output[0][self.token_mask]
-        avg_grad = grads.mean(dim=0)
-        if not hasattr(module, "attack"):
-            module.attack = pt.zeros_like(avg_grad)
-
-        momentum = self.cfg.latent_attack_momentum
-        module.attack = module.attack * momentum + avg_grad * (1 - momentum)
+        module.attack = grads.mean(dim=0)
