@@ -25,22 +25,36 @@ class CIR_MoE(UnlearnTrainer):
         # set trainable params
         self.model.requires_grad_(False)  # train only modules that we specify
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
+
         for layer_num in range(train_to_layer):
-            for expert in self.model.model.layers[layer_num].block_sparse_moe.experts:
+            mlp = self.model.model.layers[layer_num].block_sparse_moe
+
+            # if "act_pcs_to_use" in self.cfg:
+            #     mlp.register_forward_hook(self.save_add_vecs_hook)
+            #     mlp.act_collapser = MahalanobisCollapser(
+            #         cfg.act_pcs_to_use, self.model.device
+            #     )
+
+            for expert in mlp.experts:
                 for module in [expert.w1, expert.w3]:
+                # for module in [expert.w2]:
                     module.weight.requires_grad = True
+
+                    # if "act_pcs_to_use" in self.cfg:
+                    #     module.register_forward_hook(self.save_add_vecs_hook)
+                    #     module.act_collapser = MahalanobisCollapser(
+                    #         cfg.act_pcs_to_use, self.model.device
+                    #     )
+
 
                     # install hooks
                     module.register_forward_hook(self.save_act_input_hook)
                     module.register_full_backward_hook(self.collapse_hook)
-                    module.last_act_input = None
-                    module.last_grad_output = None
+                    # object.__setattr__(module, "mlp_ref", mlp)  # give it mlp access
                     # install collapsers
-                    if "act_pcs_to_use" in self.cfg:
-                        pass
                     if "grad_pcs_to_use" in self.cfg:
                         module.grad_collapser = MahalanobisCollapser(
-                            cfg.grad_pcs_to_use, module.weight.device
+                            cfg.grad_pcs_to_use, self.model.device
                         )
 
         # ! prepare retain
@@ -77,8 +91,8 @@ class CIR_MoE(UnlearnTrainer):
 
         # ! unlearning loss
         batch = inputs["forget"]
-        token_mask = batch["attention_mask"].bool().clone()
-        token_mask[:, 0] = False  # ignore BOS token
+        self.token_mask = batch["attention_mask"].bool().clone()
+        self.token_mask[:, 0] = False  # ignore BOS token
         # todo, implement token masking for moe
 
         self.use_hooks = True
@@ -106,25 +120,32 @@ class CIR_MoE(UnlearnTrainer):
     def save_act_input_hook(self, module, args, output):
         if not self.use_hooks:
             return
-        module.last_act_input = args[0]
+        module.last_act_input = args[0].detach()
+
+    def save_add_vecs_hook(self, module, args, output):
+        if not self.use_hooks:
+            return
+        last_act_input = args[0].detach()
+        # acts = last_act_input[self.token_mask]
+        # module.act_collapser.add_vecs(acts)
+        module.act_collapser.add_vecs(last_act_input)
 
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
 
-        acts = module.last_act_input.detach()
+        acts = module.last_act_input
         grads = grad_output[0]
         module.last_act_input = None
 
-        # module.act_collapser.add_vecs(acts)
-        # if hasattr(module, "grad_collapser"):
-        module.grad_collapser.add_vecs(grads)
+        if "grad_pcs_to_use" in self.cfg:
+            module.grad_collapser.add_vecs(grads)
 
         if not hasattr(module.grad_collapser, "eig_val"):
-            return  # first epoch, so only collect activations and not train
+        # if not hasattr(module.act_collapser, "eig_val"):
+            return  # not initialized yet, so only collect activations and not train
 
         # acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
-        # if hasattr(module, "grad_collapser"):
         grads = module.grad_collapser.collapse(grads).to(module.weight.dtype)
 
         # we need to cast, because sometimes the router causes upcast to float32

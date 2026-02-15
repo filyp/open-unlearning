@@ -33,11 +33,11 @@ class CIR(UnlearnTrainer):
                 module.register_forward_hook(self.save_act_input_hook)
                 module.register_full_backward_hook(self.collapse_hook)
                 module.act_collapser = MahalanobisCollapser(
-                    cfg.act_pcs_to_use, module.weight.device
+                    cfg.act_pcs_to_use, self.model.device
                 )
                 if "grad_pcs_to_use" in cfg:
                     module.grad_collapser = MahalanobisCollapser(
-                        cfg.grad_pcs_to_use, module.weight.device
+                        cfg.grad_pcs_to_use, self.model.device
                     )
 
         # ! prepare retain
@@ -101,12 +101,12 @@ class CIR(UnlearnTrainer):
     def save_act_input_hook(self, module, args, output):
         if not self.use_hooks:
             return
-        module.last_act_input = args[0]
+        module.last_act_input = args[0].detach()
 
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
-        acts = module.last_act_input[self.token_mask].detach()
+        acts = module.last_act_input[self.token_mask]
         grads = grad_output[0][self.token_mask]
         module.last_act_input = None
 
@@ -115,7 +115,7 @@ class CIR(UnlearnTrainer):
             module.grad_collapser.add_vecs(grads)
 
         if not hasattr(module.act_collapser, "eig_val"):
-            return  # first epoch, so only collect activations and not train
+            return  # not initialized yet, so only collect activations and not train
 
         acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
         if hasattr(module, "grad_collapser"):
