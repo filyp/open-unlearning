@@ -20,3 +20,6 @@ method_args:
     # train_first_layers: 1
     
     recompute_every: 64
+
+    latent_attack_momentum: 0.9
+    latent_attack_strength: 0.015

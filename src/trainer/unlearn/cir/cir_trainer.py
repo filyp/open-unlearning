@@ -32,6 +32,7 @@ class CIR(UnlearnTrainer):
                 module.weight.requires_grad = True
                 module.register_forward_hook(self.save_act_input_hook)
                 module.register_full_backward_hook(self.collapse_hook)
+
                 module.act_collapser = MahalanobisCollapser(
                     cfg.act_pcs_to_use, self.model.device
                 )
@@ -39,6 +40,12 @@ class CIR(UnlearnTrainer):
                     module.grad_collapser = MahalanobisCollapser(
                         cfg.grad_pcs_to_use, self.model.device
                     )
+
+            # register latent attack hooks
+            for module in [mlp.gate_proj, mlp.up_proj]:
+                module.register_forward_hook(self.latent_attack_hook)
+                module.register_full_backward_hook(self.update_latent_attack_hook)
+
 
         # ! prepare retain
         if "retain_momentum" in self.cfg:
@@ -114,7 +121,7 @@ class CIR(UnlearnTrainer):
         if hasattr(module, "grad_collapser"):
             module.grad_collapser.add_vecs(grads)
 
-        if not hasattr(module.act_collapser, "eig_val"):
+        if self.batch_idx < self.cfg.recompute_every:
             return  # not initialized yet, so only collect activations and not train
 
         acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
@@ -132,3 +139,24 @@ class CIR(UnlearnTrainer):
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
+
+    def latent_attack_hook(self, module, args, output):
+        if not self.use_hooks:
+            return
+        if not hasattr(module, "attack"):
+            return
+        normalized_attack = module.attack / module.attack.norm()
+        attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
+        output = output + normalized_attack * attack_norm
+        return output
+
+    def update_latent_attack_hook(self, module, grad_input, grad_output):
+        if not self.use_hooks:
+            return
+        grads = grad_output[0][self.token_mask]
+        avg_grad = grads.mean(dim=0)
+        if not hasattr(module, "attack"):
+            module.attack = pt.zeros_like(avg_grad)
+
+        momentum = self.cfg.latent_attack_momentum
+        module.attack = module.attack * momentum + avg_grad * (1 - momentum)

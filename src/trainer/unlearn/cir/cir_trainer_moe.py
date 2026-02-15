@@ -144,8 +144,7 @@ class CIR_MoE(UnlearnTrainer):
         if "grad_pcs_to_use" in self.cfg:
             module.grad_collapser.add_vecs(grads)
 
-        if not hasattr(module.grad_collapser, "eig_val"):
-            # if not hasattr(module.act_collapser, "eig_val"):
+        if self.batch_idx < self.cfg.recompute_every:
             return  # not initialized yet, so only collect activations and not train
 
         if "act_pcs_to_use" in self.cfg:
