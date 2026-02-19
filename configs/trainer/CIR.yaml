@@ -11,14 +11,15 @@ args:
 
 method_args:
   cfg:
-    act_pcs_to_use: 500
-    # grad_pcs_to_use: 30
+    # act_pcs_to_use: 100
+    grad_pcs_to_use: 100
 
     retain_momentum: 0.95
 
     train_first_layers: 0.75
     # train_first_layers: 1
     
-    recompute_every: 64
+    recompute_every: 32
+    # recompute_every: 64
 
-    latent_attack_strength: 0.015
+    # latent_attack_strength: 0.015

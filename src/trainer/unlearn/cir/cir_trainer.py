@@ -25,27 +25,34 @@ class CIR(UnlearnTrainer):
         # set trainable params
         self.model.requires_grad_(False)  # train only modules that we specify
         train_to_layer = int(len(self.model.model.layers) * cfg.train_first_layers)
+
+        self.is_moe = hasattr(self.model.model.layers[0].mlp, "experts")
+
         for layer_num in range(train_to_layer):
             mlp = self.model.model.layers[layer_num].mlp
-            for module in [mlp.gate_proj]:
-            # for module in [mlp.gate_proj, mlp.up_proj]:
-                module.weight.requires_grad = True
-                module.register_forward_hook(self.save_act_input_hook)
-                module.register_full_backward_hook(self.collapse_hook)
+            experts = mlp.experts if self.is_moe else [mlp]
+            for expert in experts:
+                for module in [expert.gate_proj, expert.up_proj]:
+                    module.weight.requires_grad = True
 
-                module.act_collapser = MahalanobisCollapser(
-                    cfg.act_pcs_to_use, self.model.device
-                )
-                if "grad_pcs_to_use" in cfg:
-                    module.grad_collapser = MahalanobisCollapser(
-                        cfg.grad_pcs_to_use, self.model.device
-                    )
+                    # install hooks
+                    module.register_forward_hook(self.save_act_input_hook)
+                    module.register_full_backward_hook(self.collapse_hook)
 
-            # register latent attack hooks
-            for module in [mlp.gate_proj, mlp.up_proj]:
-                module.register_forward_hook(self.latent_attack_hook)
-                module.register_full_backward_hook(self.update_latent_attack_hook)
+                    # install collapsers
+                    if "act_pcs_to_use" in cfg:
+                        module.act_collapser = MahalanobisCollapser(
+                            cfg.act_pcs_to_use, self.model.device
+                        )
+                    if "grad_pcs_to_use" in cfg:
+                        module.grad_collapser = MahalanobisCollapser(
+                            cfg.grad_pcs_to_use, self.model.device
+                        )
 
+                    # register latent attack hooks
+                    if "latent_attack_strength" in cfg:
+                        module.register_forward_hook(self.latent_attack_hook)
+                        module.register_full_backward_hook(self.prep_latent_attack_hook)
 
         # ! prepare retain
         if "retain_momentum" in self.cfg:
@@ -74,8 +81,9 @@ class CIR(UnlearnTrainer):
                         ref = dequantize_blockwise(*param.ref_grad)
                     else:  # initialize
                         ref = pt.zeros_like(param)
-                    momentum = self.cfg.retain_momentum
-                    ref = ref * momentum + param.grad * (1 - momentum)
+                    if param.grad is not None:  # some experts may be not chosen
+                        momentum = self.cfg.retain_momentum
+                        ref = ref * momentum + param.grad * (1 - momentum)
                     param.ref_grad = quantize_blockwise(ref)  # 8-bit quantization
 
         # ! unlearning loss
@@ -113,20 +121,38 @@ class CIR(UnlearnTrainer):
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
-        acts = module.last_act_input[self.token_mask]
-        grads = grad_output[0][self.token_mask]
+        acts = module.last_act_input
+        grads = grad_output[0]
         module.last_act_input = None
 
-        module.act_collapser.add_vecs(acts)
-        if hasattr(module, "grad_collapser"):
+        if self.is_moe:
+            token_mask = grads.norm(dim=1) != 0
+            acts = acts[token_mask]
+            grads = grads[token_mask]
+            if acts.shape[0] == 0:
+                # this expert wasn't selected for any tokens
+                return
+        else:
+            acts = acts[self.token_mask]
+            grads = grads[self.token_mask]
+
+        if "act_pcs_to_use" in self.cfg:
+            module.act_collapser.add_vecs(acts)
+        if "grad_pcs_to_use" in self.cfg:
             module.grad_collapser.add_vecs(grads)
 
         if self.batch_idx < self.cfg.recompute_every:
             return  # not initialized yet, so only collect activations and not train
 
-        acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
-        if hasattr(module, "grad_collapser"):
+        if "act_pcs_to_use" in self.cfg:
+            acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
+        if "grad_pcs_to_use" in self.cfg:
             grads = module.grad_collapser.collapse(grads).to(module.weight.dtype)
+
+        # # we need to cast, because sometimes the router causes upcast to float32
+        # # but maybe with new MoEs that doesn't happen, so comment out for now
+        # acts = acts.to(module.weight.dtype)
+        # grads = grads.to(module.weight.dtype)
 
         # ! KL-masking, per token and per module
         if "retain_momentum" in self.cfg:
@@ -150,7 +176,7 @@ class CIR(UnlearnTrainer):
         output = output + normalized_attack * attack_norm
         return output
 
-    def update_latent_attack_hook(self, module, grad_input, grad_output):
+    def prep_latent_attack_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
         grads = grad_output[0][self.token_mask]
