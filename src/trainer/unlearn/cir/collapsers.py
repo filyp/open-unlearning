@@ -1,4 +1,5 @@
 import torch as pt
+from torch_incremental_pca import IncrementalPCA
 from welford_torch import OnlineCovariance
 
 
@@ -16,6 +17,30 @@ def _proj_to_mahal_dirs(centered, mahal_dirs):
     mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
     return proj_strenghts * mahal_dirs_norm
+
+
+class IncrementalPCACollapser:
+    def __init__(self, PCs_to_use: int, device: str):
+        self.PCs_to_use = PCs_to_use
+        self.device = device
+        self.ipca = IncrementalPCA(
+            n_components=PCs_to_use,
+            # copy=False,
+            gram=True,
+        )
+
+    def add_vecs(self, vecs):
+        self.ipca.partial_fit(vecs)
+
+    def process_saved_vecs(self):
+        pass  # components are updated online in partial_fit
+
+    def collapse(self, vecs):
+        eig_vec = self.ipca.components_.T  # (n_features, n_components)
+        eig_val = self.ipca.explained_variance_  # (n_components,)
+        centered = vecs - self.ipca.mean_
+        mahal_dirs = _get_mahal_dirs(centered, eig_val, eig_vec)
+        return _proj_to_mahal_dirs(centered, mahal_dirs)
 
 
 class MahalanobisCollapser:

@@ -7,7 +7,7 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 
 from data.utils import batched, prep_batch
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.collapsers import MahalanobisCollapser
+from trainer.unlearn.cir.collapsers import IncrementalPCACollapser, MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
 from trainer.utils import label_logits, no_weight_grads, normalize_grads
 
@@ -41,11 +41,13 @@ class CIR(UnlearnTrainer):
 
                     # install collapsers
                     if "act_pcs_to_use" in cfg:
-                        module.act_collapser = MahalanobisCollapser(
+                        # module.act_collapser = MahalanobisCollapser(
+                        module.act_collapser = IncrementalPCACollapser(
                             cfg.act_pcs_to_use, self.model.device
                         )
                     if "grad_pcs_to_use" in cfg:
-                        module.grad_collapser = MahalanobisCollapser(
+                        # module.grad_collapser = MahalanobisCollapser(
+                        module.grad_collapser = IncrementalPCACollapser(
                             cfg.grad_pcs_to_use, self.model.device
                         )
 

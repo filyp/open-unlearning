@@ -22,3 +22,4 @@ hydra-optuna-sweeper @ git+https://github.com/dahlem/hydra.git@feature/upgrade-o
 tiktoken==0.12.0  # for MobileLLM-125M
 sentencepiece==0.2.1  # for MobileLLM-125M
 python-dotenv==1.2.1
+torch-incremental-pca @ git+https://github.com/filyp/pytorch_incremental_pca.git
