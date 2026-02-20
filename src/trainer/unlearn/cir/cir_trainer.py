@@ -4,10 +4,10 @@ import random
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
+from torch_incremental_pca import IncrementalPCA
 
 from data.utils import batched, prep_batch
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.collapsers import IncrementalPCACollapser, MahalanobisCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
 from trainer.utils import label_logits, no_weight_grads, normalize_grads
 
@@ -41,14 +41,12 @@ class CIR(UnlearnTrainer):
 
                     # install collapsers
                     if "act_pcs_to_use" in cfg:
-                        # module.act_collapser = MahalanobisCollapser(
-                        module.act_collapser = IncrementalPCACollapser(
-                            cfg.act_pcs_to_use, self.model.device
+                        module.act_collapser = IncrementalPCA(
+                            n_components=cfg.act_pcs_to_use, gram=True
                         )
                     if "grad_pcs_to_use" in cfg:
-                        # module.grad_collapser = MahalanobisCollapser(
-                        module.grad_collapser = IncrementalPCACollapser(
-                            cfg.grad_pcs_to_use, self.model.device
+                        module.grad_collapser = IncrementalPCA(
+                            n_components=cfg.grad_pcs_to_use, gram=True
                         )
 
                     # register latent attack hooks
@@ -71,7 +69,7 @@ class CIR(UnlearnTrainer):
         model.train()
 
         # ! retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.cfg.recompute_every:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.cfg.warmup:
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
@@ -105,13 +103,6 @@ class CIR(UnlearnTrainer):
         self.use_hooks = False
 
         self.batch_idx += 1
-        if self.batch_idx % self.cfg.recompute_every == 0:
-            for module in model.modules():
-                if hasattr(module, "act_collapser"):
-                    module.act_collapser.process_saved_vecs()
-                if hasattr(module, "grad_collapser"):
-                    module.grad_collapser.process_saved_vecs()
-
         normalize_grads(model)
         return forget_loss.detach()
 
@@ -139,17 +130,17 @@ class CIR(UnlearnTrainer):
             grads = grads[self.token_mask]
 
         if "act_pcs_to_use" in self.cfg:
-            module.act_collapser.add_vecs(acts)
+            module.act_collapser.partial_fit(acts)
         if "grad_pcs_to_use" in self.cfg:
-            module.grad_collapser.add_vecs(grads)
+            module.grad_collapser.partial_fit(grads)
 
-        if self.batch_idx < self.cfg.recompute_every:
+        if self.batch_idx < self.cfg.warmup:
             return  # not initialized yet, so only collect activations and not train
 
         if "act_pcs_to_use" in self.cfg:
-            acts = module.act_collapser.collapse(acts).to(module.weight.dtype)
+            acts = collapse(module.act_collapser, acts)
         if "grad_pcs_to_use" in self.cfg:
-            grads = module.grad_collapser.collapse(grads).to(module.weight.dtype)
+            grads = collapse(module.grad_collapser, grads)
 
         # # we need to cast, because sometimes the router causes upcast to float32
         # # but maybe with new MoEs that doesn't happen, so comment out for now
@@ -183,3 +174,26 @@ class CIR(UnlearnTrainer):
             return
         grads = grad_output[0][self.token_mask]
         module.attack = grads.mean(dim=0)
+
+
+def collapse(ipca, vecs):
+    orig_dtype = vecs.dtype
+    eig_vec = ipca.components_.T  # (n_features, n_components)
+    eig_val = ipca.explained_variance_  # (n_components,)
+    centered = vecs - ipca.mean_  # mean_ is in float32, so it upcasts
+    assert centered.dtype == pt.float32
+    
+    # ipca.explained_variance_ = ipca.explained_variance_ * 0.99
+    # ipca.n_samples_seen_ = ipca.n_samples_seen_ * 0.99
+
+    # compute Mahalanobis directions using eigendecomposition
+    projected = centered @ eig_vec  # (N, D)
+    proj_diff = projected - projected / (eig_val / eig_val.min())
+    mahal_dirs = centered - proj_diff @ eig_vec.T
+
+    # project to mahalanobis directions
+    mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
+    proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+    collapsed = proj_strenghts * mahal_dirs_norm
+    return collapsed.to(orig_dtype)
+
