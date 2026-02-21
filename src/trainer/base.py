@@ -18,6 +18,10 @@ class FinetuneTrainer(Trainer):
         self.template_args = template_args
         self.eval_results_history = []
         self.last_valid_model_state = None
+        # When using custom evaluators without an eval dataset, pass a dummy value
+        # to prevent Trainer from raising on eval_dataset=None when eval_strategy is set
+        if kwargs.get("eval_dataset") is None and evaluators:
+            kwargs["eval_dataset"] = "dummy"
         super().__init__(*args, **kwargs)
 
     def evaluate(

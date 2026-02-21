@@ -1,6 +1,7 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
 import random
+import threading
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
@@ -32,7 +33,7 @@ class CIR(UnlearnTrainer):
             mlp = self.model.model.layers[layer_num].mlp
             experts = mlp.experts if self.is_moe else [mlp]
             for expert in experts:
-                for module in [expert.gate_proj, expert.up_proj]:
+                for module in [expert.gate_proj, expert.up_proj, expert.down_proj]:
                     module.weight.requires_grad = True
 
                     # install hooks
@@ -40,18 +41,13 @@ class CIR(UnlearnTrainer):
                     module.register_full_backward_hook(self.collapse_hook)
 
                     # initialize IncrementalPCA
-                    if "act_pcs_to_use" in cfg:
-                        module.act_ipca = IncrementalPCA(
-                            n_components=cfg.act_pcs_to_use, gram=True
-                        )
-                        module.act_ipca.accumulator = None
-                    if "grad_pcs_to_use" in cfg:
-                        module.grad_ipca = IncrementalPCA(
-                            n_components=cfg.grad_pcs_to_use, gram=True
-                        )
-                        module.grad_ipca.accumulator = None
+                    module.act_ipca = IncrementalPCA(n_components=cfg.n_pcs, gram=True)
+                    module.act_ipca.accumulator = None
+                    module.grad_ipca = IncrementalPCA(n_components=cfg.n_pcs, gram=True)
+                    module.grad_ipca.accumulator = None
 
-                    # register latent attack hooks
+                # register latent attack hooks
+                for module in [expert.gate_proj, expert.up_proj]:
                     if "latent_attack_strength" in cfg:
                         module.register_forward_hook(self.latent_attack_hook)
                         module.register_full_backward_hook(self.prep_latent_attack_hook)
@@ -131,23 +127,22 @@ class CIR(UnlearnTrainer):
             acts = acts[self.token_mask]
             grads = grads[self.token_mask]
 
-        if "act_pcs_to_use" in self.cfg:
+        if (
+            self.batch_idx < self.cfg.warmup
+            or not hasattr(module.act_ipca, "components_")
+            or not hasattr(module.grad_ipca, "components_")
+        ):
+            # too early to train, so only collect activations and return early
             partial_fit(module.act_ipca, acts)
-        if "grad_pcs_to_use" in self.cfg:
             partial_fit(module.grad_ipca, grads)
+            return
 
-        if self.batch_idx < self.cfg.warmup:
-            return  # not initialized yet, so only collect activations and not train
-
-        if "act_pcs_to_use" in self.cfg and hasattr(module.act_ipca, "components_"):
-            acts = collapse(module.act_ipca, acts)
-        if "grad_pcs_to_use" in self.cfg and hasattr(module.grad_ipca, "components_"):
-            grads = collapse(module.grad_ipca, grads)
-
-        # # we need to cast, because sometimes the router causes upcast to float32
-        # # but maybe with new MoEs that doesn't happen, so comment out for now
-        # acts = acts.to(module.weight.dtype)
-        # grads = grads.to(module.weight.dtype)
+        # org_acts = acts.clone()
+        # org_grads = grads.clone()
+        # note: we could optimize and reuse the act ipca for gate_proj and up_proj,
+        # but for simplicity we skip it
+        acts = collapse(module.act_ipca, acts)
+        grads = collapse(module.grad_ipca, grads)
 
         # ! KL-masking, per token and per module
         if "retain_momentum" in self.cfg:
@@ -157,6 +152,13 @@ class CIR(UnlearnTrainer):
             kl_mask = token_disr > 0
             acts = acts[kl_mask]
             grads = grads[kl_mask]
+            # org_acts = org_acts[kl_mask]
+            # org_grads = org_grads[kl_mask]
+
+        # partial_fit(module.act_ipca, org_acts)
+        # partial_fit(module.grad_ipca, org_grads)
+        partial_fit(module.act_ipca, acts)
+        partial_fit(module.grad_ipca, grads)
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
@@ -180,6 +182,7 @@ class CIR(UnlearnTrainer):
 
 def partial_fit(ipca, vecs):
     """In addition to partial_fit, it fill also accumulate the vecs if needed"""
+    vecs = vecs.cpu()
     if ipca.accumulator is not None:
         vecs = pt.cat([ipca.accumulator, vecs])
         ipca.accumulator = None
@@ -187,14 +190,17 @@ def partial_fit(ipca, vecs):
     if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
         ipca.accumulator = vecs
     else:  # enough vecs
-        ipca.partial_fit(vecs)
+        # ipca.partial_fit(vecs)  # note, if using this version, do not move vecs to cpu
+        # cpu version is similarly fast, and it keeps eigenvecs in RAM
+        t = threading.Thread(target=ipca.partial_fit, args=(vecs,))
+        t.start()
 
 
 def collapse(ipca, vecs):
     orig_dtype = vecs.dtype
-    eig_vec = ipca.components_.T  # (n_features, n_components)
-    eig_val = ipca.explained_variance_  # (n_components,)
-    centered = vecs - ipca.mean_  # mean_ is in float32, so it upcasts
+    eig_vec = ipca.components_.T.to(vecs.device)  # (n_features, n_components)
+    eig_val = ipca.explained_variance_.to(vecs.device)  # (n_components,)
+    centered = vecs - ipca.mean_.to(vecs.device)  # mean_ is in float32, so it upcasts
     assert centered.dtype == pt.float32
 
     # ipca.explained_variance_ = ipca.explained_variance_ * 0.99
