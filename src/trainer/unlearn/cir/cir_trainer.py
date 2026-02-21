@@ -39,13 +39,13 @@ class CIR(UnlearnTrainer):
                     module.register_forward_hook(self.save_act_input_hook)
                     module.register_full_backward_hook(self.collapse_hook)
 
-                    # install collapsers
+                    # initialize IncrementalPCA
                     if "act_pcs_to_use" in cfg:
-                        module.act_collapser = IncrementalPCA(
+                        module.act_ipca = IncrementalPCA(
                             n_components=cfg.act_pcs_to_use, gram=True
                         )
                     if "grad_pcs_to_use" in cfg:
-                        module.grad_collapser = IncrementalPCA(
+                        module.grad_ipca = IncrementalPCA(
                             n_components=cfg.grad_pcs_to_use, gram=True
                         )
 
@@ -130,17 +130,17 @@ class CIR(UnlearnTrainer):
             grads = grads[self.token_mask]
 
         if "act_pcs_to_use" in self.cfg:
-            module.act_collapser.partial_fit(acts)
+            module.act_ipca.partial_fit(acts)
         if "grad_pcs_to_use" in self.cfg:
-            module.grad_collapser.partial_fit(grads)
+            module.grad_ipca.partial_fit(grads)
 
         if self.batch_idx < self.cfg.warmup:
             return  # not initialized yet, so only collect activations and not train
 
         if "act_pcs_to_use" in self.cfg:
-            acts = collapse(module.act_collapser, acts)
+            acts = collapse(module.act_ipca, acts)
         if "grad_pcs_to_use" in self.cfg:
-            grads = collapse(module.grad_collapser, grads)
+            grads = collapse(module.grad_ipca, grads)
 
         # # we need to cast, because sometimes the router causes upcast to float32
         # # but maybe with new MoEs that doesn't happen, so comment out for now

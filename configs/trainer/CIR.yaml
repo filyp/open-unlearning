@@ -16,8 +16,8 @@ method_args:
 
     retain_momentum: 0.9
 
-    # train_first_layers: 0.4
-    train_first_layers: 0.75
+    train_first_layers: 0.4
+    # train_first_layers: 0.75
     # train_first_layers: 1
     
     warmup: 64
