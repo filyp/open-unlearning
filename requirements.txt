@@ -14,7 +14,6 @@ scipy==1.14.1
 tensorboard==2.18.0
 scikit-learn==1.5.2
 deepspeed==0.15.4
-welford-torch==0.2.5
 psycopg2-binary==2.9.11
 wandb==0.21.4
 # see https://github.com/facebookresearch/hydra/pull/3046
@@ -22,5 +21,4 @@ hydra-optuna-sweeper @ git+https://github.com/dahlem/hydra.git@feature/upgrade-o
 tiktoken==0.12.0  # for MobileLLM-125M
 sentencepiece==0.2.1  # for MobileLLM-125M
 python-dotenv==1.2.1
-# see https://github.com/sirluk/pytorch_incremental_pca/pull/2
-torch-incremental-pca @ git+https://github.com/filyp/pytorch_incremental_pca.git
+torch-incremental-pca @ git+https://github.com/sirluk/pytorch_incremental_pca.git

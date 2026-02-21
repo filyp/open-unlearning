@@ -44,10 +44,12 @@ class CIR(UnlearnTrainer):
                         module.act_ipca = IncrementalPCA(
                             n_components=cfg.act_pcs_to_use, gram=True
                         )
+                        module.act_ipca.accumulator = None
                     if "grad_pcs_to_use" in cfg:
                         module.grad_ipca = IncrementalPCA(
                             n_components=cfg.grad_pcs_to_use, gram=True
                         )
+                        module.grad_ipca.accumulator = None
 
                     # register latent attack hooks
                     if "latent_attack_strength" in cfg:
@@ -130,16 +132,16 @@ class CIR(UnlearnTrainer):
             grads = grads[self.token_mask]
 
         if "act_pcs_to_use" in self.cfg:
-            module.act_ipca.partial_fit(acts)
+            partial_fit(module.act_ipca, acts)
         if "grad_pcs_to_use" in self.cfg:
-            module.grad_ipca.partial_fit(grads)
+            partial_fit(module.grad_ipca, grads)
 
         if self.batch_idx < self.cfg.warmup:
             return  # not initialized yet, so only collect activations and not train
 
-        if "act_pcs_to_use" in self.cfg:
+        if "act_pcs_to_use" in self.cfg and hasattr(module.act_ipca, "components_"):
             acts = collapse(module.act_ipca, acts)
-        if "grad_pcs_to_use" in self.cfg:
+        if "grad_pcs_to_use" in self.cfg and hasattr(module.grad_ipca, "components_"):
             grads = collapse(module.grad_ipca, grads)
 
         # # we need to cast, because sometimes the router causes upcast to float32
@@ -176,13 +178,25 @@ class CIR(UnlearnTrainer):
         module.attack = grads.mean(dim=0)
 
 
+def partial_fit(ipca, vecs):
+    """In addition to partial_fit, it fill also accumulate the vecs if needed"""
+    if ipca.accumulator is not None:
+        vecs = pt.cat([ipca.accumulator, vecs])
+        ipca.accumulator = None
+
+    if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
+        ipca.accumulator = vecs
+    else:  # enough vecs
+        ipca.partial_fit(vecs)
+
+
 def collapse(ipca, vecs):
     orig_dtype = vecs.dtype
     eig_vec = ipca.components_.T  # (n_features, n_components)
     eig_val = ipca.explained_variance_  # (n_components,)
     centered = vecs - ipca.mean_  # mean_ is in float32, so it upcasts
     assert centered.dtype == pt.float32
-    
+
     # ipca.explained_variance_ = ipca.explained_variance_ * 0.99
     # ipca.n_samples_seen_ = ipca.n_samples_seen_ * 0.99
 
@@ -196,4 +210,3 @@ def collapse(ipca, vecs):
     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
     collapsed = proj_strenghts * mahal_dirs_norm
     return collapsed.to(orig_dtype)
-
