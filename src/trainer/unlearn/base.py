@@ -9,6 +9,24 @@ if is_deepspeed_available():
 
 
 class UnlearnTrainer(FinetuneTrainer):
+    def prediction_step(self, *args, **kwargs):
+        """Use standard loss during evaluation, not the unlearn loss.
+
+        Subclasses override compute_loss() with custom unlearn logic, but that
+        should only run during training. During evaluation (via prediction_step),
+        we temporarily swap in the base FinetuneTrainer.compute_loss so the
+        standard cross-entropy loss is used instead. This avoids having to copy
+        the full prediction_step implementation from transformers, making it
+        robust across library versions.
+        """
+        custom_compute_loss = self.compute_loss
+        # __get__ binds the unbound class method to this instance, so it receives `self`
+        self.compute_loss = FinetuneTrainer.compute_loss.__get__(self, type(self))
+        try:
+            return super().prediction_step(*args, **kwargs)
+        finally:
+            self.compute_loss = custom_compute_loss
+
     # Adapted from Huggingface DPO Trainer: https://github.com/huggingface/accelerate/blob/739b135f8367becb67ffaada12fe76e3aa60fefd/src/accelerate/accelerator.py#L1473
     def _prepare_deepspeed(self, model):
         # Adapted from accelerate: https://github.com/huggingface/accelerate/blob/739b135f8367becb67ffaada12fe76e3aa60fefd/src/accelerate/accelerator.py#L1473
@@ -47,9 +65,3 @@ class UnlearnTrainer(FinetuneTrainer):
         model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
         model.eval()
         return model
-
-    def compute_loss(self, model, inputs, **kwargs):
-        if model.training:
-            return self.compute_unlearn_loss(model, inputs, **kwargs)
-        else:
-            return super().compute_loss(model, inputs, **kwargs)

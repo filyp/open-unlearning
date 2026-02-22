@@ -136,7 +136,7 @@ class RMU(GradDiff):
             retain_loss = super().compute_retain_loss(model, retain_inputs)
         return retain_loss
 
-    def compute_unlearn_loss(
+    def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         forget_inputs = inputs["forget"]

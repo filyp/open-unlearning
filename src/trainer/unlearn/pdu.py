@@ -103,7 +103,7 @@ class PDU(GradDiff):
         )
         self.log({"retain_preference": self.preferences[1]})
 
-    def compute_unlearn_loss(
+    def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         forget_inputs = inputs["forget"]
