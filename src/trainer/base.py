@@ -15,6 +15,10 @@ class FinetuneTrainer(Trainer):
     def __init__(self, evaluators=None, template_args=None, *args, **kwargs):
         self.evaluators = evaluators
         self.template_args = template_args
+        # When using custom evaluators without an eval dataset, pass a dummy value
+        # to prevent Trainer from raising on eval_dataset=None when eval_strategy is set
+        if kwargs.get("eval_dataset") is None and evaluators:
+            kwargs["eval_dataset"] = "dummy"
         super().__init__(*args, **kwargs)
 
     def evaluate(
