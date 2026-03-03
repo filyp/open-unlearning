@@ -1,7 +1,6 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
 import random
-import threading
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
@@ -127,41 +126,32 @@ class CIR(UnlearnTrainer):
             acts = acts[self.token_mask]
             grads = grads[self.token_mask]
 
+        # note: we could optimize and reuse the act ipca for gate_proj and up_proj, but for simplicity don't
+        partial_fit(module.act_ipca, acts)
+        partial_fit(module.grad_ipca, grads)
+
         if (
             self.batch_idx < self.cfg.warmup
             or not hasattr(module.act_ipca, "components_")
             or not hasattr(module.grad_ipca, "components_")
         ):
-            # too early to train, so only collect activations and return early
-            partial_fit(module.act_ipca, acts)
-            partial_fit(module.grad_ipca, grads)
-            return
+            return  # too early to train, so only collect activations and return early
 
-        # org_acts = acts.clone()
-        # org_grads = grads.clone()
-        # note: we could optimize and reuse the act ipca for gate_proj and up_proj,
-        # but for simplicity we skip it
-        acts = collapse(module.act_ipca, acts)
-        grads = collapse(module.grad_ipca, grads)
+        pure_acts = collapse(module.act_ipca, acts)
+        pure_grads = collapse(module.grad_ipca, grads)
 
         # ! KL-masking, per token and per module
         if "retain_momentum" in self.cfg:
             ref_grad = dequantize_blockwise(*module.weight.ref_grad)
             ref_grad = ref_grad.to(module.weight.dtype)
-            token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
+            # calculating this on purified acts and grads makes filtering more accurate
+            token_disr = pt.einsum("ij,ti,tj->t", ref_grad, pure_grads, pure_acts)
             kl_mask = token_disr > 0
-            acts = acts[kl_mask]
-            grads = grads[kl_mask]
-            # org_acts = org_acts[kl_mask]
-            # org_grads = org_grads[kl_mask]
-
-        # partial_fit(module.act_ipca, org_acts)
-        # partial_fit(module.grad_ipca, org_grads)
-        partial_fit(module.act_ipca, acts)
-        partial_fit(module.grad_ipca, grads)
+            pure_acts = pure_acts[kl_mask]
+            pure_grads = pure_grads[kl_mask]
 
         # without acts and grads modifications, this is equivalent to normal backprop
-        module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
+        module.weight.grad = pt.einsum("ti,tj->ij", pure_grads, pure_acts)
 
     def latent_attack_hook(self, module, args, output):
         if not self.use_hooks:
@@ -182,7 +172,6 @@ class CIR(UnlearnTrainer):
 
 def partial_fit(ipca, vecs):
     """In addition to partial_fit, it fill also accumulate the vecs if needed"""
-    vecs = vecs.cpu()
     if ipca.accumulator is not None:
         vecs = pt.cat([ipca.accumulator, vecs])
         ipca.accumulator = None
@@ -190,10 +179,8 @@ def partial_fit(ipca, vecs):
     if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
         ipca.accumulator = vecs
     else:  # enough vecs
-        # ipca.partial_fit(vecs)  # note, if using this version, do not move vecs to cpu
-        # cpu version is similarly fast, and it keeps eigenvecs in RAM
-        t = threading.Thread(target=ipca.partial_fit, args=(vecs,))
-        t.start()
+        vecs = vecs.clone()  # ipca.partial_fit may modify the input in-place
+        ipca.partial_fit(vecs)
 
 
 def collapse(ipca, vecs):
