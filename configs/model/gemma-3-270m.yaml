@@ -1,0 +1,10 @@
+# this is a pre-trained model (for 270m, the "-pt" suffix was not added)
+model_args:
+  pretrained_model_name_or_path: "google/gemma-3-270m"
+  attn_implementation: 'flash_attention_2'
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "google/gemma-3-270m"
+template_args:
+  apply_chat_template: False
+model_handler: Gemma3ForCausalLM  # text-only version

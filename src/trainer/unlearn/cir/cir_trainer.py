@@ -146,6 +146,24 @@ class CIR(UnlearnTrainer):
             ref_grad = ref_grad.to(module.weight.dtype)
             # calculating this on purified acts and grads makes filtering more accurate
             token_disr = pt.einsum("ij,ti,tj->t", ref_grad, pure_grads, pure_acts)
+
+            # token_magn = pt.einsum("ti,tj->t", pure_grads, pure_acts)
+            # ratios = token_disr / (token_magn + 1e-8)
+            # threshold = ratios.kthvalue(int(ratios.numel() * 0.8)).values
+            # kl_mask = ratios > threshold
+
+            # threshold = token_disr.kthvalue(int(token_disr.numel() * 0.4)).values
+
+            # sorted_ = token_disr.cpu().sort(descending=True).values
+            # acc = 0
+            # for val in sorted_:
+            #     acc += val
+            #     if acc < 0:
+            #         break
+            # threshold = val
+
+            # kl_mask = token_disr > threshold
+
             kl_mask = token_disr > 0
             pure_acts = pure_acts[kl_mask]
             pure_grads = pure_grads[kl_mask]
@@ -153,21 +171,22 @@ class CIR(UnlearnTrainer):
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", pure_grads, pure_acts)
 
-    def latent_attack_hook(self, module, args, output):
-        if not self.use_hooks:
-            return
-        if not hasattr(module, "attack"):
-            return
-        normalized_attack = module.attack / module.attack.norm()
-        attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
-        output = output + normalized_attack * attack_norm
-        return output
-
     def prep_latent_attack_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
         grads = grad_output[0][self.token_mask]
         module.attack = grads.mean(dim=0)
+        # module.attack = grad_output[0]
+
+    def latent_attack_hook(self, module, args, output):
+        if not self.use_hooks:
+            return
+        if not hasattr(module, "attack"):
+            return
+        normalized_attack = module.attack / module.attack.norm(dim=-1).mean()
+        attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
+        output = output + normalized_attack * attack_norm
+        return output
 
 
 def partial_fit(ipca, vecs):
@@ -203,3 +222,33 @@ def collapse(ipca, vecs):
     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
     collapsed = proj_strenghts * mahal_dirs_norm
     return collapsed.to(orig_dtype)
+
+
+# # this is actually slower
+# def partial_fit(ipca, vecs):
+#     """In addition to partial_fit, it fill also accumulate the vecs if needed"""
+#     vecs = vecs.clone()  # ipca.partial_fit may modify the input in-place
+#     if ipca.accumulator is not None:
+#         vecs = pt.cat([ipca.accumulator, vecs])
+#         ipca.accumulator = None
+
+#     if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
+#         ipca.accumulator = vecs
+#         return
+
+#     # enough vecs
+#     while vecs.shape[0] >= ipca.n_components:
+#         batch = vecs[:ipca.n_components]
+#         ipca.partial_fit(batch)
+#         vecs = vecs[ipca.n_components:]
+
+# self.use_hooks_prep_la = True
+# model.zero_grad(set_to_none=True)
+# output = model(**prep_batch(batch, model.device))
+# forget_loss = label_logits(output.logits, batch["labels"])
+# with no_weight_grads(model):
+#     # we will backpropagate because the graph has been built by the forward pass
+#     # but backward() itself will not compute weight gradients
+#     # instead, weights will remain with grad computed by the collapse_hook
+#     forget_loss.backward()
+# self.use_hooks_prep_la = False
