@@ -147,23 +147,6 @@ class CIR(UnlearnTrainer):
             # calculating this on purified acts and grads makes filtering more accurate
             token_disr = pt.einsum("ij,ti,tj->t", ref_grad, pure_grads, pure_acts)
 
-            # token_magn = pt.einsum("ti,tj->t", pure_grads, pure_acts)
-            # ratios = token_disr / (token_magn + 1e-8)
-            # threshold = ratios.kthvalue(int(ratios.numel() * 0.8)).values
-            # kl_mask = ratios > threshold
-
-            # threshold = token_disr.kthvalue(int(token_disr.numel() * 0.4)).values
-
-            # sorted_ = token_disr.cpu().sort(descending=True).values
-            # acc = 0
-            # for val in sorted_:
-            #     acc += val
-            #     if acc < 0:
-            #         break
-            # threshold = val
-
-            # kl_mask = token_disr > threshold
-
             kl_mask = token_disr > 0
             pure_acts = pure_acts[kl_mask]
             pure_grads = pure_grads[kl_mask]
@@ -252,3 +235,21 @@ def collapse(ipca, vecs):
 #     # instead, weights will remain with grad computed by the collapse_hook
 #     forget_loss.backward()
 # self.use_hooks_prep_la = False
+
+
+# token_magn = pt.einsum("ti,tj->t", pure_grads, pure_acts)
+# ratios = token_disr / (token_magn + 1e-8)
+# threshold = ratios.kthvalue(int(ratios.numel() * 0.8)).values
+# kl_mask = ratios > threshold
+
+# threshold = token_disr.kthvalue(int(token_disr.numel() * 0.4)).values
+
+# sorted_ = token_disr.cpu().sort(descending=True).values
+# acc = 0
+# for val in sorted_:
+#     acc += val
+#     if acc < 0:
+#         break
+# threshold = val
+
+# kl_mask = token_disr > threshold

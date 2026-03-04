@@ -86,6 +86,17 @@ class KLComputor:
         token_mask = labels != -100
         assert token_mask.shape == current_logits.shape[:2]
 
+        # # useful for qualitative analysis (combined with print_tokens function)
+        # if log_per_seq_kl:
+        #     log_p = pt.nn.functional.log_softmax(cached_logits, dim=-1)
+        #     log_q = pt.nn.functional.log_softmax(current_logits, dim=-1)
+        #     per_token_kl = pt.nn.functional.kl_div(
+        #         log_q, log_p, reduction="none", log_target=True
+        #     ).sum(dim=-1)  # (batch, seq)
+        #     per_seq_kl = (per_token_kl * token_mask).sum(dim=-1) / token_mask.sum(dim=-1).clamp(min=1)
+        #     seq_strs = " ".join(f"{v:.4f}" for v in per_seq_kl.tolist())
+        #     logging.info(f"KL per_seq: [{seq_strs}]")
+
         # Mask first
         cached_logits_masked = cached_logits[token_mask]  # btw, bfloat is enough
         current_logits_masked = current_logits[token_mask]
@@ -145,6 +156,7 @@ class KLEvaluator:
             ]
             self.kl_computor = KLComputor(model, self.batches)
 
+        # logging.info(f"--- KL eval: {self.dataset_name} ---")
         ce_loss, kl_loss = self.kl_computor.eval_kl_many_batches(self.batches)
         res = {f"{self.dataset_name}_loss": ce_loss, f"{self.dataset_name}_kl": kl_loss}
 
@@ -160,3 +172,10 @@ class KLEvaluator:
                 trainer.control.should_training_stop = True
 
         return res
+
+
+# def print_tokens(x, y):
+#     input_ids = self.batches[x]["input_ids"][y]
+#     attention_mask = self.batches[x]["attention_mask"][y]
+#     tokens = input_ids[attention_mask]
+#     print(kwargs["tokenizer"].decode(tokens))
