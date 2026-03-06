@@ -9,6 +9,7 @@ image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
     .apt_install("git")
     .pip_install_from_requirements("requirements.txt")
+    .pip_install("lm-eval==0.4.11")
     .pip_install("flash-attn==2.6.3", extra_options="--no-build-isolation")
     # if we move to torch>2.5, we need to use pre-built wheels from here, because the build is painfully slow
     # also to support B200, flash-attn==2.6.3 is too old, we'd need to bump to e.g. 2.8.3
