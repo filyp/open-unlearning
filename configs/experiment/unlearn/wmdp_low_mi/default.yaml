@@ -31,7 +31,7 @@ eval:
   wikitext_kl:
     handler: KLEvaluator
     dataset_name: wikitext
-    disr_budget: 0.005
+    disr_budget: 0.02
 
 # CLI: wmdp_domain=cyber to switch domain
 wmdp_domain: bio
@@ -84,7 +84,7 @@ relearning_trainer:
   handler: FinetuneTrainer
   args:
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
-    learning_rate: 5e-6
+    learning_rate: 1e-5
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}

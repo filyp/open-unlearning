@@ -26,13 +26,11 @@ eval:
   wikitext:
     handler: KLEvaluator
     dataset_name: wikitext
-    disr_budget: 0.01
-    # disr_budget: 0.04
+    disr_budget: 0.02
   safe_eval:
     handler: KLEvaluator
     dataset_name: safe_eval  # like retain, but different split
-    disr_budget: 0.01
-    # disr_budget: 0.04
+    disr_budget: null
   holdout_harmful:
     handler: KLEvaluator
     dataset_name: holdout_harmful
