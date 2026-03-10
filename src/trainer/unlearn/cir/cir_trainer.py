@@ -4,10 +4,10 @@ import random
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
-from torch_incremental_pca import IncrementalPCA
 
 from data.utils import batched, prep_batch
 from trainer.unlearn.base import UnlearnTrainer
+from trainer.unlearn.cir.collapsers import IncrementalPCACollapser, CovStoringCollapser
 from trainer.unlearn.cir.kl_utils import KLComputor
 from trainer.utils import label_logits, no_weight_grads, normalize_grads
 
@@ -39,11 +39,11 @@ class CIR(UnlearnTrainer):
                     module.register_forward_hook(self.save_act_input_hook)
                     module.register_full_backward_hook(self.collapse_hook)
 
-                    # initialize IncrementalPCA
-                    module.act_ipca = IncrementalPCA(n_components=cfg.n_pcs, gram=True)
-                    module.act_ipca.accumulator = None
-                    module.grad_ipca = IncrementalPCA(n_components=cfg.n_pcs, gram=True)
-                    module.grad_ipca.accumulator = None
+                    # initialize collapsers
+                    # module.act_collapser = IncrementalPCACollapser(cfg.n_pcs, self.model.device)
+                    # module.grad_collapser = IncrementalPCACollapser(cfg.n_pcs, self.model.device)
+                    module.act_collapser = CovStoringCollapser(cfg.n_pcs, self.model.device)
+                    module.grad_collapser = CovStoringCollapser(cfg.n_pcs, self.model.device)
 
                 # register latent attack hooks
                 for module in [expert.gate_proj, expert.up_proj]:
@@ -100,6 +100,13 @@ class CIR(UnlearnTrainer):
         self.use_hooks = False
 
         self.batch_idx += 1
+        if self.batch_idx % self.cfg.warmup == 0:
+            for module in model.modules():
+                if hasattr(module, "act_collapser"):
+                    module.act_collapser.process_saved_vecs()
+                if hasattr(module, "grad_collapser"):
+                    module.grad_collapser.process_saved_vecs()
+
         normalize_grads(model)
         return forget_loss.detach()
 
@@ -126,19 +133,15 @@ class CIR(UnlearnTrainer):
             acts = acts[self.token_mask]
             grads = grads[self.token_mask]
 
-        # note: we could optimize and reuse the act ipca for gate_proj and up_proj, but for simplicity don't
-        partial_fit(module.act_ipca, acts)
-        partial_fit(module.grad_ipca, grads)
+        # note: we could optimize and reuse the act collapser for gate_proj and up_proj, but for simplicity don't
+        module.act_collapser.add_vecs(acts)
+        module.grad_collapser.add_vecs(grads)
 
-        if (
-            self.batch_idx < self.cfg.warmup
-            or not hasattr(module.act_ipca, "components_")
-            or not hasattr(module.grad_ipca, "components_")
-        ):
+        if self.batch_idx < self.cfg.warmup:
             return  # too early to train, so only collect activations and return early
 
-        pure_acts = collapse(module.act_ipca, acts)
-        pure_grads = collapse(module.grad_ipca, grads)
+        pure_acts = module.act_collapser.collapse(acts)
+        pure_grads = module.grad_collapser.collapse(grads)
 
         # ! KL-masking, per token and per module
         if "retain_momentum" in self.cfg:
@@ -170,86 +173,3 @@ class CIR(UnlearnTrainer):
         attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
         output = output + normalized_attack * attack_norm
         return output
-
-
-def partial_fit(ipca, vecs):
-    """In addition to partial_fit, it fill also accumulate the vecs if needed"""
-    if ipca.accumulator is not None:
-        vecs = pt.cat([ipca.accumulator, vecs])
-        ipca.accumulator = None
-
-    if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
-        ipca.accumulator = vecs
-    else:  # enough vecs
-        vecs = vecs.clone()  # ipca.partial_fit may modify the input in-place
-        ipca.partial_fit(vecs)
-
-
-def collapse(ipca, vecs):
-    orig_dtype = vecs.dtype
-    eig_vec = ipca.components_.T.to(vecs.device)  # (n_features, n_components)
-    eig_val = ipca.explained_variance_.to(vecs.device)  # (n_components,)
-    centered = vecs - ipca.mean_.to(vecs.device)  # mean_ is in float32, so it upcasts
-    assert centered.dtype == pt.float32
-
-    # ipca.explained_variance_ = ipca.explained_variance_ * 0.99
-    # ipca.n_samples_seen_ = ipca.n_samples_seen_ * 0.99
-
-    # compute Mahalanobis directions using eigendecomposition
-    projected = centered @ eig_vec  # (N, D)
-    proj_diff = projected - projected / (eig_val / eig_val.min())
-    mahal_dirs = centered - proj_diff @ eig_vec.T
-
-    # project to mahalanobis directions
-    mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-    proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-    collapsed = proj_strenghts * mahal_dirs_norm
-    return collapsed.to(orig_dtype)
-
-
-# # this is actually slower
-# def partial_fit(ipca, vecs):
-#     """In addition to partial_fit, it fill also accumulate the vecs if needed"""
-#     vecs = vecs.clone()  # ipca.partial_fit may modify the input in-place
-#     if ipca.accumulator is not None:
-#         vecs = pt.cat([ipca.accumulator, vecs])
-#         ipca.accumulator = None
-
-#     if vecs.shape[0] < ipca.n_components:  # too few vecs, so accumulate
-#         ipca.accumulator = vecs
-#         return
-
-#     # enough vecs
-#     while vecs.shape[0] >= ipca.n_components:
-#         batch = vecs[:ipca.n_components]
-#         ipca.partial_fit(batch)
-#         vecs = vecs[ipca.n_components:]
-
-# self.use_hooks_prep_la = True
-# model.zero_grad(set_to_none=True)
-# output = model(**prep_batch(batch, model.device))
-# forget_loss = label_logits(output.logits, batch["labels"])
-# with no_weight_grads(model):
-#     # we will backpropagate because the graph has been built by the forward pass
-#     # but backward() itself will not compute weight gradients
-#     # instead, weights will remain with grad computed by the collapse_hook
-#     forget_loss.backward()
-# self.use_hooks_prep_la = False
-
-
-# token_magn = pt.einsum("ti,tj->t", pure_grads, pure_acts)
-# ratios = token_disr / (token_magn + 1e-8)
-# threshold = ratios.kthvalue(int(ratios.numel() * 0.8)).values
-# kl_mask = ratios > threshold
-
-# threshold = token_disr.kthvalue(int(token_disr.numel() * 0.4)).values
-
-# sorted_ = token_disr.cpu().sort(descending=True).values
-# acc = 0
-# for val in sorted_:
-#     acc += val
-#     if acc < 0:
-#         break
-# threshold = val
-
-# kl_mask = token_disr > threshold

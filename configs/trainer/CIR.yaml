@@ -5,7 +5,7 @@ defaults:
 handler: CIR
 args:
   optim: sgd  # adam underperforms
-  learning_rate: 0.3
+  learning_rate: 0.4
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
@@ -20,4 +20,4 @@ method_args:
 
     latent_attack_strength: 0.02
 
-    warmup: 32
+    warmup: 64  # todo, when none, just use epoch len

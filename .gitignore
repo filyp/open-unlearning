@@ -194,3 +194,4 @@ tmp_comm/
 **/*.pkl
 community/benchmarks/wmdp_low_mi/plots/*.pdf
 src/tmp.py
+test.py
