@@ -1,5 +1,6 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=CIR task_name=SAMPLE_UNLEARN
 import logging
+import math
 import random
 
 import torch as pt
@@ -20,6 +21,10 @@ class CIR(UnlearnTrainer):
         self.cfg = cfg
         self.use_hooks = False
         self.batch_idx = 0
+        self.recalc_every = math.ceil(  # on default, recalculate every epoch
+            len(self.train_dataset) / self.args.per_device_train_batch_size
+        )
+        logging.info(f"{self.recalc_every=}")
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
         # set trainable params
@@ -42,8 +47,12 @@ class CIR(UnlearnTrainer):
                     # initialize collapsers
                     # module.act_collapser = IncrementalPCACollapser(cfg.n_pcs, self.model.device)
                     # module.grad_collapser = IncrementalPCACollapser(cfg.n_pcs, self.model.device)
-                    module.act_collapser = CovStoringCollapser(cfg.n_pcs, self.model.device)
-                    module.grad_collapser = CovStoringCollapser(cfg.n_pcs, self.model.device)
+                    module.act_collapser = CovStoringCollapser(
+                        cfg.n_pcs, self.model.device
+                    )
+                    module.grad_collapser = CovStoringCollapser(
+                        cfg.n_pcs, self.model.device
+                    )
 
                 # register latent attack hooks
                 for module in [expert.gate_proj, expert.up_proj]:
@@ -66,7 +75,7 @@ class CIR(UnlearnTrainer):
         model.train()
 
         # ! retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.cfg.warmup:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
@@ -100,7 +109,7 @@ class CIR(UnlearnTrainer):
         self.use_hooks = False
 
         self.batch_idx += 1
-        if self.batch_idx % self.cfg.warmup == 0:
+        if self.batch_idx % self.recalc_every == 0:
             for module in model.modules():
                 if hasattr(module, "act_collapser"):
                     module.act_collapser.process_saved_vecs()
@@ -137,7 +146,7 @@ class CIR(UnlearnTrainer):
         module.act_collapser.add_vecs(acts)
         module.grad_collapser.add_vecs(grads)
 
-        if self.batch_idx < self.cfg.warmup:
+        if self.batch_idx < self.recalc_every:
             return  # too early to train, so only collect activations and return early
 
         pure_acts = module.act_collapser.collapse(acts)

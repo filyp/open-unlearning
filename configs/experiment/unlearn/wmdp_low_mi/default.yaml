@@ -28,6 +28,10 @@ eval:
   recall_loss:
     handler: LossEvaluator
     dataset_name: recall
+  retain_eval:
+    handler: KLEvaluator
+    dataset_name: retain_eval  # like retain, but different split
+    disr_budget: null
   wikitext_kl:
     handler: KLEvaluator
     dataset_name: wikitext
@@ -40,7 +44,6 @@ _wmdp_retain_files:
     - biology/biology_000849.jsonl
   cyber:
     - computer_science_and_technology/computer_science_and_technology_000000.jsonl
-
 data:
   custom_loaders:
     - loader: wmdp_low_mi
@@ -51,32 +54,26 @@ data:
 
     - loader: load_hf_and_tokenize  # fineweb retain dataset (domain-matched)
       dataset_name: retain
-      limit: 1000
+      range: [0, 1000]
       tokenizer: ${tokenizer_cfg}
       hf_args:
         path: m-a-p/FineFineWeb
         data_files: ${_wmdp_retain_files.${wmdp_domain}}
     
+    - loader: load_hf_and_tokenize  # retain eval (different range from training retain)
+      dataset_name: retain_eval
+      range: [1000, 1064]
+      tokenizer: ${tokenizer_cfg}
+      hf_args:
+        path: m-a-p/FineFineWeb
+        data_files: ${_wmdp_retain_files.${wmdp_domain}}
+
     - loader: load_hf_and_tokenize  # wikitext for KL eval
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      limit: 128
+      range: [0, 128]
       tokenizer: ${tokenizer_cfg}
-
-    # # alternative retain datasets:
-    # - loader: load_hf_and_tokenize  # wikitext for KL eval
-    #   dataset_name: retain
-    #   hf_args:
-    #     path: filypo/wikitext_16k
-    #   limit: 1024
-    #   tokenizer: ${tokenizer_cfg}
-    # - loader: beavertails_single
-    #   dataset_name: retain
-    #   limit: 1024
-    #   split: 330k_train
-    #   category: safe
-    #   tokenizer: ${tokenizer_cfg}
 
 relearning_trainer:
   # default loadede from finetune.yaml

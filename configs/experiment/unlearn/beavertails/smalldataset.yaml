@@ -67,7 +67,7 @@ data:
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      limit: 64
+      range: [0, 64]
       tokenizer: ${tokenizer_cfg}
 
 # categories = [

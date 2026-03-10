@@ -19,5 +19,3 @@ method_args:
     # train_first_layers: 1
 
     latent_attack_strength: 0.02
-
-    warmup: 64  # todo, when none, just use epoch len

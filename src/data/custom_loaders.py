@@ -29,8 +29,8 @@ def _tokenize(text, tokenizer, tokenizer_cfg):
 def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
     assert not kwargs["template_args"].apply_chat_template, "model not supported"
     corpus = load_hf_cached(**cfg.hf_args)
-    if "limit" in cfg:
-        corpus = corpus.select(range(cfg.limit))
+    if "range" in cfg:
+        corpus = corpus.select(range(*cfg.range))
     corpus = corpus.shuffle(seed=42)
     samples = [_tokenize(x["text"], tokenizer, cfg.tokenizer) for x in corpus]
     return {cfg.dataset_name: samples}

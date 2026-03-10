@@ -50,14 +50,14 @@ data:
 
     - loader: beavertails_single
       dataset_name: retain
-      limit: 1024
+      limit: 1536
       split: 330k_train
       category: safe
       tokenizer: ${tokenizer_cfg}
 
     - loader: beavertails_single
       dataset_name: safe_eval
-      limit: 128
+      limit: 64
       split: 330k_test
       category: safe
       tokenizer: ${tokenizer_cfg}
@@ -66,7 +66,7 @@ data:
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      limit: 128
+      range: [0, 128]
       tokenizer: ${tokenizer_cfg}
 
 # categories = [
