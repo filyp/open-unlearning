@@ -6,6 +6,7 @@ import random
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 
+from data.custom_loaders import DATE_STRING
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
@@ -99,7 +100,7 @@ class CIR(UnlearnTrainer):
         if self.processing_class.chat_template is not None:
             banned_tokens = set(
                 self.processing_class.apply_chat_template(
-                    [{"role": "user", "content": ""}], date_string="10 Apr 2025"
+                    [{"role": "user", "content": ""}], date_string=DATE_STRING
                 )
             )
             for banned_token in banned_tokens:

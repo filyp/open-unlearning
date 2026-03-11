@@ -2,7 +2,9 @@ import logging
 import os
 
 from datasets import concatenate_datasets, load_dataset, load_from_disk
-from omegaconf import open_dict
+
+
+DATE_STRING = "10 Apr 2025"
 
 
 def load_hf_cached(path, split="train", data_files=None):
@@ -115,7 +117,7 @@ def beavertails(cfg, tokenizer, **kwargs):
                 {"role": "assistant", "content": text["response"]},
             ]
             full_txt = tokenizer.apply_chat_template(
-                chat, tokenize=False, date_string="10 Apr 2025"
+                chat, tokenize=False, date_string=DATE_STRING
             )
             beginning_text = tokenizer.apply_chat_template(
                 chat[:-1],
