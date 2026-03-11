@@ -27,7 +27,8 @@ def _tokenize(text, tokenizer, tokenizer_cfg):
 
 
 def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
-    assert not kwargs["template_args"].apply_chat_template, "model not supported"
+    # note that we don't use a chat template, even with chat models,
+    # since the texts are not in a form of chat
     corpus = load_hf_cached(**cfg.hf_args)
     if "range" in cfg:
         corpus = corpus.select(range(*cfg.range))
@@ -54,9 +55,9 @@ def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     return samples
 
 
-def wmdp_low_mi(cfg, tokenizer, **kwargs):  # handler
-    assert not kwargs["template_args"].apply_chat_template, "model not supported"
-
+def wmdp_low_mi(cfg, tokenizer, **kwargs):
+    # note that we don't use a chat template, even with chat models,
+    # since the texts are not in a form of chat
     T = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_T", split="train")
     V = load_hf_cached(path=f"filypo/wmdp_{cfg.dataset}_V", split="train")
 
@@ -89,9 +90,7 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):  # handler
 ########################### BEAVERTTAILS ###########################
 
 
-def beavertails_single(cfg, tokenizer, **kwargs):
-    assert not kwargs["template_args"].apply_chat_template, "model not supported"
-
+def beavertails(cfg, tokenizer, **kwargs):
     # splits: 330k_train, 330k_test, 30k_train, 30k_test
     full_bt = load_hf_cached("PKU-Alignment/BeaverTails", split=cfg.split)
 
@@ -100,33 +99,38 @@ def beavertails_single(cfg, tokenizer, **kwargs):
     else:
         texts = full_bt.filter(lambda x: x["category"][cfg.category])
 
-    logging.info(f"{cfg.dataset_name} {cfg.limit}/{len(texts)}")
+    len_ = cfg.range[1] - cfg.range[0]
+    logging.info(f"{cfg.dataset_name} {len_}/{len(texts)}")
     samples = []
-    for text in texts.select(range(cfg.limit)):
-        # we don't use "Question:...\nAnswer:..." format, to not have unlearning base too much on these tokens
-        question_txt = text["prompt"]
-        answer_txt = text["response"]
-        full_txt = f"{question_txt} {answer_txt}"
+    for text in texts.select(range(*cfg.range)):
+        # if tokenizer.chat_template is None or cfg.dataset_name in ["forget","retain"]:
+        if tokenizer.chat_template is None:
+            # we don't use "Question:...\nAnswer:..." format, to not have unlearning base too much on these tokens
+            full_txt = f"{text['prompt']} {text['response']}"
+            beginning_text = text["prompt"]
+        else:
+            chat = [
+                # note that we skip the system prompt
+                {"role": "user", "content": text["prompt"]},
+                {"role": "assistant", "content": text["response"]},
+            ]
+            full_txt = tokenizer.apply_chat_template(
+                chat, tokenize=False, date_string="10 Apr 2025"
+            )
+            beginning_text = tokenizer.apply_chat_template(
+                chat[:-1],
+                tokenize=False,
+                date_string="10 Apr 2025",
+                add_generation_prompt=True,
+            )
+
         sample = _tokenize(full_txt, tokenizer, cfg.tokenizer)
-        beginning_len = len(tokenizer(question_txt, **cfg.tokenizer)["input_ids"])
+        beginning_len = len(tokenizer(beginning_text, **cfg.tokenizer)["input_ids"])
         sample["labels"][:beginning_len] = -100
         samples.append(sample)
-    assert len(samples) == cfg.limit
+
+    assert len(samples) == len_
     return {cfg.dataset_name: samples}
-
-
-def beavertails(cfg, tokenizer, **kwargs):
-    with open_dict(cfg):
-        cfg["limit"] = cfg["target_limit"] * 2 + cfg["eval_limit"]
-        cfg["dataset_name"] = "tmp"
-
-    samples = beavertails_single(cfg, tokenizer, **kwargs)["tmp"]
-
-    return dict(
-        forget=samples[: cfg.target_limit],
-        relearn=samples[cfg.target_limit : 2 * cfg.target_limit],
-        holdout_harmful=samples[2 * cfg.target_limit :],
-    )
 
 
 # def _load_from_repo(path, repo="filyp/unlearning"):

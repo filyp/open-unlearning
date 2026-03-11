@@ -42,23 +42,38 @@ tokenizer_cfg:
 data:
   custom_loaders:
     - loader: beavertails
+      dataset_name: forget
       # target_limit: 1536  # size of the unlearning and relearning datasets
-      target_limit: 256
-      eval_limit: 64  # size of the holdout harmful dataset
+      range: [0, 256]
       split: 330k_train
       category: animal_abuse
       tokenizer: ${tokenizer_cfg}
 
-    - loader: beavertails_single
+    - loader: beavertails
+      dataset_name: relearn
+      # target_limit: 1536  # size of the unlearning and relearning datasets
+      range: [256, 512]
+      split: 330k_train
+      category: animal_abuse
+      tokenizer: ${tokenizer_cfg}
+
+    - loader: beavertails
+      dataset_name: holdout_harmful
+      range: [0, 64]
+      split: 330k_test
+      category: animal_abuse
+      tokenizer: ${tokenizer_cfg}
+
+    - loader: beavertails
       dataset_name: retain
-      limit: 1024
+      range: [0, 1024]
       split: 330k_train
       category: safe
       tokenizer: ${tokenizer_cfg}
 
-    - loader: beavertails_single
+    - loader: beavertails
       dataset_name: safe_eval
-      limit: 64
+      range: [0, 64]
       split: 330k_test
       category: safe
       tokenizer: ${tokenizer_cfg}
@@ -69,6 +84,35 @@ data:
         path: filypo/wikitext_16k
       range: [0, 64]
       tokenizer: ${tokenizer_cfg}
+
+relearning_trainer:
+  # default loaded from finetune.yaml
+  save_final_state: False
+  handler: FinetuneTrainer
+  args:
+    optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
+    learning_rate: 1e-5
+    lr_scheduler_type: constant
+    report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
+    run_name: ${task_name}
+
+metric_to_optimize: holdout_harmful_loss
+optimize_direction: minimize
+
+# Optuna sweeper config (activate with --multirun flag)
+hydra:
+  sweeper:
+    # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    storage: ${oc.env:OPTUNA_STORAGE_URL}
+    study_name: ${task_name}
+    direction: ${optimize_direction}
+    n_trials: 50
+    n_jobs: 1
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${trainer.args.seed}  # deterministic
+      # seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
 
 # categories = [
 #     "animal_abuse",
@@ -86,30 +130,3 @@ data:
 #     "terrorism,organized_crime",
 #     "violence,aiding_and_abetting,incitement",
 # ]
-
-# relearning_trainer:
-#   # default loadede from finetune.yaml
-#   save_final_state: False
-#   handler: FinetuneTrainer
-#   args:
-#     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
-#     learning_rate: 5e-6
-#     lr_scheduler_type: constant
-#     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
-#     run_name: ${task_name}
-
-# # Optuna sweeper config (activate with --multirun flag)
-# hydra:
-#   sweeper:
-#     # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
-#     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
-#     storage: ${oc.env:OPTUNA_STORAGE_URL}
-#     study_name: ${task_name}
-#     direction: minimize
-#     n_trials: 50
-#     n_jobs: 1
-#     sampler:
-#       _target_: optuna.samplers.TPESampler
-#       seed: ${trainer.args.seed}  # deterministic
-#       # seed: ${now:%f}  # microseconds timestamp - unique per job, to avoid parallel searches duplicating trials
-

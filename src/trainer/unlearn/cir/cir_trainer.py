@@ -7,9 +7,9 @@ import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 
 from data.utils import batched, prep_batch
+from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.cir.collapsers import IncrementalPCACollapser, CovStoringCollapser
-from trainer.unlearn.cir.kl_utils import KLComputor
+from trainer.unlearn.cir.collapsers import CovStoringCollapser, IncrementalPCACollapser
 from trainer.utils import label_logits, no_weight_grads, normalize_grads
 
 logging.basicConfig(level=logging.INFO)
@@ -95,7 +95,15 @@ class CIR(UnlearnTrainer):
         # ! unlearning loss
         batch = inputs["forget"]
         self.token_mask = batch["attention_mask"].bool().clone()
-        self.token_mask[:, 0] = False  # ignore BOS token
+        self.token_mask[:, 0] = False  # don't use BOS token for unlearning
+        if self.processing_class.chat_template is not None:
+            banned_tokens = set(
+                self.processing_class.apply_chat_template(
+                    [{"role": "user", "content": ""}], date_string="10 Apr 2025"
+                )
+            )
+            for banned_token in banned_tokens:
+                self.token_mask &= batch["input_ids"] != banned_token
 
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
@@ -132,6 +140,7 @@ class CIR(UnlearnTrainer):
         module.last_act_input = None
 
         if self.is_moe:
+            # todo, in future MoE HF5 implementation, make sure we use actual self.token_mask
             token_mask = grads.norm(dim=1) != 0
             acts = acts[token_mask]
             grads = grads[token_mask]

@@ -5,7 +5,7 @@ from evals.tofu import TOFUEvaluator
 from evals.muse import MUSEEvaluator
 from evals.lm_eval import LMEvalEvaluator
 from evals.wmdp_low_mi import WMDPLLowMIEvaluator
-from trainer.unlearn.cir.kl_utils import KLEvaluator
+from evals.kl_eval import KLEvaluator
 
 EVALUATOR_REGISTRY: Dict[str, Any] = {}
 
