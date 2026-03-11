@@ -96,14 +96,9 @@ class CIR(UnlearnTrainer):
         # ! unlearning loss
         batch = inputs["forget"]
         self.token_mask = batch["attention_mask"].bool().clone()
-        self.token_mask[:, 0] = False  # don't use BOS token for unlearning
-        if self.processing_class.chat_template is not None:
-            banned_tokens = set(
-                self.processing_class.apply_chat_template(
-                    [{"role": "user", "content": ""}], date_string=DATE_STRING
-                )
-            )
-            for banned_token in banned_tokens:
+        self.token_mask[:, 0] = False  # omit unlearning on the BOS token
+        if self.processing_class.chat_template is not None:  # omit template tokens
+            for banned_token in _get_banned_tokens(self.processing_class):
                 self.token_mask &= batch["input_ids"] != banned_token
 
         self.use_hooks = True
@@ -192,3 +187,14 @@ class CIR(UnlearnTrainer):
         attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
         output = output + normalized_attack * attack_norm
         return output
+
+
+def _get_banned_tokens(processing_class):
+    empty_chat = [
+        {"role": "system", "content": ""},
+        {"role": "user", "content": ""},
+        {"role": "assistant", "content": ""},
+    ]
+    return set(
+        processing_class.apply_chat_template(empty_chat, date_string=DATE_STRING)
+    )
