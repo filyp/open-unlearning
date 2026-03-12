@@ -5,7 +5,7 @@ defaults:
 handler: CIR
 args:
   optim: sgd  # adam underperforms
-  learning_rate: 0.2
+  learning_rate: 0.4
   lr_scheduler_type: constant
   gradient_accumulation_steps: 1  # must be one, because CIR modifies gradients in-place
 
@@ -16,6 +16,8 @@ method_args:
     retain_momentum: 0.9
 
     train_first_layers: 0.75
-    # train_first_layers: 1
 
-    latent_attack_strength: 0.02
+    lora_rank: 8
+    lora_alpha: 16
+    adv_lr: 0.001
+    adv_decay: 0.99

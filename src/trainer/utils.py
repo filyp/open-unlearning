@@ -151,6 +151,7 @@ def _get_label_logits(logits, labels):
 
 def label_logits(logits, labels):
     label_logits = _get_label_logits(logits, labels)
+    # label_logits = pt.atan(label_logits / 20)
     clipped_label_logits = label_logits.clip(min=0)
     return clipped_label_logits.float().mean()
 
@@ -185,19 +186,3 @@ def sanitize_tensor(t, epsilon=1e-6):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
-
-
-@contextmanager
-def no_weight_grads(model):
-    """Temporarily disables weight gradients computation for the given model.
-
-    Compared to pt.no_grad(), it can still allow for the backward pass.
-    Useful if we want to trigger backwards hooks, but not compute weight gradients.
-    """
-    stashed_params = [p for p in model.parameters() if p.requires_grad]
-    model.requires_grad_(False)
-    try:
-        yield
-    finally:
-        for p in stashed_params:
-            p.requires_grad = True

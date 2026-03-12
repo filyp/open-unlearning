@@ -11,7 +11,7 @@ from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.cir.collapsers import CovStoringCollapser, IncrementalPCACollapser
-from trainer.utils import label_logits, no_weight_grads, normalize_grads
+from trainer.utils import label_logits, normalize_grads
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,12 +34,15 @@ class CIR(UnlearnTrainer):
 
         self.is_moe = hasattr(self.model.model.layers[0].mlp, "experts")
 
+        self.lora_params = []
+        self.base_trainable_params = []
         for layer_num in range(train_to_layer):
             mlp = self.model.model.layers[layer_num].mlp
             experts = mlp.experts if self.is_moe else [mlp]
             for expert in experts:
                 for module in [expert.gate_proj, expert.up_proj, expert.down_proj]:
                     module.weight.requires_grad = True
+                    self.base_trainable_params.append(module.weight)
 
                     # install hooks
                     module.register_forward_hook(self.save_act_input_hook)
@@ -55,11 +58,16 @@ class CIR(UnlearnTrainer):
                         cfg.n_pcs, self.model.device
                     )
 
-                # register latent attack hooks
-                for module in [expert.gate_proj, expert.up_proj]:
-                    if "latent_attack_strength" in cfg:
-                        module.register_forward_hook(self.latent_attack_hook)
-                        module.register_full_backward_hook(self.prep_latent_attack_hook)
+                    # ! adversarial LoRA
+                    if "lora_rank" in cfg:
+                        module.lora_module = ManualLoRA(
+                            module.weight.shape[1],  # in_features
+                            module.weight.shape[0],  # out_features
+                            cfg.lora_rank,
+                            cfg.lora_alpha,
+                        ).to(self.model.device, dtype=self.model.dtype)
+                        self.lora_params.extend(module.lora_module.parameters())
+                        module.register_forward_hook(self.lora_forward_hook)
 
         # ! prepare retain
         if "retain_momentum" in self.cfg:
@@ -82,16 +90,15 @@ class CIR(UnlearnTrainer):
             model.zero_grad(set_to_none=True)
             kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
-            for param in model.parameters():
-                if param.requires_grad:
-                    if hasattr(param, "ref_grad"):
-                        ref = dequantize_blockwise(*param.ref_grad)
-                    else:  # initialize
-                        ref = pt.zeros_like(param)
-                    if param.grad is not None:  # some experts may be not chosen
-                        momentum = self.cfg.retain_momentum
-                        ref = ref * momentum + param.grad * (1 - momentum)
-                    param.ref_grad = quantize_blockwise(ref)  # 8-bit quantization
+            for param in self.base_trainable_params:
+                if hasattr(param, "ref_grad"):
+                    ref = dequantize_blockwise(*param.ref_grad)
+                else:  # initialize
+                    ref = pt.zeros_like(param)
+                if param.grad is not None:  # some experts may be not chosen
+                    momentum = self.cfg.retain_momentum
+                    ref = ref * momentum + param.grad * (1 - momentum)
+                param.ref_grad = quantize_blockwise(ref)  # 8-bit quantization
 
         # ! unlearning loss
         batch = inputs["forget"]
@@ -104,13 +111,23 @@ class CIR(UnlearnTrainer):
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
         output = model(**prep_batch(batch, model.device))
-        forget_loss = label_logits(output.logits, batch["labels"])
-        with no_weight_grads(model):
-            # we will backpropagate because the graph has been built by the forward pass
-            # but backward() itself will not compute weight gradients
-            # instead, weights will remain with grad computed by the collapse_hook
-            forget_loss.backward()
+        forget_loss = -output.loss  # negative cross entropy loss
+        # forget_loss = label_logits(output.logits, batch["labels"])
+        # we will backpropagate because the graph has been built by the forward pass
+        # but backward() itself will not compute weight gradients for base params
+        # instead, weights will remain with grad computed by the collapse_hook
+        for p in self.base_trainable_params:
+            p.requires_grad_(False)
+        forget_loss.backward()
+        for p in self.base_trainable_params:
+            p.requires_grad_(True)
         self.use_hooks = False
+
+        # ! update LoRA adversarially (gradient ascent - adversary tries to relearn)
+        for p in self.lora_params:
+            p.data += self.cfg.adv_lr * p.grad
+            p.data *= self.cfg.adv_decay
+            p.grad = None
 
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
@@ -119,6 +136,8 @@ class CIR(UnlearnTrainer):
                     module.act_collapser.process_saved_vecs()
                 if hasattr(module, "grad_collapser"):
                     module.grad_collapser.process_saved_vecs()
+                # if hasattr(module, "lora_module"):
+                #     module.lora_module.lora_B.data.zero_()
 
         normalize_grads(model)
         return forget_loss.detach()
@@ -171,22 +190,9 @@ class CIR(UnlearnTrainer):
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", pure_grads, pure_acts)
 
-    def prep_latent_attack_hook(self, module, grad_input, grad_output):
-        if not self.use_hooks:
-            return
-        grads = grad_output[0][self.token_mask]
-        module.attack = grads.mean(dim=0)
-        # module.attack = grad_output[0]
-
-    def latent_attack_hook(self, module, args, output):
-        if not self.use_hooks:
-            return
-        if not hasattr(module, "attack"):
-            return
-        normalized_attack = module.attack / module.attack.norm(dim=-1).mean()
-        attack_norm = output.norm(dim=-1).mean() * self.cfg.latent_attack_strength
-        output = output + normalized_attack * attack_norm
-        return output
+    def lora_forward_hook(self, module, args, output):
+        if self.use_hooks:
+            return output + module.lora_module(args[0])
 
 
 def _get_banned_tokens(processing_class):
@@ -198,3 +204,17 @@ def _get_banned_tokens(processing_class):
     return set(
         processing_class.apply_chat_template(empty_chat, date_string=DATE_STRING)
     )
+
+
+class ManualLoRA(pt.nn.Module):
+    def __init__(self, in_features, out_features, rank, alpha=16):
+        super().__init__()
+        self.scaling = alpha / rank
+        self.lora_A = pt.nn.Parameter(pt.empty(in_features, rank))
+        self.lora_B = pt.nn.Parameter(pt.zeros(rank, out_features))
+        pt.nn.init.kaiming_uniform_(self.lora_A, a=5**0.5)
+        self.requires_grad_(True)
+
+    def forward(self, x):
+        return x @ self.lora_A @ self.lora_B * self.scaling
+
