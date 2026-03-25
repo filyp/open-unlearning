@@ -261,6 +261,7 @@ class RepSelectCohen(UnlearnTrainer):
         forget_grad_stats = module.parent_expert[0].down_proj.forget_grad_stats
         retain_grad_stats = module.parent_expert[0].down_proj.retain_grad_stats
         d = cohens_d(forget_grad_stats, retain_grad_stats)
+        d = d ** self.cfg.cohen_pow
         if module.proj_name == "down":
             acts = acts * d.unsqueeze(0)    # d has intermediate dim, same as acts
         else:
