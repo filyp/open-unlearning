@@ -2,7 +2,6 @@
 import logging
 import math
 import random
-from typing import Iterable
 
 import torch as pt
 from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
@@ -17,7 +16,7 @@ from trainer.utils import label_logits, normalize_grads
 logging.basicConfig(level=logging.INFO)
 
 
-class RepSelect(UnlearnTrainer):
+class RepSelectMOE(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
@@ -37,7 +36,6 @@ class RepSelect(UnlearnTrainer):
         for layer_num in range(len(self.model.model.layers)):
             mlp = self.model.model.layers[layer_num].mlp
             experts = mlp.experts if self.is_moe else [mlp]
-            assert isinstance(experts, Iterable), "For new MoE implementation, please use RepSelectMOE"  # fmt: skip
             for expert in experts:
                 for module in [expert.gate_proj, expert.up_proj, expert.down_proj]:
                     module.weight.requires_grad = True
