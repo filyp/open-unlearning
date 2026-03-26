@@ -30,6 +30,18 @@ class RepSelectMOE(UnlearnTrainer):
         logging.info(f"{self.recalc_every=}")
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
+
+
+        # # Check if native _grouped_mm is available (CUTLASS on SM90+) vs Python fallback
+        # _has_native = hasattr(pt, "_grouped_mm")
+        # _sm = pt.cuda.get_device_capability() if pt.cuda.is_available() else (0, 0)
+        # logging.info(f"torch._grouped_mm available: {_has_native}, GPU SM{_sm[0]}{_sm[1]}")
+        # if not _has_native:
+        #     logging.warning("Native _grouped_mm not found — using HF Python fallback (slow). Upgrade PyTorch >= 2.5.")
+
+
+
+
         assert hasattr(self.model.model.layers[0].mlp, "experts")
         assert getattr(self.model.config, '_experts_implementation', None) == 'grouped_mm', \
             "RepSelectMOE requires experts_implementation='grouped_mm'"
@@ -182,7 +194,6 @@ class RepSelectMOE(UnlearnTrainer):
 
         ends = offsets.tolist()
         starts = [0] + ends[:-1]
-        fused_grad = pt.zeros_like(fused_param)
 
         for expert_idx in range(num_experts):
             start, end = starts[expert_idx], ends[expert_idx]
@@ -200,28 +211,26 @@ class RepSelectMOE(UnlearnTrainer):
             if self.batch_idx < self.recalc_every:
                 continue  # only collecting stats, no gradient yet
 
-            # Collapse
+            # Collapse (modify in-place)
             if "n_pcs" in self.cfg:
-                e_acts = module._act_collapsers[expert_idx].collapse(e_acts)
-                e_grads = module._grad_collapsers[expert_idx].collapse(e_grads)
+                acts_sorted[start:end] = module._act_collapsers[expert_idx].collapse(e_acts)
+                grads_sorted[start:end] = module._grad_collapsers[expert_idx].collapse(e_grads)
 
-            # KL-masking
+            # KL-masking (zero out instead of selecting, to preserve offsets)
             if "retain_momentum" in self.cfg:
                 ref_grad_e = ref_grad[expert_idx]
                 if is_transposed:
                     ref_grad_e = ref_grad_e.T  # -> (out_dim, in_dim)
+                e_acts = acts_sorted[start:end]
+                e_grads = grads_sorted[start:end]
                 token_disr = pt.einsum("ij,ti,tj->t", ref_grad_e, e_grads, e_acts)
-                kl_mask = token_disr > 0
-                e_acts = e_acts[kl_mask]
-                e_grads = e_grads[kl_mask]
+                zero_mask = token_disr <= 0
+                acts_sorted[start:end][zero_mask] = 0
+                grads_sorted[start:end][zero_mask] = 0
 
-            # Per-expert weight gradient: (out_dim, in_dim)
-            e_weight_grad = pt.einsum("ti,tj->ij", e_grads, e_acts)
-
-            if is_transposed:
-                fused_grad[expert_idx] = e_weight_grad.T
-            else:
-                fused_grad[expert_idx] = e_weight_grad
-
+        # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
         if self.batch_idx >= self.recalc_every:
-            fused_param.grad = fused_grad
+            if is_transposed:
+                fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
+            else:
+                fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
