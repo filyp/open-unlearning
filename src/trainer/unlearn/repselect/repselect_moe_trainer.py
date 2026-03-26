@@ -188,10 +188,6 @@ class RepSelectMOE(UnlearnTrainer):
         tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
 
-        # Dequantize ref_grad once for all experts (instead of per-expert)
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
-            ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
-
         ends = offsets.tolist()
         starts = [0] + ends[:-1]
 
@@ -216,21 +212,35 @@ class RepSelectMOE(UnlearnTrainer):
                 acts_sorted[start:end] = module._act_collapsers[expert_idx].collapse(e_acts)
                 grads_sorted[start:end] = module._grad_collapsers[expert_idx].collapse(e_grads)
 
-            # KL-masking (zero out instead of selecting, to preserve offsets)
-            if "retain_momentum" in self.cfg:
-                ref_grad_e = ref_grad[expert_idx]
-                if is_transposed:
-                    ref_grad_e = ref_grad_e.T  # -> (out_dim, in_dim)
-                e_acts = acts_sorted[start:end]
-                e_grads = grads_sorted[start:end]
-                token_disr = pt.einsum("ij,ti,tj->t", ref_grad_e, e_grads, e_acts)
-                zero_mask = token_disr <= 0
-                acts_sorted[start:end][zero_mask] = 0
-                grads_sorted[start:end][zero_mask] = 0
+
+        if self.batch_idx < self.recalc_every:
+            return
+
+        # KL-masking (zero out instead of selecting, to preserve offsets)
+        if "retain_momentum" in self.cfg:
+            # Dequantize ref_grad once for all experts (instead of per-expert)
+            ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
+            if is_transposed:
+                ref_grad = ref_grad.transpose(-2, -1)  # (E, out_dim, in_dim) — view, no kernel
+
+            token_disr = pt.zeros(acts_sorted.shape[0], device=acts_sorted.device)
+            for expert_idx in range(num_experts):
+                start, end = starts[expert_idx], ends[expert_idx]
+                if start == end:
+                    continue
+                token_disr[start:end] = pt.einsum(
+                    "ij,ti,tj->t",
+                    ref_grad[expert_idx],
+                    grads_sorted[start:end],
+                    acts_sorted[start:end],
+                )
+
+            zero_mask = token_disr <= 0
+            acts_sorted[zero_mask] = 0
+            grads_sorted[zero_mask] = 0
 
         # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
-        if self.batch_idx >= self.recalc_every:
-            if is_transposed:
-                fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
-            else:
-                fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
+        if is_transposed:
+            fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
+        else:
+            fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
