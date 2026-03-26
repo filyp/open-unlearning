@@ -115,7 +115,7 @@ We provide several variants for each of the components in the unlearning pipelin
 conda create -n unlearning python=3.11
 conda activate unlearning
 pip install ".[lm_eval]"
-pip install --no-build-isolation flash-attn==2.6.3
+pip install --no-build-isolation flash-attn==2.8.3
 
 # Data setup
 python setup_data.py --eval # saves/eval now contains evaluation results of the uploaded models

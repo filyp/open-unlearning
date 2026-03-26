@@ -10,8 +10,10 @@ image = (
     .apt_install("git")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("lm-eval==0.4.11")
-    .pip_install("flash-attn==2.6.3", extra_options="--no-build-isolation")
+    # .pip_install("flash-attn==2.6.3", extra_options="--no-build-isolation")
+    .pip_install("flash-attn==2.8.3", extra_options="--no-build-isolation")
     # if we move to torch>2.5, we need to use pre-built wheels from here, because the build is painfully slow
+    #     actually, if we install flash-attn==2.8.3, it it does have wheels for newer torch versions up to 2.9! so no need for that weird install below
     # also to support B200, flash-attn==2.6.3 is too old, we'd need to bump to e.g. 2.8.3
     # .pip_install(
     #     "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.12/flash_attn-2.8.3+cu128torch2.10-cp311-cp311-linux_x86_64.whl"

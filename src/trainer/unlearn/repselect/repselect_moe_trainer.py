@@ -110,6 +110,12 @@ class RepSelectMOE(UnlearnTrainer):
 
         # Unlearning loss
         batch = inputs["forget"]
+        # token_mask = batch["attention_mask"].bool().clone()
+        # token_mask[:, 0] = False  # omit BOS token
+        # if self.processing_class.chat_template is not None:
+        #     for banned_token in get_banned_tokens(self.processing_class):
+        #         token_mask &= batch["input_ids"] != banned_token
+        # self.flat_token_mask = token_mask.reshape(-1)
 
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
@@ -156,6 +162,20 @@ class RepSelectMOE(UnlearnTrainer):
         grads_sorted = grad_output[0]       # (S, out_dim)
         module._acts = None                 # free reference
 
+        # Filter tokens globally: non-zero grads AND token_mask (BOS, padding, template)
+        keep = grads_sorted.norm(dim=1) != 0
+        # if hasattr(self, 'flat_token_mask'):
+        #     keep = keep & self.flat_token_mask[module._token_idx_sorted]
+        acts_sorted = acts_sorted[keep]
+        grads_sorted = grads_sorted[keep]
+
+        # Recompute offsets after filtering
+        # Build per-token expert_ids from cumulative offsets, then filter and recount
+        expert_ids = pt.bucketize(pt.arange(keep.shape[0], device=keep.device), offsets)
+        expert_ids = expert_ids[keep]
+        tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
+        offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
+
         # Dequantize ref_grad once for all experts (instead of per-expert)
         if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
             ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
@@ -169,15 +189,8 @@ class RepSelectMOE(UnlearnTrainer):
             if start == end:
                 continue
 
-            e_acts = acts_sorted[start:end]    # (T_e, in_dim)
-            e_grads = grads_sorted[start:end]  # (T_e, out_dim)
-
-            # Filter zero-gradient tokens (not routed here)
-            token_mask = e_grads.norm(dim=1) != 0
-            e_acts = e_acts[token_mask]
-            e_grads = e_grads[token_mask]
-            if e_acts.shape[0] == 0:
-                continue
+            e_acts = acts_sorted[start:end]
+            e_grads = grads_sorted[start:end]
 
             # Accumulate collapser stats
             if "n_pcs" in self.cfg:
