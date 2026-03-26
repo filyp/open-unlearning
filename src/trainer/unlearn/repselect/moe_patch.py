@@ -1,7 +1,5 @@
-from transformers.integrations.moe import grouped_mm_experts_forward, ALL_EXPERTS_FUNCTIONS, _grouped_linear
+from transformers.integrations.moe import _grouped_linear
 import torch
-
-# original_grouped = grouped_mm_experts_forward
 
 class Identity(torch.nn.Module):
     def forward(self, x):
@@ -57,11 +55,14 @@ def hooked_grouped_mm_experts_forward(
         selected_biases = self.up_proj_bias[expert_ids_g] if self.has_bias else None
 
     # --- Up projection per expert (grouped) ---
-    self.pre_gate_up = selected_hidden_states_g  # ! ADDED !!!!!!!!!!!!!!!!!!!!!!!!!!
     proj_out = _grouped_linear(
         selected_hidden_states_g, selected_weights, offsets, bias=selected_biases, is_transposed=self.is_transposed
     )  # (S, 2 * intermediate_dim) or  (S, intermediate_dim) depending on whether we have gating
-    proj_out = self.gate_up_output_probe(proj_out)  # ! ADDED !!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Stash activations and routing info on probe (no circular refs)
+    self.gate_up_output_probe._acts = selected_hidden_states_g.detach()
+    self.gate_up_output_probe._offsets = offsets
+    self.gate_up_output_probe._fused_param = [selected_weights]  # wrapped in list to hide from nn.Module
+    proj_out = self.gate_up_output_probe(proj_out)
 
     # Apply gating or activation
     if self.has_gate:
@@ -76,11 +77,14 @@ def hooked_grouped_mm_experts_forward(
     selected_biases = self.down_proj_bias[expert_ids_g] if self.has_bias else None
 
     # --- Down projection per expert (grouped) ---
-    self.pre_down = proj_out  # ! ADDED !!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Stash activations and routing info on probe (no circular refs)
+    self.down_output_probe._acts = proj_out.detach()
+    self.down_output_probe._offsets = offsets
+    self.down_output_probe._fused_param = [self.down_proj]  # wrapped in list to hide from nn.Module
     proj_out = _grouped_linear(
         proj_out, selected_weights, offsets, bias=selected_biases, is_transposed=self.is_transposed
     )  # (S, hidden_dim)
-    proj_out = self.down_output_probe(proj_out)  # ! ADDED !!!!!!!!!!!!!!!!!!!!!!!!!!
+    proj_out = self.down_output_probe(proj_out)
 
     # Apply routing weights
     weighted_out = proj_out * sample_weights_g.unsqueeze(-1)  # (S, hidden_dim)
@@ -95,8 +99,3 @@ def hooked_grouped_mm_experts_forward(
     final_hidden_states = weighted_out.view(num_tokens, num_top_k, hidden_dim).sum(dim=1)
 
     return final_hidden_states.to(hidden_states.dtype)
-
-
-
-
-# ALL_EXPERTS_FUNCTIONS._global_mapping["grouped_mm"] = hooked_grouped_mm_experts_forward
