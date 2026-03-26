@@ -27,11 +27,11 @@ app = modal.App("open-unlearning", image=image)
 
 @app.function(
     # gpu="L40S",  # 48GB
-    gpu="A100-80GB",  # if needing 80GB
-    # gpu="H100",
+    # gpu="A100-80GB",  # if needing 80GB
+    gpu="H100",
     # gpu="H200",
     # gpu="B200",
-    timeout=1 * 3600,
+    timeout=3 * 3600,
     secrets=[modal.Secret.from_dotenv()],
 )
 def run_training(args: str):

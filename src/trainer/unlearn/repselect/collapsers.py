@@ -63,11 +63,15 @@ class CovStoringCollapser:
     def _reset_vecs(self):
         # Reset online covariance for next epoch
         self.online_cov = OnlineCovariance(device=self.device, dtype=pt.bfloat16)
+        self._has_data = False
 
     def add_vecs(self, vecs):
         self.online_cov.add_all(vecs)
+        self._has_data = True
 
     def process_saved_vecs(self):
+        if not self._has_data:  # in case an expert was never selected
+            return
         # Extract distribution stats from online covariance
         self.online_cov.to_inplace(dtype=pt.float32)
         self.mean = self.online_cov.mean
