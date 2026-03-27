@@ -77,6 +77,7 @@ class RepSelectMOE(UnlearnTrainer):
                 module.gate_up_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
                 module.down_output_probe.act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
                 module.down_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
+                # module.down_output_probe.grad_collapser = BatchedCovStoringCollapser(64, self.model.device, E)
 
             # # adversarial LoRA (not yet supported for fused MoE params)
             # if "lora_lr" in cfg:
@@ -156,6 +157,7 @@ class RepSelectMOE(UnlearnTrainer):
             for m in model.modules():
                 if isinstance(m, Identity) and hasattr(m, "act_collapser"):
                     m.act_collapser.process_saved_vecs()
+                if isinstance(m, Identity) and hasattr(m, "grad_collapser"):
                     m.grad_collapser.process_saved_vecs()
 
         normalize_grads(self.base_trainable_params)
@@ -192,20 +194,22 @@ class RepSelectMOE(UnlearnTrainer):
         starts = [0] + ends[:-1]
 
         # Accumulate collapser stats (per-expert, variable token counts)
-        if "n_pcs" in self.cfg:
-            for expert_idx in range(num_experts):
-                start, end = starts[expert_idx], ends[expert_idx]
-                if start == end:
-                    continue
+        for expert_idx in range(num_experts):
+            start, end = starts[expert_idx], ends[expert_idx]
+            if start == end:
+                continue
+            if hasattr(module, "act_collapser"):
                 module.act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
+            if hasattr(module, "grad_collapser"):
                 module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
 
         if self.batch_idx < self.recalc_every:
             return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
-        if "n_pcs" in self.cfg:
+        if hasattr(module, "act_collapser"):
             acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
+        if hasattr(module, "grad_collapser"):
             grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
 
         # KL-masking (zero out instead of selecting, to preserve offsets)
