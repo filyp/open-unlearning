@@ -61,7 +61,6 @@ def get_model(model_cfg: DictConfig):
         raise ValueError(
             f"Error {e} while fetching model using {model_handler}.from_pretrained()."
         )
-    model._gate_up_layout = model_cfg.get("gate_up_layout", None)
     tokenizer = get_tokenizer(tokenizer_args)
     return model, tokenizer
 

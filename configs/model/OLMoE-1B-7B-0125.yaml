@@ -1,4 +1,3 @@
-gate_up_layout: concatenated
 model_args:
   pretrained_model_name_or_path: "allenai/OLMoE-1B-7B-0125"
   attn_implementation: 'flash_attention_2'

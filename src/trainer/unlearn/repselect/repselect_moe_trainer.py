@@ -11,10 +11,7 @@ from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import BatchedCovCollapser
-from trainer.unlearn.repselect.moe_patch import (
-    Identity,
-    hooked_grouped_mm_experts_forward,
-)
+from trainer.unlearn.repselect.moe_patch import Identity, hooked_grouped_mm_experts_forward
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA  # noqa: F401
 from trainer.utils import normalize_grads
 
@@ -31,14 +28,12 @@ class RepSelectMOE(UnlearnTrainer):
             len(self.train_dataset) / self.args.per_device_train_batch_size
         )
         logging.info(f"{self.recalc_every=}")
-        self.gate_up_layout = self.model._gate_up_layout
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
         assert cfg.get("n_pcs", 0) % 16 == 0, "n_pcs must be a multiple of 16"
 
         assert hasattr(self.model.model.layers[0].mlp, "experts")
-        assert (
-            getattr(self.model.config, "_experts_implementation", None) == "grouped_mm"
-        ), "RepSelectMOE requires experts_implementation='grouped_mm'"
+        assert getattr(self.model.config, '_experts_implementation', None) == 'grouped_mm', \
+            "RepSelectMOE requires experts_implementation='grouped_mm'"
         assert "lora_lr" not in cfg, "LoRA not yet supported for fused MoE params"
 
         self.model.requires_grad_(False)  # train only modules that we specify
@@ -67,8 +62,7 @@ class RepSelectMOE(UnlearnTrainer):
             if "n_pcs" in cfg:
                 n, E = cfg.n_pcs, e.num_experts
                 e.gate_up_output_probe.act_collapser = BatchedCovCollapser(n, E)
-                e.gate_up_output_probe.grad_collapser1 = BatchedCovCollapser(n, E)
-                e.gate_up_output_probe.grad_collapser2 = BatchedCovCollapser(n, E)
+                e.gate_up_output_probe.grad_collapser = BatchedCovCollapser(n, E)
                 e.down_output_probe.act_collapser = BatchedCovCollapser(n, E)
                 e.down_output_probe.grad_collapser = BatchedCovCollapser(n, E)
 
@@ -148,16 +142,10 @@ class RepSelectMOE(UnlearnTrainer):
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
             for m in model.modules():
-                if not isinstance(m, Identity):
-                    continue
-                if hasattr(m, "act_collapser"):
+                if isinstance(m, Identity) and hasattr(m, "act_collapser"):
                     m.act_collapser.process_saved_vecs()
-                if hasattr(m, "grad_collapser"):
+                if isinstance(m, Identity) and hasattr(m, "grad_collapser"):
                     m.grad_collapser.process_saved_vecs()
-                if hasattr(m, "grad_collapser1"):
-                    m.grad_collapser1.process_saved_vecs()
-                if hasattr(m, "grad_collapser2"):
-                    m.grad_collapser2.process_saved_vecs()
 
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()
@@ -166,14 +154,14 @@ class RepSelectMOE(UnlearnTrainer):
         if not self.use_hooks:
             return
 
-        acts_sorted = module._acts  # (S, in_dim), stashed during forward
+        acts_sorted = module._acts          # (S, in_dim), stashed during forward
         fused_param = module._fused_param[0]  # unwrap from list (hidden from nn.Module)
-        offsets = module._offsets  # (num_experts,) cumulative counts
+        offsets = module._offsets            # (num_experts,) cumulative counts
         num_experts = offsets.shape[0]
         is_transposed = module._is_transposed
 
-        grads_sorted = grad_output[0]  # (S, out_dim)
-        module._acts = None  # free reference
+        grads_sorted = grad_output[0]       # (S, out_dim)
+        module._acts = None                 # free reference
 
         # Filter tokens globally: non-zero grads AND token_mask (BOS, padding, template)
         keep = grads_sorted.norm(dim=1) != 0
@@ -201,11 +189,6 @@ class RepSelectMOE(UnlearnTrainer):
                 module.act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
             if hasattr(module, "grad_collapser"):
                 module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
-            if hasattr(module, "grad_collapser1"):
-                # split grads into gate and up
-                grad1, grad2 = gate_up_split(grads_sorted[start:end], self.gate_up_layout)
-                module.grad_collapser1.add_vecs(expert_idx, grad1)
-                module.grad_collapser2.add_vecs(expert_idx, grad2)
 
         if self.batch_idx < self.recalc_every:
             return
@@ -215,18 +198,13 @@ class RepSelectMOE(UnlearnTrainer):
             acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
         if hasattr(module, "grad_collapser"):
             grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
-        if hasattr(module, "grad_collapser1"):
-            grad1, grad2 = gate_up_split(grads_sorted, self.gate_up_layout)
-            grad1 = module.grad_collapser1.collapse(grad1, offsets)
-            grad2 = module.grad_collapser2.collapse(grad2, offsets)
-            grads_sorted = gate_up_merge(grad1, grad2, self.gate_up_layout)
 
         # KL-masking (zero out instead of selecting, to preserve offsets)
         if "retain_momentum" in self.cfg:
             # Dequantize ref_grad once for all experts (instead of per-expert)
             ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
             if is_transposed:
-                ref_grad = ref_grad.transpose(-2, -1)
+                ref_grad = ref_grad.transpose(-2, -1)  # (E, out_dim, in_dim) — view, no kernel
 
             token_disr = pt.zeros(acts_sorted.shape[0], device=acts_sorted.device)
             for expert_idx in range(num_experts):
@@ -249,23 +227,3 @@ class RepSelectMOE(UnlearnTrainer):
             fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
         else:
             fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
-
-
-# OLMoE	(E, 2I, H)	Concatenated `[gate	up]`
-# Llama4	(E, H, 2I)	Concatenated `[gate	up]`
-# GPT-OSS-20B	(E, H, 2I)	Interleaved [g,u,g,u,...
-
-
-def gate_up_split(grads, layout):
-    if layout == "interleaved":
-        return grads[:, ::2], grads[:, 1::2]
-    elif layout == "concatenated":
-        h = grads.shape[-1] // 2
-        return grads[:, :h], grads[:, h:]
-
-
-def gate_up_merge(grad1, grad2, layout):
-    if layout == "interleaved":
-        return pt.stack([grad1, grad2], dim=-1).reshape(grad1.shape[0], -1)
-    elif layout == "concatenated":
-        return pt.cat([grad1, grad2], dim=-1)
