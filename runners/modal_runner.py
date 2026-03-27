@@ -5,6 +5,18 @@ import subprocess
 
 import modal
 
+
+def download_models():
+    from huggingface_hub import snapshot_download
+    # note that modal images are up to 30GB, so be mindful of what models you fit
+
+    for model in [
+        "allenai/OLMoE-1B-7B-0125",
+        # "meta-llama/Llama-3.2-1B-Instruct",
+    ]:
+        snapshot_download(model)
+
+
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
     .apt_install("git")
@@ -18,6 +30,9 @@ image = (
         # "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.12/flash_attn-2.8.3+cu128torch2.10-cp311-cp311-linux_x86_64.whl"
         "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
     )
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .pip_install("hf_transfer")
+    .run_function(download_models, secrets=[modal.Secret.from_dotenv()])
     .add_local_dir("data", remote_path="/root/code/data")
     .add_local_dir(".cache/load_hf", remote_path="/root/code/.cache/load_hf")
     .add_local_dir("configs", remote_path="/root/code/configs")

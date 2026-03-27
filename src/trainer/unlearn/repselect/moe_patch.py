@@ -12,6 +12,11 @@ def hooked_grouped_mm_experts_forward(
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
+    """
+    Based on https://github.com/huggingface/transformers/blob/aad13b87ed59f2afcfaebc985f403301887a35fc/src/transformers/integrations/moe.py#L338-L417
+    from transformers==5.3.0
+    The only modifications are the lines with "# ! ADDED"
+    """
     device = hidden_states.device
     num_top_k = top_k_index.size(-1)
     num_tokens = hidden_states.size(0)
@@ -28,9 +33,7 @@ def hooked_grouped_mm_experts_forward(
 
     # Sort by expert for grouped processing
     perm = torch.argsort(expert_ids)
-    inv_perm = torch.empty_like(perm)
-    inv_perm[perm] = torch.arange(perm.size(0), device=device)
-
+    inv_perm = torch.argsort(perm)
     expert_ids_g = expert_ids[perm]
     sample_weights_g = sample_weights[perm]
     selected_hidden_states_g = selected_hidden_states[perm]
@@ -39,8 +42,8 @@ def hooked_grouped_mm_experts_forward(
     # using histc instead of bincount to avoid cuda graph issues
     # With deterministic algorithms, CPU only supports float input, CUDA only supports int input.
     histc_input = expert_ids_g.float() if device.type == "cpu" else expert_ids_g.int()
-    tokens_per_expert = torch.histc(histc_input, bins=self.num_experts, min=0, max=self.num_experts - 1)
-    offsets = torch.cumsum(tokens_per_expert, dim=0, dtype=torch.int32)
+    num_tokens_per_expert = torch.histc(histc_input, bins=self.num_experts, min=0, max=self.num_experts - 1)
+    offsets = torch.cumsum(num_tokens_per_expert, dim=0, dtype=torch.int32)
 
     # Select expert weights and biases
     # NOTE: We keep all experts here and rely on offsets to target the active ones.
@@ -55,39 +58,38 @@ def hooked_grouped_mm_experts_forward(
         selected_biases = self.up_proj_bias[expert_ids_g] if self.has_bias else None
 
     # --- Up projection per expert (grouped) ---
-    proj_out = _grouped_linear(
+    up_proj_out = _grouped_linear(
         selected_hidden_states_g, selected_weights, offsets, bias=selected_biases, is_transposed=self.is_transposed
     )  # (S, 2 * intermediate_dim) or  (S, intermediate_dim) depending on whether we have gating
-    # Stash activations and routing info on probe (no circular refs)
-    self.gate_up_output_probe._acts = selected_hidden_states_g.detach()
-    self.gate_up_output_probe._offsets = offsets
-    self.gate_up_output_probe._fused_param = [selected_weights]  # wrapped in list to hide from nn.Module
-    proj_out = self.gate_up_output_probe(proj_out)
 
-    # Apply gating or activation
+    # Stash activations and routing info on probe (no circular refs)
+    self.gate_up_output_probe._acts = selected_hidden_states_g.detach()  # ! ADDED
+    self.gate_up_output_probe._offsets = offsets  # ! ADDED
+    self.gate_up_output_probe._fused_param = [selected_weights]  # ! ADDED
+    up_proj_out = self.gate_up_output_probe(up_proj_out)  # ! ADDED
+
+    # Apply gating or just activation
     if self.has_gate:
-        # for gated experts we apply the custom/default gating mechanism
-        proj_out = self._apply_gate(proj_out)  # (S, intermediate_dim)
+        up_proj_out = self._apply_gate(up_proj_out)  # (S, intermediate_dim)
     else:
         # for non-gated experts we just apply the activation function
-        proj_out = self.act_fn(proj_out)  # (S, intermediate_dim)
+        up_proj_out = self.act_fn(up_proj_out)  # (S, intermediate_dim)
 
     # Select down projection weights and biases
     selected_weights = self.down_proj
     selected_biases = self.down_proj_bias[expert_ids_g] if self.has_bias else None
 
     # --- Down projection per expert (grouped) ---
-    # Stash activations and routing info on probe (no circular refs)
-    self.down_output_probe._acts = proj_out.detach()
-    self.down_output_probe._offsets = offsets
-    self.down_output_probe._fused_param = [self.down_proj]  # wrapped in list to hide from nn.Module
-    proj_out = _grouped_linear(
-        proj_out, selected_weights, offsets, bias=selected_biases, is_transposed=self.is_transposed
+    self.down_output_probe._acts = up_proj_out.detach()  # ! ADDED
+    self.down_output_probe._offsets = offsets  # ! ADDED
+    self.down_output_probe._fused_param = [self.down_proj]  # ! ADDED
+    down_proj_out = _grouped_linear(
+        up_proj_out, selected_weights, offsets, bias=selected_biases, is_transposed=self.is_transposed
     )  # (S, hidden_dim)
-    proj_out = self.down_output_probe(proj_out)
+    down_proj_out = self.down_output_probe(down_proj_out)  # ! ADDED
 
     # Apply routing weights
-    weighted_out = proj_out * sample_weights_g.unsqueeze(-1)  # (S, hidden_dim)
+    weighted_out = down_proj_out * sample_weights_g.unsqueeze(-1)  # (S, hidden_dim)
 
     # Restore original order
     weighted_out = weighted_out[inv_perm]  # (S, hidden_dim)

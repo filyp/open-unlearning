@@ -73,10 +73,10 @@ class RepSelectMOE(UnlearnTrainer):
             # Initialize batched collapsers and stash on probes
             if "n_pcs" in cfg:
                 E = module.num_experts
-                module.gate_up_output_probe._act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.gate_up_output_probe._grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.down_output_probe._act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.down_output_probe._grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
+                module.gate_up_output_probe.act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
+                module.gate_up_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
+                module.down_output_probe.act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
+                module.down_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
 
             # # adversarial LoRA (not yet supported for fused MoE params)
             # if "lora_lr" in cfg:
@@ -154,9 +154,9 @@ class RepSelectMOE(UnlearnTrainer):
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
             for m in model.modules():
-                if isinstance(m, Identity) and hasattr(m, "_act_collapser"):
-                    m._act_collapser.process_saved_vecs()
-                    m._grad_collapser.process_saved_vecs()
+                if isinstance(m, Identity) and hasattr(m, "act_collapser"):
+                    m.act_collapser.process_saved_vecs()
+                    m.grad_collapser.process_saved_vecs()
 
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()
@@ -197,16 +197,16 @@ class RepSelectMOE(UnlearnTrainer):
                 start, end = starts[expert_idx], ends[expert_idx]
                 if start == end:
                     continue
-                module._act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
-                module._grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
+                module.act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
+                module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
 
         if self.batch_idx < self.recalc_every:
             return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
         if "n_pcs" in self.cfg:
-            acts_sorted = module._act_collapser.collapse(acts_sorted, offsets)
-            grads_sorted = module._grad_collapser.collapse(grads_sorted, offsets)
+            acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
+            grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
 
         # KL-masking (zero out instead of selecting, to preserve offsets)
         if "retain_momentum" in self.cfg:
