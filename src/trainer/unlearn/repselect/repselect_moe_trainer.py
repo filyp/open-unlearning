@@ -10,7 +10,7 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.repselect.collapsers import BatchedCovStoringCollapser
+from trainer.unlearn.repselect.collapsers import BatchedCovCollapser
 from trainer.unlearn.repselect.moe_patch import Identity, hooked_grouped_mm_experts_forward
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA  # noqa: F401
 from trainer.utils import normalize_grads
@@ -31,18 +31,6 @@ class RepSelectMOE(UnlearnTrainer):
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
         assert cfg.get("n_pcs", 0) % 16 == 0, "n_pcs must be a multiple of 16"
 
-
-
-        # # Check if native _grouped_mm is available (CUTLASS on SM90+) vs Python fallback
-        # _has_native = hasattr(pt, "_grouped_mm")
-        # _sm = pt.cuda.get_device_capability() if pt.cuda.is_available() else (0, 0)
-        # logging.info(f"torch._grouped_mm available: {_has_native}, GPU SM{_sm[0]}{_sm[1]}")
-        # if not _has_native:
-        #     logging.warning("Native _grouped_mm not found — using HF Python fallback (slow). Upgrade PyTorch >= 2.5.")
-
-
-
-
         assert hasattr(self.model.model.layers[0].mlp, "experts")
         assert getattr(self.model.config, '_experts_implementation', None) == 'grouped_mm', \
             "RepSelectMOE requires experts_implementation='grouped_mm'"
@@ -51,33 +39,33 @@ class RepSelectMOE(UnlearnTrainer):
         self.model.requires_grad_(False)  # train only modules that we specify
         self.base_trainable_params = []
         for layer_num in range(len(self.model.model.layers)):
-            module = self.model.model.layers[layer_num].mlp.experts
+            e = self.model.model.layers[layer_num].mlp.experts
 
-            for param in [module.gate_up_proj, module.down_proj]:
+            for param in [e.gate_up_proj, e.down_proj]:
                 param.requires_grad = True
                 self.base_trainable_params.append(param)
 
             # Add Identity probes and patch forward
-            module.gate_up_output_probe = Identity()
-            module.down_output_probe = Identity()
-            module.forward = types.MethodType(hooked_grouped_mm_experts_forward, module)
+            e.gate_up_output_probe = Identity()
+            e.down_output_probe = Identity()
+            e.forward = types.MethodType(hooked_grouped_mm_experts_forward, e)
 
             # Install backward hooks on probes
-            module.gate_up_output_probe._proj_type = "gate_up"
-            module.down_output_probe._proj_type = "down"
-            module.gate_up_output_probe._is_transposed = module.is_transposed
-            module.down_output_probe._is_transposed = module.is_transposed
-            module.gate_up_output_probe.register_full_backward_hook(self.collapse_hook)
-            module.down_output_probe.register_full_backward_hook(self.collapse_hook)
+            e.gate_up_output_probe._proj_type = "gate_up"
+            e.down_output_probe._proj_type = "down"
+            e.gate_up_output_probe._is_transposed = e.is_transposed
+            e.down_output_probe._is_transposed = e.is_transposed
+            e.gate_up_output_probe.register_full_backward_hook(self.collapse_hook)
+            e.down_output_probe.register_full_backward_hook(self.collapse_hook)
 
             # Initialize batched collapsers and stash on probes
             if "n_pcs" in cfg:
-                E = module.num_experts
-                module.gate_up_output_probe.act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.gate_up_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.down_output_probe.act_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                module.down_output_probe.grad_collapser = BatchedCovStoringCollapser(cfg.n_pcs, self.model.device, E)
-                # module.down_output_probe.grad_collapser = BatchedCovStoringCollapser(64, self.model.device, E)
+                n, E = cfg.n_pcs, e.num_experts
+                e.gate_up_output_probe.act_collapser = BatchedCovCollapser(n, E)
+                e.gate_up_output_probe.grad_collapser1 = BatchedCovCollapser(n, E)
+                e.gate_up_output_probe.grad_collapser2 = BatchedCovCollapser(n, E)
+                e.down_output_probe.act_collapser = BatchedCovCollapser(n, E)
+                e.down_output_probe.grad_collapser = BatchedCovCollapser(n, E)
 
             # # adversarial LoRA (not yet supported for fused MoE params)
             # if "lora_lr" in cfg:

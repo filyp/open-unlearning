@@ -20,14 +20,13 @@ def _proj_to_mahal_dirs(centered, mahal_dirs):
     return proj_strenghts * mahal_dirs_norm
 
 
-class CovStoringCollapser:
+class CovCollapser:
     mean: pt.Tensor
     eig_val: pt.Tensor
     eig_vec: pt.Tensor
 
-    def __init__(self, PCs_to_use: int, device: str):
+    def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
-        self.device = device
         self._reset_vecs()
 
     def _reset_vecs(self):
@@ -56,15 +55,15 @@ class CovStoringCollapser:
         return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
 
 
-class BatchedCovStoringCollapser:
+class BatchedCovCollapser:
     """Wraps E individual CovStoringCollapsers, exposes batched collapse via _grouped_mm."""
 
     mean: pt.Tensor     # (E, D)
     eig_val: pt.Tensor  # (E, k)
     eig_vec: pt.Tensor  # (E, D, k)
 
-    def __init__(self, PCs_to_use: int, device: str, num_experts: int):
-        self.collapsers = [CovStoringCollapser(PCs_to_use, device) for _ in range(num_experts)]
+    def __init__(self, PCs_to_use: int, num_experts: int):
+        self.collapsers = [CovCollapser(PCs_to_use) for _ in range(num_experts)]
         self.num_experts = num_experts
 
     def add_vecs(self, expert_idx: int, vecs: pt.Tensor):
@@ -112,9 +111,8 @@ class BatchedCovStoringCollapser:
 
 
 # class IncrementalPCACollapser:
-#     def __init__(self, PCs_to_use: int, device: str):
+#     def __init__(self, PCs_to_use: int):
 #         self.PCs_to_use = PCs_to_use
-#         self.device = device
 #         self.accumulator = None
 #         self.ipca = IncrementalPCA(n_components=PCs_to_use, gram=True)
 
