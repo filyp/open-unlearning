@@ -70,6 +70,7 @@ class BatchedCovCollapser:
         self.collapsers[expert_idx].add_vecs(vecs)
 
     def process_saved_vecs(self):
+        # note: tried batching this too, but it did not help and was very complex
         for c in self.collapsers:
             c.process_saved_vecs()
         # Stack per-expert stats into batched tensors; keep previous for experts with no new data
@@ -98,7 +99,8 @@ class BatchedCovCollapser:
 
         # Eigenvalue reweighting (per-token, using expanded eig_val)
         eig_val_tok = self.eig_val[expert_ids]  # (S, k) — small
-        proj_diff = projected - projected / (eig_val_tok / eig_val_tok.min(dim=1, keepdim=True).values)
+        eig_val_tok = eig_val_tok / eig_val_tok.min(dim=1, keepdim=True).values
+        proj_diff = projected - projected / eig_val_tok
 
         # Back-project: (S, k) × (E, k, D) → (S, D)
         eig_vec_T = self.eig_vec.transpose(-2, -1).contiguous()

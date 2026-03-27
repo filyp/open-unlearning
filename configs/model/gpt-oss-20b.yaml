@@ -1,3 +1,4 @@
+gate_up_layout: interleaved
 model_args:
   pretrained_model_name_or_path: "openai/gpt-oss-20b"
   attn_implementation: 'flash_attention_2'
