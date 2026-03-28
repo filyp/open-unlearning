@@ -1,0 +1,17 @@
+defaults:
+  - finetune
+
+handler: DisrCollapse
+args:
+  optim: sgd  # adam underperforms
+  learning_rate: 0.2
+  gradient_accumulation_steps: 1  # must be one, because RepSelect modifies gradients in-place
+  lr_scheduler_type: constant_with_warmup
+  warmup_steps: 32
+
+
+method_args:
+  cfg:
+    retain_momentum: 0.95
+    lora_lr: 0.1
+    lora_rank: 32
