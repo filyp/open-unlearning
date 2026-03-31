@@ -95,7 +95,7 @@ class RepSelectMOE(UnlearnTrainer):
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # Retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
             kl, _, _ = self.kl_computor.get_kl(r_batch)
@@ -190,11 +190,11 @@ class RepSelectMOE(UnlearnTrainer):
             if hasattr(module, "grad_collapser"):
                 module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
 
-        if self.batch_idx < self.recalc_every:
+        if self.batch_idx < self.recalc_every * 2:
             return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
-        if hasattr(module, "act_collapser"):
+        if hasattr(module, "act_collapser"):  # todo, later assume it has it
             acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
         if hasattr(module, "grad_collapser"):
             grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
