@@ -1,17 +1,7 @@
 import torch as pt
 # from torch_incremental_pca import IncrementalPCA
-from trainer.unlearn.repselect.online_covariance import OnlineCovariance
+# from trainer.unlearn.repselect.online_covariance import OnlineCovariance, OnlineCovarianceSimple
 # todo uninstall welford_torch
-
-
-def _get_mahal_dirs(centered, eig_val, eig_vec):
-    # Compute Mahalanobis directions using eigendecomposition
-    projected = centered @ eig_vec  # (N, D)
-    proj_diff = projected - projected / (eig_val / eig_val.min())
-    # neg = projected / (eig_val / eig_val.min())
-    # neg[:, -24:] = 0
-    # proj_diff = projected - neg
-    return centered - proj_diff @ eig_vec.T
 
 
 def _proj_to_mahal_dirs(centered, mahal_dirs):
@@ -21,38 +11,60 @@ def _proj_to_mahal_dirs(centered, mahal_dirs):
 
 
 class CovCollapser:
-    mean: pt.Tensor
-    eig_val: pt.Tensor
-    eig_vec: pt.Tensor
-
     def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
-        self._reset_vecs()
-
-    def _reset_vecs(self):
-        # Reset online covariance for next epoch
-        self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
-        self._has_data = False
+        self.cov = None
+        self.P = None
+        self.P_is_ready = False
 
     def add_vecs(self, vecs):
-        self.online_cov.add_all(vecs)
-        self._has_data = True
+        if self.P is None:
+            dim = vecs.shape[1]
+            P = pt.randn(dim, self.PCs_to_use, dtype=vecs.dtype, device=vecs.device)
+            self.P = pt.linalg.qr(P.float()).Q.bfloat16()
+            self.future_P = pt.zeros_like(self.P)
+
+        self.future_P += vecs.mT @ (vecs @ self.P)
+
+        if self.P_is_ready:
+            # project vecs into the smaller space
+            Y = vecs @ self.P
+            if self.cov is None:
+                dim = Y.shape[1]
+                self.cov = pt.zeros(dim, dim, dtype=pt.bfloat16, device=vecs.device)
+            self.cov += Y.mT @ Y
 
     def process_saved_vecs(self):
-        if not self._has_data:  # in case an expert was never selected
-            return
         # Extract distribution stats from online covariance
-        self.mean = self.online_cov.mean.to(pt.float32)
-        cov = self.online_cov.cov().to(pt.float32)
-        _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use)
-        self.eig_val = S  # top-k eigenvalues (largest first)
-        self.eig_vec = V  # (D, k)
-        self._reset_vecs()
+        if self.cov is not None:
+            self.inv_cov = pt.linalg.inv(self.cov.float()).bfloat16()
+            self.old_P = self.P
+            self.cov = None
+
+            # estimate eigvals_min using power iteration
+            v = pt.randn(self.PCs_to_use, device=self.inv_cov.device)
+            for _ in range(10):
+                v = self.inv_cov.float() @ v
+                v = v / v.norm()
+            self.eigvals_min = 1.0 / (v @ self.inv_cov.float() @ v)
+
+        self.P = pt.linalg.qr(self.future_P.float()).Q.bfloat16()
+        self.P_is_ready = True
 
     def collapse(self, vecs):
-        centered = vecs - self.mean
-        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.eig_vec)
-        return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
+        assert vecs.dtype == pt.bfloat16
+        vecs = vecs.float()
+        inv_cov = self.inv_cov.float()
+        old_P = self.old_P.float()
+
+        # get mahalanobis directions
+        x_proj = vecs @ old_P
+        correction_proj = x_proj - self.eigvals_min * (x_proj @ inv_cov)
+        correction = correction_proj @ old_P.T  # lift back
+        mahal_dirs = vecs - correction  # only touches the P subspace
+
+        return _proj_to_mahal_dirs(vecs, mahal_dirs).bfloat16()
+
 
 
 class BatchedCovCollapser:
@@ -112,6 +124,14 @@ class BatchedCovCollapser:
         return result.to(dtype)
 
 
+# def _get_mahal_dirs(centered, eig_val, eig_vec):
+#     # Compute Mahalanobis directions using eigendecomposition
+#     projected = centered @ eig_vec  # (N, D)
+#     proj_diff = projected - projected / (eig_val / eig_val.min())
+#     # neg = projected / (eig_val / eig_val.min())
+#     # neg[:, -24:] = 0
+#     # proj_diff = projected - neg
+#     return centered - proj_diff @ eig_vec.T
 # class IncrementalPCACollapser:
 #     def __init__(self, PCs_to_use: int):
 #         self.PCs_to_use = PCs_to_use
@@ -140,4 +160,44 @@ class BatchedCovCollapser:
 #         assert centered.dtype == pt.float32
 #         mahal_dirs = _get_mahal_dirs(centered, eig_val, eig_vec)
 #         return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
+
+
+
+class CovCollapserSimple:
+    """Simplified but much slower version of CovCollapser, using svd."""
+    eig_val: pt.Tensor
+    eig_vec: pt.Tensor
+
+    def __init__(self, PCs_to_use: int):
+        self.PCs_to_use = PCs_to_use
+        self.cov = None
+
+    def add_vecs(self, vecs):
+        if self.cov is None:
+            D = vecs.shape[1]
+            self.cov = pt.zeros(D, D, dtype=pt.bfloat16, device=vecs.device)
+        vecs = vecs.to(pt.bfloat16)
+        self.cov += pt.einsum("ni,nj->ij", vecs, vecs)
+
+    def process_saved_vecs(self):
+        # Extract distribution stats from online covariance
+        self.inv_cov = pt.linalg.inv(self.cov.float()).bfloat16()
+
+        cov = self.cov.to(pt.float32)
+
+        _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use)
+
+        self.eig_val = S  # top-k eigenvalues (largest first)
+        self.eig_vec = V  # (D, k)
+        self.cov = None
+
+    def collapse(self, vecs):
+        centered = vecs.to(pt.float32)
+
+        # Compute Mahalanobis directions using eigendecomposition
+        projected = centered @ self.eig_vec  # (N, D)
+        proj_diff = projected - projected / (self.eig_val / self.eig_val.min())
+        mahal_dirs = centered - proj_diff @ self.eig_vec.T
+
+        return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
 
