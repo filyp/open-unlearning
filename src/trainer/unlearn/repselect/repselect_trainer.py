@@ -83,7 +83,7 @@ class RepSelect(UnlearnTrainer):
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # ! retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
@@ -168,7 +168,7 @@ class RepSelect(UnlearnTrainer):
             module.act_collapser.add_vecs(acts)
             module.grad_collapser.add_vecs(grads)
 
-        if self.batch_idx < self.recalc_every * 2:
+        if self.batch_idx < self.recalc_every:
             return  # too early to train, so only collect activations and return early
 
         if "n_pcs" in self.cfg:
