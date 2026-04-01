@@ -28,33 +28,62 @@ class CovCollapser:
         self.P = None
         self.P_is_ready = False
         self.inv_cov_valid = False
+        self.mean = None
+        self._mean_count = 0
+        self._first_pass = True
+        self._full_cov = None
 
     def add_vecs(self, vecs):
         vecs = vecs.float()
-        if self.P is None:
+        n = vecs.shape[0]
+        if self.mean is None:
             dim = vecs.shape[1]
-            P = pt.randn(dim, self.PCs_to_use, dtype=pt.float32, device=vecs.device)
-            self.P = pt.linalg.qr(P).Q
-            self.future_P = pt.zeros_like(self.P)
-            self.P = self.P.bfloat16()
+            self.mean = pt.zeros(dim, dtype=pt.float32, device=vecs.device)
 
-        self.future_P += vecs.mT @ (vecs @ self.P.float())
+        # Welford online mean update
+        self._mean_count += n
+        self.mean += (vecs - self.mean).sum(0) / self._mean_count
+        centered = vecs - self.mean
+
+        if self._first_pass:
+            # Accumulate full (D, D) covariance for accurate initial P via svd_lowrank
+            if self._full_cov is None:
+                dim = centered.shape[1]
+                self._full_cov = pt.zeros(dim, dim, dtype=pt.bfloat16, device=vecs.device)
+            self._full_cov += pt.einsum("ni,nj->ij", centered.bfloat16(), centered.bfloat16())
+            return
+
+        self.future_P += centered.mT @ (centered @ self.P.float())
 
         if self.P_is_ready:
-            # project vecs into the smaller space
-            Y = vecs @ self.P.float()
+            Y = centered @ self.P.float()
             if self.cov is None:
                 dim = Y.shape[1]
                 self.cov = pt.zeros(dim, dim, dtype=pt.float32, device=vecs.device)
             self.cov += Y.mT @ Y
-            self.total_vecs += vecs.shape[0]
+            self.total_vecs += n
 
     def process_saved_vecs(self):
+        if self._first_pass:
+            # Use full covariance to get accurate initial P
+            self._first_pass = False
+            if self._full_cov is not None:
+                _, _, V = pt.svd_lowrank(self._full_cov.float(), q=self.PCs_to_use)
+                self.P = V.bfloat16()  # (D, k)
+                self.future_P = pt.zeros_like(V)
+                self._full_cov = None
+            # self.mean = pt.zeros_like(self.mean)
+            self._mean_count = self._mean_count // 2
+            self.P_is_ready = True
+            return
+
         # Extract distribution stats from online covariance
         if self.cov is not None:
             if self.total_vecs > 500:  # some experts may have too few vectors to invert covariance matrix
                 self.inv_cov_valid = True
-                self.inv_cov = pt.linalg.inv(self.cov)
+
+                eps = self.cov.diag().mean() * 1e-3
+                self.inv_cov = pt.linalg.inv(self.cov + eps * pt.eye(self.PCs_to_use, device=self.cov.device))
 
                 # estimate eigvals_min using power iteration
                 v = pt.randn(self.PCs_to_use, device=self.inv_cov.device)
@@ -69,24 +98,26 @@ class CovCollapser:
                 self.inv_cov = pt.zeros_like(self.cov)
 
             self.old_P = self.P
+            self.old_mean = self.mean.clone()
             self.cov = None
             self.total_vecs = 0
 
+        self.mean = pt.zeros_like(self.mean)
+        self._mean_count = 0
         self.P = pt.linalg.qr(self.future_P).Q.bfloat16()
         self.P_is_ready = True
 
     def collapse(self, vecs):
         orig_dtype = vecs.dtype
-        vecs = vecs.float()
+        centered = vecs.float() - self.old_mean
         old_P = self.old_P.float()
 
-        # get mahalanobis directions
-        x_proj = vecs @ old_P
+        x_proj = centered @ old_P
         correction_proj = x_proj - (x_proj @ self.inv_cov)
         correction = correction_proj @ old_P.T  # lift back
-        mahal_dirs = vecs - correction  # only touches the P subspace
+        mahal_dirs = centered - correction  # only touches the P subspace
 
-        return _proj_to_mahal_dirs(vecs, mahal_dirs).to(orig_dtype)
+        return _proj_to_mahal_dirs(centered, mahal_dirs).to(orig_dtype)
 
 
 class BatchedCovCollapser:
@@ -111,13 +142,15 @@ class BatchedCovCollapser:
             return  # inv_cov not ready yet
 
         # Stack per-expert stats into batched tensors; keep previous for experts with no new data
-        inv_covs, old_Ps, inv_cov_valid = [], [], []
+        inv_covs, old_Ps, old_means, inv_cov_valid = [], [], [], []
         for i, c in enumerate(self.collapsers):
             inv_covs.append(c.inv_cov)
             old_Ps.append(c.old_P)
+            old_means.append(c.old_mean)
             inv_cov_valid.append(pt.tensor(c.inv_cov_valid, device=c.inv_cov.device))
         self.inv_covs = pt.stack(inv_covs) # (E, k, k)
         self.old_Ps = pt.stack(old_Ps) # (E, d, k)
+        self.old_means = pt.stack(old_means) # (E, D)
         self.inv_cov_valid = pt.stack(inv_cov_valid) # (E,)
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
@@ -125,20 +158,23 @@ class BatchedCovCollapser:
         vecs_sorted = vecs_sorted.float()
         old_Ps = self.old_Ps.float()
 
+        # center per-expert
+        expert_ids = pt.bucketize(pt.arange(vecs_sorted.shape[0], device=vecs_sorted.device), offsets)
+        centered = vecs_sorted - self.old_means[expert_ids]
+
         # get mahalanobis directions
         # (S, d) @ (E, d, k) -> (S, k)
-        x_proj = pt._grouped_mm(vecs_sorted, old_Ps, offs=offsets)
+        x_proj = pt._grouped_mm(centered, old_Ps, offs=offsets)
         # (S, k) @ (E, k, k) -> (S, k)
         correction_proj = x_proj - pt._grouped_mm(x_proj, self.inv_covs, offs=offsets)
         # (S, k) @ (E, k, d) -> (S, d)
         correction = pt._grouped_mm(correction_proj, old_Ps.mT, offs=offsets)
-        mahal_dirs = vecs_sorted - correction  # only touches the P subspace
+        mahal_dirs = centered - correction  # only touches the P subspace
         
-        collapsed_vecs = _proj_to_mahal_dirs(vecs_sorted, mahal_dirs)
+        collapsed_vecs = _proj_to_mahal_dirs(centered, mahal_dirs)
 
         # zero out tokens from experts with invalid inv_cov
-        expert_ids = pt.bucketize(pt.arange(vecs_sorted.shape[0], device=vecs_sorted.device), offsets)
-        collapsed_vecs[~self.inv_cov_valid[expert_ids]] = 0
+        # collapsed_vecs[~self.inv_cov_valid[expert_ids]] = 0  # todo reenable
         assert not collapsed_vecs.isnan().any()
 
         return collapsed_vecs.to(orig_dtype)
