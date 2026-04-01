@@ -1,17 +1,8 @@
 import torch as pt
+
 # from torch_incremental_pca import IncrementalPCA
 from trainer.unlearn.repselect.online_covariance import OnlineCovariance
 # todo uninstall welford_torch
-
-
-def _get_mahal_dirs(centered, eig_val, eig_vec):
-    # Compute Mahalanobis directions using eigendecomposition
-    projected = centered @ eig_vec  # (N, D)
-    proj_diff = projected - projected / (eig_val / eig_val.min())
-    # neg = projected / (eig_val / eig_val.min())
-    # neg[:, -24:] = 0
-    # proj_diff = projected - neg
-    return centered - proj_diff @ eig_vec.T
 
 
 def _proj_to_mahal_dirs(centered, mahal_dirs):
@@ -39,26 +30,47 @@ class CovCollapser:
         self._has_data = True
 
     def process_saved_vecs(self):
-        if not self._has_data:  # in case an expert was never selected
-            return
+        # if not self._has_data:  # in case an expert was never selected
+        #     return
+        assert self._has_data, "No data to process"
         # Extract distribution stats from online covariance
         self.mean = self.online_cov.mean.to(pt.float32)
         cov = self.online_cov.cov().to(pt.float32)
-        _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use)
-        self.eig_val = S  # top-k eigenvalues (largest first)
+
+        # adapted from svd_lowrank, but niter=0, and provides hot-start (eig_vec)
+        init = (
+            self.eig_vec  # provides hot-start, instead of random initialization
+            if hasattr(self, "eig_vec")
+            else pt.randn(
+                cov.shape[0], self.PCs_to_use, dtype=cov.dtype, device=cov.device
+            )
+        )
+        Q = pt.linalg.qr(cov @ init).Q
+        # for _ in range(0):  # only needed if eig_vals are flat, which is not the case for LLM activations
+        #     Q = pt.linalg.qr(cov @ Q).Q
+        B = Q.mT @ cov
+        _, S, Vh = pt.linalg.svd(B, full_matrices=False)
+        V = Vh.mT
+
+        self.eig_val = S / S.min()  # normalized so min=1
         self.eig_vec = V  # (D, k)
         self._reset_vecs()
 
     def collapse(self, vecs):
         centered = vecs - self.mean
-        mahal_dirs = _get_mahal_dirs(centered, self.eig_val, self.eig_vec)
+
+        # get Mahalanobis directions
+        projected = centered @ self.eig_vec  # (N, D)
+        proj_diff = projected - projected / self.eig_val  # assumes eig_val.min() == 1
+        mahal_dirs = centered - proj_diff @ self.eig_vec.T
+
         return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
 
 
 class BatchedCovCollapser:
     """Wraps E individual CovStoringCollapsers, exposes batched collapse via _grouped_mm."""
 
-    mean: pt.Tensor     # (E, D)
+    mean: pt.Tensor  # (E, D)
     eig_val: pt.Tensor  # (E, k)
     eig_vec: pt.Tensor  # (E, D, k)
 
@@ -74,15 +86,11 @@ class BatchedCovCollapser:
         for c in self.collapsers:
             c.process_saved_vecs()
         # Stack per-expert stats into batched tensors; keep previous for experts with no new data
-        means, eig_vals, eig_vecs = [], [], []
-        for i, c in enumerate(self.collapsers):
-            assert hasattr(c, "mean"), f"Expert {i} has no stats — was it never routed any tokens?"
-            means.append(c.mean)
-            eig_vals.append(c.eig_val)
-            eig_vecs.append(c.eig_vec)
-        self.mean = pt.stack(means)       # (E, D)
-        self.eig_val = pt.stack(eig_vals) # (E, k)
-        self.eig_vec = pt.stack(eig_vecs) # (E, D, k)
+        # for i, c in enumerate(self.collapsers):
+        #     assert hasattr(c, "mean"), f"Expert {i} has no stats — was it never routed any tokens?"
+        self.mean = pt.stack([c.mean for c in self.collapsers])  # (E, D)
+        self.eig_val = pt.stack([c.eig_val for c in self.collapsers])  # (E, k)
+        self.eig_vec = pt.stack([c.eig_vec for c in self.collapsers])  # (E, D, k)
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
         """Batched collapse using _grouped_mm. vecs_sorted: (S, D), offsets: (E,)."""
@@ -98,12 +106,11 @@ class BatchedCovCollapser:
         projected = pt._grouped_mm(centered, self.eig_vec, offs=offsets)
 
         # Eigenvalue reweighting (per-token, using expanded eig_val)
-        eig_val_tok = self.eig_val[expert_ids]  # (S, k) — small
-        eig_val_tok = eig_val_tok / eig_val_tok.min(dim=1, keepdim=True).values
+        eig_val_tok = self.eig_val[expert_ids]  # (S, k) — already normalized (min=1)
         proj_diff = projected - projected / eig_val_tok
 
         # Back-project: (S, k) × (E, k, D) → (S, D)
-        eig_vec_T = self.eig_vec.transpose(-2, -1).contiguous()
+        eig_vec_T = self.eig_vec.mT.contiguous()
         correction = pt._grouped_mm(proj_diff, eig_vec_T, offs=offsets)
         mahal_dirs = centered - correction
 
@@ -141,3 +148,11 @@ class BatchedCovCollapser:
 #         mahal_dirs = _get_mahal_dirs(centered, eig_val, eig_vec)
 #         return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
 
+
+
+
+
+#         _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
+#         self.eig_val = S  # top-k eigenvalues (largest first)
+#         self.eig_vec = V  # (D, k)
+#         self._reset_vecs()

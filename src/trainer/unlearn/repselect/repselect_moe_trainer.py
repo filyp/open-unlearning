@@ -185,19 +185,17 @@ class RepSelectMOE(UnlearnTrainer):
             start, end = starts[expert_idx], ends[expert_idx]
             if start == end:
                 continue
-            if hasattr(module, "act_collapser"):
-                module.act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
-            if hasattr(module, "grad_collapser"):
-                module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
+            module.act_collapser.add_vecs(expert_idx, acts_sorted[start:end])
+            module.grad_collapser.add_vecs(expert_idx, grads_sorted[start:end])
+        # module.act_collapser.add_vecs(acts_sorted, offsets)
+        # module.grad_collapser.add_vecs(grads_sorted, offsets)
 
         if self.batch_idx < self.recalc_every:
             return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
-        if hasattr(module, "act_collapser"):
-            acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
-        if hasattr(module, "grad_collapser"):
-            grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
+        acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
+        grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
 
         # KL-masking (zero out instead of selecting, to preserve offsets)
         if "retain_momentum" in self.cfg:
