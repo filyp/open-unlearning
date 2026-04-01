@@ -34,9 +34,10 @@ class CovCollapser:
         #     return
         assert self._has_data, "No data to process"
         # Extract distribution stats from online covariance
-        self.mean = self.online_cov.mean.to(pt.float32)
+        self.mean = self.online_cov.mean().to(pt.float32)
         cov = self.online_cov.cov().to(pt.float32)
 
+        # _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
         # adapted from svd_lowrank, but niter=0, and provides hot-start (eig_vec)
         init = (
             self.eig_vec  # provides hot-start, instead of random initialization
@@ -78,8 +79,15 @@ class BatchedCovCollapser:
         self.collapsers = [CovCollapser(PCs_to_use) for _ in range(num_experts)]
         self.num_experts = num_experts
 
-    def add_vecs(self, expert_idx: int, vecs: pt.Tensor):
-        self.collapsers[expert_idx].add_vecs(vecs)
+    def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
+        ends = offsets.tolist()
+        starts = [0] + ends[:-1]
+        # Accumulate collapser stats (per-expert, variable token counts)
+        for expert_idx in range(num_experts):
+            start, end = starts[expert_idx], ends[expert_idx]
+            if start == end:
+                continue
+            self.collapsers[expert_idx].add_vecs(vecs[start:end])
 
     def process_saved_vecs(self):
         # note: tried batching this too, but it did not help and was very complex
