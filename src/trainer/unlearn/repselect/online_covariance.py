@@ -20,11 +20,15 @@ class OnlineCovariance:
     It requires less operations and doesn't harm numerical stability at all.
     """
 
-    def __init__(self, dtype=pt.bfloat16):
+    def __init__(self, dtype=pt.bfloat16, halve_cov=True):
         self.dtype = dtype
         self._count = 0
         self.mean = None
-        self.half_cov = None
+        self.halve_cov = halve_cov
+        if self.halve_cov:
+            self.half_cov = None
+        else:
+            self.full_cov = None
 
     def add_all(self, xs: pt.Tensor):
         xs = xs.to(dtype=self.dtype)
@@ -33,19 +37,27 @@ class OnlineCovariance:
         if self.mean is None:
             D = xs.shape[1]
             self.mean = pt.zeros(D, dtype=self.dtype, device=xs.device)
-            self.half_cov = pt.zeros(
-                D * (D + 1) // 2, dtype=self.dtype, device=xs.device
-            )
+            if self.halve_cov:
+                self.half_cov = pt.zeros(
+                    D * (D + 1) // 2, dtype=self.dtype, device=xs.device
+                )
+            else:
+                self.full_cov = pt.zeros(D, D, dtype=self.dtype, device=xs.device)
 
         self._count += n
         delta = xs - self.mean
         self.mean.add_(delta.sum(0) / self._count)
         delta2 = xs - self.mean
         full = pt.einsum("ni,nj->ij", delta, delta2)
-        rows, cols = _get_triu_indices(full.shape[0], full.device)
-        self.half_cov.add_(full[rows, cols])
+        if self.halve_cov:
+            rows, cols = _get_triu_indices(full.shape[0], full.device)
+            self.half_cov += full[rows, cols]
+        else:
+            self.full_cov += full
 
     def cov(self) -> pt.Tensor:
+        if not self.halve_cov:
+            return self.full_cov
         D = self.mean.shape[0]
         rows, cols = _get_triu_indices(D, self.mean.device)
         full = pt.zeros(D, D, dtype=self.dtype, device=self.mean.device)
@@ -60,12 +72,16 @@ class BatchedOnlineCovariance:
     Cov storage is in bfloat16 to save memory, but mean and computation are in float32.
     """
 
-    def __init__(self, num_experts: int):
+    def __init__(self, num_experts: int, halve_cov=True):
         self.num_experts = num_experts
         self.D = None
         self._count = pt.zeros(num_experts, dtype=pt.long)
         self.mean: pt.Tensor | None = None  # (E, D)
-        self.half_cov: pt.Tensor | None = None  # (E, D*(D+1)//2)
+        self.halve_cov = halve_cov
+        if self.halve_cov:
+            self.half_cov: pt.Tensor | None = None  # (E, D*(D+1)//2)
+        else:
+            self.full_cov: pt.Tensor | None = None  # (E, D, D)
 
     def add_all(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
         """vecs: (S, D) sorted by expert; offsets: (E,) cumulative end indices."""
@@ -79,41 +95,68 @@ class BatchedOnlineCovariance:
             self.mean = pt.zeros(
                 self.num_experts, self.D, dtype=pt.float32, device=self.device
             )
-            self.half_cov = pt.zeros(
-                self.num_experts,
-                self.D * (self.D + 1) // 2,
-                dtype=pt.bfloat16,
-                device=self.device,
-            )
+            if self.halve_cov:
+                self.half_cov = pt.zeros(
+                    self.num_experts,
+                    self.D * (self.D + 1) // 2,
+                    dtype=pt.bfloat16,
+                    device=self.device,
+                )
+            else:
+                self.full_cov = pt.zeros(
+                    self.num_experts,
+                    self.D,
+                    self.D,
+                    dtype=pt.bfloat16,
+                    device=self.device,
+                )
             self._count = self._count.to(self.device)
 
         ns = [end - s for s, end in zip(starts, ends)]
         ns = pt.tensor(ns, dtype=self._count.dtype, device=self.device)
         self._count += ns
-        expert_ids = pt.bucketize(pt.arange(vecs.shape[0], device=self.device), offsets)
 
         vecs = vecs.float()
+
+        expert_ids = pt.bucketize(
+            pt.arange(vecs.shape[0], device=self.device), offsets, right=True
+        )
         delta = vecs - self.mean[expert_ids]
-
-        # note: index_add_ is not deterministic
-        sums = pt.zeros_like(self.mean).index_add_(0, expert_ids, delta)
-        active = ns > 0
-        self.mean[active] += sums[active] / self._count[active].unsqueeze(1)
-
+        # # note: index_add_ is not deterministic
+        # sums = pt.zeros_like(self.mean).index_add_(0, expert_ids, delta)
+        # active = ns > 0
+        # self.mean[active] += sums[active] / self._count[active].unsqueeze(1)
         # # deterministic version of the block above
+        for e in range(num_experts):
+            s, end = starts[e], ends[e]
+            if s == end:
+                continue
+            self.mean[e] += delta[s:end].sum(0) / self._count[e]
+        delta2 = vecs - self.mean[expert_ids]
+
+        # # alternative way to compute deltas and update mean, without using bucketize
+        # delta = pt.zeros_like(vecs)
+        # delta2 = pt.zeros_like(vecs)
         # for e in range(num_experts):
         #     s, end = starts[e], ends[e]
         #     if s == end:
         #         continue
+        #     xs = vecs[s:end]
+        #     delta[s:end] = xs - self.mean[e]
         #     self.mean[e] += delta[s:end].sum(0) / self._count[e]
+        #     delta2[s:end] = xs - self.mean[e]
 
-        delta2 = vecs - self.mean[expert_ids]
         full = pt._grouped_mm(delta.T.contiguous(), delta2, offs=offsets).bfloat16()
 
-        rows, cols = _get_triu_indices(self.D, self.device)
-        self.half_cov += full[:, rows, cols]
+        if self.halve_cov:
+            rows, cols = _get_triu_indices(self.D, self.device)
+            self.half_cov += full[:, rows, cols]
+        else:
+            self.full_cov += full
 
     def cov_full(self) -> pt.Tensor:
+        if not self.halve_cov:
+            return self.full_cov
         rows, cols = _get_triu_indices(self.D, self.device)
         full = pt.zeros(
             self.num_experts, self.D, self.D, dtype=pt.bfloat16, device=self.device

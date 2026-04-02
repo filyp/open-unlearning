@@ -61,10 +61,11 @@ class RepSelectMOE(UnlearnTrainer):
             # Initialize batched collapsers and stash on probes
             if "n_pcs" in cfg:
                 n, E = cfg.n_pcs, e.num_experts
-                e.gate_up_output_probe.act_collapser = BatchedCovCollapser(n, E)
-                e.gate_up_output_probe.grad_collapser = BatchedCovCollapser(n, E)
-                e.down_output_probe.act_collapser = BatchedCovCollapser(n, E)
-                e.down_output_probe.grad_collapser = BatchedCovCollapser(n, E)
+                collapser_class = BatchedCovCollapser
+                e.gate_up_output_probe.act_collapser = collapser_class(n, E)
+                e.gate_up_output_probe.grad_collapser = collapser_class(n, E)
+                e.down_output_probe.act_collapser = collapser_class(n, E)
+                e.down_output_probe.grad_collapser = collapser_class(n, E)
 
             # # adversarial LoRA (not yet supported for fused MoE params)
             # if "lora_lr" in cfg:
@@ -172,10 +173,13 @@ class RepSelectMOE(UnlearnTrainer):
 
         # Recompute offsets after filtering
         # Build per-token expert_ids from cumulative offsets, then filter and recount
-        expert_ids = pt.bucketize(pt.arange(keep.shape[0], device=keep.device), offsets)
+        # NOTE: right=True is required in all bucketize calls
+        assert offsets[-1] == keep.shape[0], f"offsets[-1]={offsets[-1]} != S={keep.shape[0]}"
+        expert_ids = pt.bucketize(pt.arange(keep.shape[0], device=keep.device), offsets, right=True)
         expert_ids = expert_ids[keep]
         tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
+        assert offsets[-1] == acts_sorted.shape[0], f"offsets[-1]={offsets[-1]} != kept tokens={acts_sorted.shape[0]}"
 
         module.act_collapser.add_vecs(acts_sorted, offsets, num_experts)
         module.grad_collapser.add_vecs(grads_sorted, offsets, num_experts)

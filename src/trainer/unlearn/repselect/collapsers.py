@@ -1,11 +1,11 @@
 import torch as pt
 
-# from torch_incremental_pca import IncrementalPCA
 from trainer.unlearn.repselect.online_covariance import (
     BatchedOnlineCovariance,
     OnlineCovariance,
 )
-# todo uninstall welford_torch
+# from torch_incremental_pca import IncrementalPCA
+# todo uninstall welford_torch, torch_incremental_pca
 
 
 def _proj_to_mahal_dirs(centered, mahal_dirs):
@@ -108,6 +108,12 @@ class BatchedCovCollapser:
         self.eig_vec = V
         self.eig_val = S / S.min(dim=1, keepdim=True).values
 
+        # # print some eig_val statistics
+        # max_eig_val = S.max(dim=1).values
+        # min_eig_val = S.min(dim=1).values
+        # ratio = max_eig_val / min_eig_val
+        # print(pt.stack([max_eig_val, min_eig_val, ratio], dim=1))
+
         # reset online covariance for next epoch
         self.online_cov = BatchedOnlineCovariance(self.num_experts)
 
@@ -118,7 +124,7 @@ class BatchedCovCollapser:
         device = vecs_sorted.device
 
         # Expand per-expert mean to per-token for centering
-        expert_ids = pt.bucketize(pt.arange(S, device=device), offsets)
+        expert_ids = pt.bucketize(pt.arange(S, device=device), offsets, right=True)
         centered = vecs_sorted - self.mean[expert_ids]  # (S, D)
 
         # Project onto eigenvectors: (S, D) × (E, D, k) → (S, k)
@@ -172,3 +178,66 @@ class BatchedCovCollapser:
 #         self.eig_val = S  # top-k eigenvalues (largest first)
 #         self.eig_vec = V  # (D, k)
 #         self._reset_vecs()
+
+
+# class PartiallyBatchedCovCollapser:
+#     """Wraps E individual CovStoringCollapsers, exposes batched collapse via _grouped_mm.
+    
+#     A partially batched version of BatchedCovCollapser, that may be slower, but is simpler.
+#     """
+
+#     mean: pt.Tensor  # (E, D)
+#     eig_val: pt.Tensor  # (E, k)
+#     eig_vec: pt.Tensor  # (E, D, k)
+
+#     def __init__(self, PCs_to_use: int, num_experts: int):
+#         self.collapsers = [CovCollapser(PCs_to_use) for _ in range(num_experts)]
+#         self.num_experts = num_experts
+
+#     def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
+#         ends = offsets.tolist()
+#         starts = [0] + ends[:-1]
+#         # Accumulate collapser stats (per-expert, variable token counts)
+#         for expert_idx in range(num_experts):
+#             start, end = starts[expert_idx], ends[expert_idx]
+#             if start == end:
+#                 continue
+#             self.collapsers[expert_idx].add_vecs(vecs[start:end])
+
+#     def process_saved_vecs(self):
+#         # note: tried batching this too, but it did not help and was very complex
+#         for c in self.collapsers:
+#             c.process_saved_vecs()
+#         # Stack per-expert stats into batched tensors; keep previous for experts with no new data
+#         # for i, c in enumerate(self.collapsers):
+#         #     assert hasattr(c, "mean"), f"Expert {i} has no stats — was it never routed any tokens?"
+#         self.mean = pt.stack([c.mean for c in self.collapsers])  # (E, D)
+#         self.eig_val = pt.stack([c.eig_val for c in self.collapsers])  # (E, k)
+#         self.eig_vec = pt.stack([c.eig_vec for c in self.collapsers])  # (E, D, k)
+
+#     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
+#         """Batched collapse using _grouped_mm. vecs_sorted: (S, D), offsets: (E,)."""
+#         dtype = vecs_sorted.dtype
+#         S = vecs_sorted.shape[0]
+#         device = vecs_sorted.device
+
+#         # Expand per-expert mean to per-token for centering
+#         expert_ids = pt.bucketize(pt.arange(S, device=device), offsets, right=True)
+#         centered = vecs_sorted - self.mean[expert_ids]  # (S, D)
+
+#         # Project onto eigenvectors: (S, D) × (E, D, k) → (S, k)
+#         projected = pt._grouped_mm(centered, self.eig_vec, offs=offsets)
+
+#         # Eigenvalue reweighting (per-token, using expanded eig_val)
+#         eig_val_tok = self.eig_val[expert_ids]  # (S, k) — already normalized (min=1)
+#         proj_diff = projected - projected / eig_val_tok
+
+#         # Back-project: (S, k) × (E, k, D) → (S, D)
+#         eig_vec_T = self.eig_vec.mT.contiguous()
+#         correction = pt._grouped_mm(proj_diff, eig_vec_T, offs=offsets)
+#         mahal_dirs = centered - correction
+
+#         result = _proj_to_mahal_dirs(centered, mahal_dirs)
+#         assert result.shape == vecs_sorted.shape
+#         return result.to(dtype)
+
