@@ -1,7 +1,10 @@
 import torch as pt
 
 # from torch_incremental_pca import IncrementalPCA
-from trainer.unlearn.repselect.online_covariance import OnlineCovariance
+from trainer.unlearn.repselect.online_covariance import (
+    BatchedOnlineCovariance,
+    OnlineCovariance,
+)
 # todo uninstall welford_torch
 
 
@@ -18,10 +21,6 @@ class CovCollapser:
 
     def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
-        self._reset_vecs()
-
-    def _reset_vecs(self):
-        # Reset online covariance for next epoch
         self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
         self._has_data = False
 
@@ -34,8 +33,8 @@ class CovCollapser:
         #     return
         assert self._has_data, "No data to process"
         # Extract distribution stats from online covariance
-        self.mean = self.online_cov.mean().to(pt.float32)
-        cov = self.online_cov.cov().to(pt.float32)
+        self.mean = self.online_cov.mean.float()
+        cov = self.online_cov.cov().float()
 
         # _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
         # adapted from svd_lowrank, but niter=0, and provides hot-start (eig_vec)
@@ -55,7 +54,10 @@ class CovCollapser:
 
         self.eig_val = S / S.min()  # normalized so min=1
         self.eig_vec = V  # (D, k)
-        self._reset_vecs()
+
+        # Reset online covariance for next epoch
+        self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
+        self._has_data = False
 
     def collapse(self, vecs):
         centered = vecs - self.mean
@@ -69,36 +71,46 @@ class CovCollapser:
 
 
 class BatchedCovCollapser:
-    """Wraps E individual CovStoringCollapsers, exposes batched collapse via _grouped_mm."""
+    """Single BatchedOnlineCovariance for all experts; exposes batched collapse via _grouped_mm."""
 
     mean: pt.Tensor  # (E, D)
     eig_val: pt.Tensor  # (E, k)
     eig_vec: pt.Tensor  # (E, D, k)
 
     def __init__(self, PCs_to_use: int, num_experts: int):
-        self.collapsers = [CovCollapser(PCs_to_use) for _ in range(num_experts)]
+        self.PCs_to_use = PCs_to_use
         self.num_experts = num_experts
+        self.online_cov = BatchedOnlineCovariance(self.num_experts)
 
     def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
-        ends = offsets.tolist()
-        starts = [0] + ends[:-1]
-        # Accumulate collapser stats (per-expert, variable token counts)
-        for expert_idx in range(num_experts):
-            start, end = starts[expert_idx], ends[expert_idx]
-            if start == end:
-                continue
-            self.collapsers[expert_idx].add_vecs(vecs[start:end])
+        self.online_cov.add_all(vecs, offsets, num_experts)
 
     def process_saved_vecs(self):
-        # note: tried batching this too, but it did not help and was very complex
-        for c in self.collapsers:
-            c.process_saved_vecs()
-        # Stack per-expert stats into batched tensors; keep previous for experts with no new data
-        # for i, c in enumerate(self.collapsers):
-        #     assert hasattr(c, "mean"), f"Expert {i} has no stats — was it never routed any tokens?"
-        self.mean = pt.stack([c.mean for c in self.collapsers])  # (E, D)
-        self.eig_val = pt.stack([c.eig_val for c in self.collapsers])  # (E, k)
-        self.eig_vec = pt.stack([c.eig_vec for c in self.collapsers])  # (E, D, k)
+        device = self.online_cov.device
+        D = self.online_cov.D
+        k = self.PCs_to_use
+        init = (
+            self.eig_vec
+            if hasattr(self, "eig_vec")
+            else pt.randn(self.num_experts, D, k, device=device, dtype=pt.float32)
+        )
+        self.mean = self.online_cov.mean.float()
+        self.eig_val = pt.zeros(self.num_experts, k, device=device, dtype=pt.float32)
+        self.eig_vec = pt.zeros(self.num_experts, D, k, device=device, dtype=pt.float32)
+
+        for e in range(self.num_experts):
+            cov_e = self.online_cov.cov(e).float()
+
+            Q = pt.linalg.qr(cov_e @ init[e]).Q
+            B = Q.mT @ cov_e
+            _, S, Vh = pt.linalg.svd(B, full_matrices=False)
+            V = Vh.mT
+
+            self.eig_val[e] = S / S.min()
+            self.eig_vec[e] = V
+
+        # reset online covariance for next epoch
+        self.online_cov = BatchedOnlineCovariance(self.num_experts)
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
         """Batched collapse using _grouped_mm. vecs_sorted: (S, D), offsets: (E,)."""
@@ -155,9 +167,6 @@ class BatchedCovCollapser:
 #         assert centered.dtype == pt.float32
 #         mahal_dirs = _get_mahal_dirs(centered, eig_val, eig_vec)
 #         return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
-
-
-
 
 
 #         _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
