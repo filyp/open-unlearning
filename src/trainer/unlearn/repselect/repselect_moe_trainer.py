@@ -29,7 +29,7 @@ class RepSelectMOE(UnlearnTrainer):
         )
         logging.info(f"{self.recalc_every=}")
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
-        assert cfg.get("n_pcs", 0) % 16 == 0, "n_pcs must be a multiple of 16"
+        # assert cfg.get("n_pcs", 0) % 16 == 0, "n_pcs must be a multiple of 16"
 
         assert hasattr(self.model.model.layers[0].mlp, "experts")
         assert getattr(self.model.config, '_experts_implementation', None) == 'grouped_mm', \

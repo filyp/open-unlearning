@@ -98,16 +98,15 @@ class BatchedCovCollapser:
         self.eig_val = pt.zeros(self.num_experts, k, device=device, dtype=pt.float32)
         self.eig_vec = pt.zeros(self.num_experts, D, k, device=device, dtype=pt.float32)
 
-        for e in range(self.num_experts):
-            cov_e = self.online_cov.cov(e).float()
+        cov_full = self.online_cov.cov_full().float()
 
-            Q = pt.linalg.qr(cov_e @ init[e]).Q
-            B = Q.mT @ cov_e
-            _, S, Vh = pt.linalg.svd(B, full_matrices=False)
-            V = Vh.mT
+        Q = pt.linalg.qr(cov_full @ init).Q
+        B = Q.mT @ cov_full
+        _, S, Vh = pt.linalg.svd(B, full_matrices=False)
+        V = Vh.mT
 
-            self.eig_val[e] = S / S.min()
-            self.eig_vec[e] = V
+        self.eig_vec = V
+        self.eig_val = S / S.min(dim=1, keepdim=True).values
 
         # reset online covariance for next epoch
         self.online_cov = BatchedOnlineCovariance(self.num_experts)
