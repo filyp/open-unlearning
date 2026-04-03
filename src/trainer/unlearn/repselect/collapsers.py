@@ -4,8 +4,6 @@ from trainer.unlearn.repselect.online_covariance import (
     BatchedOnlineCovariance,
     OnlineCovariance,
 )
-# from torch_incremental_pca import IncrementalPCA
-# todo uninstall welford_torch, torch_incremental_pca
 
 
 def _proj_to_mahal_dirs(centered, mahal_dirs):
@@ -22,19 +20,14 @@ class CovCollapser:
     def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
         self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
-        self._has_data = False
 
     def add_vecs(self, vecs):
-        self.online_cov.add_all(vecs)
-        self._has_data = True
+        self.online_cov.add_vecs(vecs)
 
-    def process_saved_vecs(self):
-        # if not self._has_data:  # in case an expert was never selected
-        #     return
-        assert self._has_data, "No data to process"
+    def fit(self):
         # Extract distribution stats from online covariance
         self.mean = self.online_cov.mean.float()
-        cov = self.online_cov.cov().float()
+        cov = self.online_cov.get_cov().float()
 
         # _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
         # adapted from svd_lowrank, but niter=0, and provides hot-start (eig_vec)
@@ -42,7 +35,7 @@ class CovCollapser:
             self.eig_vec  # provides hot-start, instead of random initialization
             if hasattr(self, "eig_vec")
             else pt.randn(
-                cov.shape[0], self.PCs_to_use, dtype=cov.dtype, device=cov.device
+                cov.shape[0], self.PCs_to_use, dtype=pt.float32, device=cov.device
             )
         )
         Q = pt.linalg.qr(cov @ init).Q
@@ -57,9 +50,10 @@ class CovCollapser:
 
         # Reset online covariance for next epoch
         self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
-        self._has_data = False
 
     def collapse(self, vecs):
+        original_dtype = vecs.dtype
+        vecs = vecs.float()
         centered = vecs - self.mean
 
         # get Mahalanobis directions
@@ -67,7 +61,7 @@ class CovCollapser:
         proj_diff = projected - projected / self.eig_val  # assumes eig_val.min() == 1
         mahal_dirs = centered - proj_diff @ self.eig_vec.T
 
-        return _proj_to_mahal_dirs(centered, mahal_dirs).to(vecs.dtype)
+        return _proj_to_mahal_dirs(centered, mahal_dirs).to(original_dtype)
 
 
 class BatchedCovCollapser:
@@ -82,23 +76,20 @@ class BatchedCovCollapser:
         self.num_experts = num_experts
         self.online_cov = BatchedOnlineCovariance(self.num_experts)
 
-    def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
-        self.online_cov.add_all(vecs, offsets, num_experts)
+    def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor):
+        self.online_cov.add_vecs(vecs, offsets)
 
-    def process_saved_vecs(self):
+    def fit(self):
         device = self.online_cov.device
-        D = self.online_cov.D
+        cov_full = self.online_cov.get_cov().float()
+        self.mean = self.online_cov.mean.float()
+        D = cov_full.shape[-1]
         k = self.PCs_to_use
         init = (
             self.eig_vec
             if hasattr(self, "eig_vec")
             else pt.randn(self.num_experts, D, k, device=device, dtype=pt.float32)
         )
-        self.mean = self.online_cov.mean.float()
-        self.eig_val = pt.zeros(self.num_experts, k, device=device, dtype=pt.float32)
-        self.eig_vec = pt.zeros(self.num_experts, D, k, device=device, dtype=pt.float32)
-
-        cov_full = self.online_cov.cov_full().float()
 
         Q = pt.linalg.qr(cov_full @ init).Q
         B = Q.mT @ cov_full
@@ -108,18 +99,13 @@ class BatchedCovCollapser:
         self.eig_vec = V
         self.eig_val = S / S.min(dim=1, keepdim=True).values
 
-        # # print some eig_val statistics
-        # max_eig_val = S.max(dim=1).values
-        # min_eig_val = S.min(dim=1).values
-        # ratio = max_eig_val / min_eig_val
-        # print(pt.stack([max_eig_val, min_eig_val, ratio], dim=1))
-
         # reset online covariance for next epoch
         self.online_cov = BatchedOnlineCovariance(self.num_experts)
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
         """Batched collapse using _grouped_mm. vecs_sorted: (S, D), offsets: (E,)."""
-        dtype = vecs_sorted.dtype
+        original_dtype = vecs_sorted.dtype
+        vecs_sorted = vecs_sorted.float()
         S = vecs_sorted.shape[0]
         device = vecs_sorted.device
 
@@ -141,7 +127,14 @@ class BatchedCovCollapser:
 
         result = _proj_to_mahal_dirs(centered, mahal_dirs)
         assert result.shape == vecs_sorted.shape
-        return result.to(dtype)
+        return result.to(original_dtype)
+
+
+# # print some eig_val statistics
+# max_eig_val = S.max(dim=1).values
+# min_eig_val = S.min(dim=1).values
+# ratio = max_eig_val / min_eig_val
+# print(pt.stack([max_eig_val, min_eig_val, ratio], dim=1))
 
 
 # class IncrementalPCACollapser:
@@ -162,7 +155,7 @@ class BatchedCovCollapser:
 #             vecs = vecs.clone()  # ipca.partial_fit may modify the input in-place
 #             self.ipca.partial_fit(vecs)
 
-#     def process_saved_vecs(self):
+#     def fit(self):
 #         pass  # components are updated online in partial_fit
 
 #     def collapse(self, vecs):
@@ -182,7 +175,7 @@ class BatchedCovCollapser:
 
 # class PartiallyBatchedCovCollapser:
 #     """Wraps E individual CovStoringCollapsers, exposes batched collapse via _grouped_mm.
-    
+
 #     A partially batched version of BatchedCovCollapser, that may be slower, but is simpler.
 #     """
 
@@ -204,10 +197,10 @@ class BatchedCovCollapser:
 #                 continue
 #             self.collapsers[expert_idx].add_vecs(vecs[start:end])
 
-#     def process_saved_vecs(self):
+#     def fit(self):
 #         # note: tried batching this too, but it did not help and was very complex
 #         for c in self.collapsers:
-#             c.process_saved_vecs()
+#             c.fit()
 #         # Stack per-expert stats into batched tensors; keep previous for experts with no new data
 #         # for i, c in enumerate(self.collapsers):
 #         #     assert hasattr(c, "mean"), f"Expert {i} has no stats — was it never routed any tokens?"
@@ -240,4 +233,3 @@ class BatchedCovCollapser:
 #         result = _proj_to_mahal_dirs(centered, mahal_dirs)
 #         assert result.shape == vecs_sorted.shape
 #         return result.to(dtype)
-

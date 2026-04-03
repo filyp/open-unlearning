@@ -18,44 +18,42 @@ class OnlineCovariance:
     Implements the Welford algorithm, but it stores covariance not divided by n.
     Scale doesn't affect any of our computations, so it's fine.
     It requires less operations and doesn't harm numerical stability at all.
+
+    Cov storage is in self.dtype to save memory, but mean and computation are in float32.
     """
 
     def __init__(self, dtype=pt.bfloat16, halve_cov=True):
         self.dtype = dtype
-        self._count = 0
         self.mean = None
         self.halve_cov = halve_cov
-        if self.halve_cov:
-            self.half_cov = None
-        else:
-            self.full_cov = None
 
-    def add_all(self, xs: pt.Tensor):
-        xs = xs.to(dtype=self.dtype)
-        n = xs.shape[0]
+    def add_vecs(self, vecs: pt.Tensor):
+        n = vecs.shape[0]
 
         if self.mean is None:
-            D = xs.shape[1]
-            self.mean = pt.zeros(D, dtype=self.dtype, device=xs.device)
+            self._count = 0
+            D = vecs.shape[1]
+            self.mean = pt.zeros(D, dtype=pt.float32, device=vecs.device)
             if self.halve_cov:
                 self.half_cov = pt.zeros(
-                    D * (D + 1) // 2, dtype=self.dtype, device=xs.device
+                    D * (D + 1) // 2, dtype=self.dtype, device=vecs.device
                 )
             else:
-                self.full_cov = pt.zeros(D, D, dtype=self.dtype, device=xs.device)
+                self.full_cov = pt.zeros(D, D, dtype=self.dtype, device=vecs.device)
 
+        vecs = vecs.float()
         self._count += n
-        delta = xs - self.mean
+        delta = vecs - self.mean
         self.mean.add_(delta.sum(0) / self._count)
-        delta2 = xs - self.mean
+        delta2 = vecs - self.mean
         full = pt.einsum("ni,nj->ij", delta, delta2)
         if self.halve_cov:
             rows, cols = _get_triu_indices(full.shape[0], full.device)
-            self.half_cov += full[rows, cols]
+            self.half_cov += full[rows, cols].to(self.dtype)
         else:
-            self.full_cov += full
+            self.full_cov += full.to(self.dtype)
 
-    def cov(self) -> pt.Tensor:
+    def get_cov(self) -> pt.Tensor:
         if not self.halve_cov:
             return self.full_cov
         D = self.mean.shape[0]
@@ -69,49 +67,36 @@ class OnlineCovariance:
 class BatchedOnlineCovariance:
     """E independent OnlineCovariance trackers stored as batched (E, ...) tensors.
 
-    Cov storage is in bfloat16 to save memory, but mean and computation are in float32.
+    Cov storage is in self.dtype to save memory, but mean and computation are in float32.
     """
 
-    def __init__(self, num_experts: int, halve_cov=True):
+    def __init__(self, num_experts: int, dtype=pt.bfloat16, halve_cov=True):
         self.num_experts = num_experts
-        self.D = None
-        self._count = pt.zeros(num_experts, dtype=pt.long)
+        self.dtype = dtype  # just for cov storage, the rest is in float32
         self.mean: pt.Tensor | None = None  # (E, D)
         self.halve_cov = halve_cov
-        if self.halve_cov:
-            self.half_cov: pt.Tensor | None = None  # (E, D*(D+1)//2)
-        else:
-            self.full_cov: pt.Tensor | None = None  # (E, D, D)
 
-    def add_all(self, vecs: pt.Tensor, offsets: pt.Tensor, num_experts: int):
+    def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor):
         """vecs: (S, D) sorted by expert; offsets: (E,) cumulative end indices."""
-        ends = offsets.tolist()
-        starts = [0] + ends[:-1]
+        assert self.num_experts == offsets.shape[0]
+        assert vecs.shape[0] == offsets[-1]
 
         if self.mean is None:
-            self.D = vecs.shape[1]
+            # initialize storage of mean, cov, and count
             self.device = vecs.device
-            self.num_experts = offsets.shape[0]
-            self.mean = pt.zeros(
-                self.num_experts, self.D, dtype=pt.float32, device=self.device
-            )
+            E = self.num_experts
+            D = vecs.shape[-1]
+            self._count = pt.zeros(E, dtype=pt.long, device=self.device)
+            self.mean = pt.zeros(E, D, dtype=pt.float32, device=self.device)
             if self.halve_cov:
                 self.half_cov = pt.zeros(
-                    self.num_experts,
-                    self.D * (self.D + 1) // 2,
-                    dtype=pt.bfloat16,
-                    device=self.device,
+                    E, D * (D + 1) // 2, dtype=self.dtype, device=self.device
                 )
             else:
-                self.full_cov = pt.zeros(
-                    self.num_experts,
-                    self.D,
-                    self.D,
-                    dtype=pt.bfloat16,
-                    device=self.device,
-                )
-            self._count = self._count.to(self.device)
+                self.full_cov = pt.zeros(E, D, D, dtype=self.dtype, device=self.device)
 
+        ends = offsets.tolist()
+        starts = [0] + ends[:-1]
         ns = [end - s for s, end in zip(starts, ends)]
         ns = pt.tensor(ns, dtype=self._count.dtype, device=self.device)
         self._count += ns
@@ -127,40 +112,27 @@ class BatchedOnlineCovariance:
         # active = ns > 0
         # self.mean[active] += sums[active] / self._count[active].unsqueeze(1)
         # # deterministic version of the block above
-        for e in range(num_experts):
+        for e in range(self.num_experts):
             s, end = starts[e], ends[e]
             if s == end:
                 continue
             self.mean[e] += delta[s:end].sum(0) / self._count[e]
         delta2 = vecs - self.mean[expert_ids]
 
-        # # alternative way to compute deltas and update mean, without using bucketize
-        # delta = pt.zeros_like(vecs)
-        # delta2 = pt.zeros_like(vecs)
-        # for e in range(num_experts):
-        #     s, end = starts[e], ends[e]
-        #     if s == end:
-        #         continue
-        #     xs = vecs[s:end]
-        #     delta[s:end] = xs - self.mean[e]
-        #     self.mean[e] += delta[s:end].sum(0) / self._count[e]
-        #     delta2[s:end] = xs - self.mean[e]
-
-        full = pt._grouped_mm(delta.T.contiguous(), delta2, offs=offsets).bfloat16()
+        full = pt._grouped_mm(delta.T.contiguous(), delta2, offs=offsets).to(self.dtype)
 
         if self.halve_cov:
-            rows, cols = _get_triu_indices(self.D, self.device)
+            rows, cols = _get_triu_indices(self.mean.shape[-1], self.device)
             self.half_cov += full[:, rows, cols]
         else:
             self.full_cov += full
 
-    def cov_full(self) -> pt.Tensor:
+    def get_cov(self) -> pt.Tensor:
         if not self.halve_cov:
             return self.full_cov
-        rows, cols = _get_triu_indices(self.D, self.device)
-        full = pt.zeros(
-            self.num_experts, self.D, self.D, dtype=pt.bfloat16, device=self.device
-        )
+        D = self.mean.shape[-1]
+        rows, cols = _get_triu_indices(D, self.device)
+        full = pt.zeros(self.num_experts, D, D, dtype=self.dtype, device=self.device)
         full[:, rows, cols] = self.half_cov
         full[:, cols, rows] = self.half_cov
         return full

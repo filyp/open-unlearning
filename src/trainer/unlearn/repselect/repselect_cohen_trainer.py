@@ -193,9 +193,9 @@ class RepSelectCohen(UnlearnTrainer):
         if self.batch_idx % self.recalc_every == 0:
             for module in model.modules():
                 if hasattr(module, "act_collapser"):
-                    module.act_collapser.process_saved_vecs()
+                    module.act_collapser.fit()
                 # if hasattr(module, "grad_collapser"):
-                #     module.grad_collapser.process_saved_vecs()
+                #     module.grad_collapser.fit()
 
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()

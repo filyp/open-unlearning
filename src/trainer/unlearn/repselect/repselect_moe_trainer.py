@@ -144,9 +144,9 @@ class RepSelectMOE(UnlearnTrainer):
         if self.batch_idx % self.recalc_every == 0:
             for m in model.modules():
                 if isinstance(m, Identity) and hasattr(m, "act_collapser"):
-                    m.act_collapser.process_saved_vecs()
+                    m.act_collapser.fit()
                 if isinstance(m, Identity) and hasattr(m, "grad_collapser"):
-                    m.grad_collapser.process_saved_vecs()
+                    m.grad_collapser.fit()
 
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()
@@ -181,8 +181,8 @@ class RepSelectMOE(UnlearnTrainer):
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
         assert offsets[-1] == acts_sorted.shape[0], f"offsets[-1]={offsets[-1]} != kept tokens={acts_sorted.shape[0]}"
 
-        module.act_collapser.add_vecs(acts_sorted, offsets, num_experts)
-        module.grad_collapser.add_vecs(grads_sorted, offsets, num_experts)
+        module.act_collapser.add_vecs(acts_sorted, offsets)
+        module.grad_collapser.add_vecs(grads_sorted, offsets)
 
         if self.batch_idx < self.recalc_every:
             return

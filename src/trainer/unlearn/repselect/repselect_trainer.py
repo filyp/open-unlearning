@@ -12,7 +12,7 @@ from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import CovCollapser
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
-from trainer.utils import label_logits, normalize_grads
+from trainer.utils import normalize_grads
 
 logging.basicConfig(level=logging.INFO)
 
@@ -132,9 +132,9 @@ class RepSelect(UnlearnTrainer):
         if self.batch_idx % self.recalc_every == 0:
             for module in model.modules():
                 if hasattr(module, "act_collapser"):
-                    module.act_collapser.process_saved_vecs()
+                    module.act_collapser.fit()
                 if hasattr(module, "grad_collapser"):
-                    module.grad_collapser.process_saved_vecs()
+                    module.grad_collapser.fit()
 
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()
