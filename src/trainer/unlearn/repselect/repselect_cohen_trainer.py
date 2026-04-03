@@ -9,7 +9,7 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.repselect.collapsers import CovCollapser
+from trainer.unlearn.repselect.collapsers import SVDCollapser
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
 from trainer.utils import label_logits, normalize_grads
 
@@ -91,7 +91,7 @@ class RepSelectCohen(UnlearnTrainer):
                     if "n_pcs" in cfg:
                         # module.act_collapser = IncrementalPCACollapser(cfg.n_pcs)
                         # module.grad_collapser = IncrementalPCACollapser(cfg.n_pcs)
-                        module.act_collapser = CovCollapser(
+                        module.act_collapser = SVDCollapser(
                             cfg.n_pcs
                         )
                         # module.grad_collapser = CovStoringCollapser(

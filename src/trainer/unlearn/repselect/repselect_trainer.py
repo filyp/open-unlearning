@@ -10,7 +10,7 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.repselect.collapsers import CovCollapser
+from trainer.unlearn.repselect.collapsers import InvSmallCovCollapser
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
 from trainer.utils import normalize_grads
 
@@ -49,10 +49,9 @@ class RepSelect(UnlearnTrainer):
 
                     # initialize collapsers
                     if "n_pcs" in cfg:
-                        # module.act_collapser = IncrementalPCACollapser(cfg.n_pcs)
-                        # module.grad_collapser = IncrementalPCACollapser(cfg.n_pcs)
-                        module.act_collapser = CovCollapser(cfg.n_pcs)
-                        module.grad_collapser = CovCollapser(cfg.n_pcs)
+                        collapser_class = InvSmallCovCollapser
+                        module.act_collapser = collapser_class(cfg.n_pcs)
+                        module.grad_collapser = collapser_class(cfg.n_pcs)
 
                     # ! adversarial LoRA
                     if "lora_lr" in cfg:
@@ -83,7 +82,7 @@ class RepSelect(UnlearnTrainer):
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # ! retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
             # we ignore the input["retain"], and instead use the cached retain batches
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
@@ -168,7 +167,7 @@ class RepSelect(UnlearnTrainer):
             module.act_collapser.add_vecs(acts)
             module.grad_collapser.add_vecs(grads)
 
-        if self.batch_idx < self.recalc_every:
+        if self.batch_idx < self.recalc_every * 2:
             return  # too early to train, so only collect activations and return early
 
         if "n_pcs" in self.cfg:

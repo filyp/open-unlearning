@@ -12,7 +12,7 @@ def _proj_to_mahal_dirs(centered, mahal_dirs):
     return proj_strenghts * mahal_dirs_norm
 
 
-class CovCollapser:
+class SVDCollapser:
     mean: pt.Tensor
     eig_val: pt.Tensor
     eig_vec: pt.Tensor
@@ -26,8 +26,8 @@ class CovCollapser:
 
     def fit(self):
         # Extract distribution stats from online covariance
-        self.mean = self.online_cov.mean.float()
         cov = self.online_cov.get_cov().float()
+        self.mean = self.online_cov.mean.float().clone()
 
         # _, S, V = pt.svd_lowrank(cov, q=self.PCs_to_use, niter=0)
         # adapted from svd_lowrank, but niter=0, and provides hot-start (eig_vec)
@@ -64,6 +64,72 @@ class CovCollapser:
         return _proj_to_mahal_dirs(centered, mahal_dirs).to(original_dtype)
 
 
+class InvSmallCovCollapser:
+    """
+    In the first pass (before first call to fit), we prepare an accurate P that captures the most important directions.
+    In the second pass, using that P, we calculate a small covariance matrix in that subspace.
+    In the third pass, we use the inverted covariance together with the P from the previous pass to collapse vecs onto the Mahalanobis directions.
+    """
+
+    P: pt.Tensor         # (D, k) current projection matrix (refined each epoch)
+    old_P: pt.Tensor     # (D, k) projection used during the last cov-accumulation pass
+    future_P: pt.Tensor  # (D, k) accumulated for next P refinement
+    mean_proj: pt.Tensor  # (k,) mean of projected vectors from last cov-accumulation pass
+    inv_cov: pt.Tensor   # (k, k) = eigvals_min * inv(small_cov)
+
+    def __init__(self, PCs_to_use: int):
+        self.PCs_to_use = PCs_to_use
+        self.P_is_ready = False
+
+    def add_vecs(self, vecs):
+        vecs = vecs.float()
+        if not hasattr(self, "P"):
+            D = vecs.shape[1]
+            _rand = pt.randn(D, self.PCs_to_use, dtype=pt.float32, device=vecs.device)
+            self.P = pt.linalg.qr(_rand).Q
+            self.future_P = pt.zeros_like(self.P)
+
+        self.future_P += vecs.mT @ (vecs @ self.P)
+
+        if self.P_is_ready:
+            Y = vecs @ self.P  # (N, k)
+            self.small_online_cov.add_vecs(Y)
+
+    def fit(self):
+        if hasattr(self, "small_online_cov"):
+            small_cov = self.small_online_cov.get_cov().float()
+            inv_cov = pt.linalg.inv(small_cov)
+            self.old_P = self.P
+            self.mean_proj = self.small_online_cov.mean.float().clone()
+
+            # estimate eigvals_min using power iteration on inv_cov
+            v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=inv_cov.device)
+            for _ in range(10):
+                v = inv_cov @ v
+                v = v / v.norm()
+            eigvals_min = 1.0 / (v @ inv_cov @ v)
+            self.inv_cov = inv_cov * eigvals_min  # absorb scaling so collapse needs no separate eigvals_min
+
+        self.P = pt.linalg.qr(self.future_P).Q
+        self.future_P = pt.zeros_like(self.P)
+        self.small_online_cov = OnlineCovariance(dtype=pt.float32)
+        self.P_is_ready = True
+
+    def collapse(self, vecs):
+        original_dtype = vecs.dtype
+        vecs = vecs.float()
+
+        mean = self.mean_proj @ self.old_P.mT  # (D,) — P-subspace component of the mean
+        vecs_centered = vecs - mean  # (N, D)
+
+        centered_proj = vecs_centered @ self.old_P  # (N, k)
+        correction_proj = centered_proj - (centered_proj @ self.inv_cov)  # (N, k)
+        correction = correction_proj @ self.old_P.mT  # (N, D)
+        mahal_dirs = vecs_centered - correction
+
+        return _proj_to_mahal_dirs(vecs_centered, mahal_dirs).to(original_dtype)
+
+
 class BatchedCovCollapser:
     """Single BatchedOnlineCovariance for all experts; exposes batched collapse via _grouped_mm."""
 
@@ -82,7 +148,7 @@ class BatchedCovCollapser:
     def fit(self):
         device = self.online_cov.device
         cov_full = self.online_cov.get_cov().float()
-        self.mean = self.online_cov.mean.float()
+        self.mean = self.online_cov.mean.float().clone()
         D = cov_full.shape[-1]
         k = self.PCs_to_use
         init = (
@@ -135,6 +201,63 @@ class BatchedCovCollapser:
 # min_eig_val = S.min(dim=1).values
 # ratio = max_eig_val / min_eig_val
 # print(pt.stack([max_eig_val, min_eig_val, ratio], dim=1))
+
+
+
+# class InvCovCollapser:
+#     "Surprisingly, it works just as fast as SVDCollapser, so SVD was no longer the bottleneck."
+#     mean: pt.Tensor
+#     P: pt.Tensor  # (D, k) orthonormal projection matrix
+#     inv_small_cov: pt.Tensor  # (k, k) = eigvals_min * inv(P.T @ cov @ P)
+
+#     def __init__(self, PCs_to_use: int):
+#         self.PCs_to_use = PCs_to_use
+#         self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
+
+#     def add_vecs(self, vecs):
+#         self.online_cov.add_vecs(vecs)
+
+#     def fit(self):
+#         self.mean = self.online_cov.mean.float()
+#         cov = self.online_cov.get_cov().float()
+
+#         # Initialize or refine projection matrix via one subspace-iteration step (no SVD)
+#         init = (
+#             self.P
+#             if hasattr(self, "P")
+#             else pt.randn(
+#                 cov.shape[0], self.PCs_to_use, dtype=pt.float32, device=cov.device
+#             )
+#         )
+#         self.P = pt.linalg.qr(cov @ init).Q  # (D, k)
+
+#         # Compute and invert the k×k projected covariance
+#         small_cov = self.P.mT @ cov @ self.P  # (k, k)
+#         self.inv_small_cov = pt.linalg.inv(small_cov)  # (k, k)
+
+#         # Estimate min eigenvalue of small_cov via power iteration on its inverse
+#         v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=cov.device)
+#         for _ in range(10):
+#             v = self.inv_small_cov @ v
+#             v = v / v.norm()
+#         eigvals_min = (1.0 / (v @ self.inv_small_cov @ v)).item()
+#         self.inv_small_cov *= eigvals_min
+
+#         self.online_cov = OnlineCovariance(dtype=pt.bfloat16)
+
+#     def collapse(self, vecs):
+#         original_dtype = vecs.dtype
+#         vecs = vecs.float()
+#         centered = vecs - self.mean
+
+#         x_proj = centered @ self.P  # (N, k)
+#         correction_proj = x_proj - (x_proj @ self.inv_small_cov)  # (N, k)
+#         correction = correction_proj @ self.P.mT  # (N, D)
+#         mahal_dirs = centered - correction
+
+#         return _proj_to_mahal_dirs(centered, mahal_dirs).to(original_dtype)
+
+
 
 
 # class IncrementalPCACollapser:
