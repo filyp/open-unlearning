@@ -67,14 +67,14 @@ class SVDCollapser:
 class InvSmallCovCollapser:
     """
     In the first pass (before first call to fit), we prepare an accurate P that captures the most important directions.
-    In the second pass, using that P, we calculate a small second-moment matrix in that subspace.
-    In the third pass, we use the inverted second-moment matrix together with the P from the previous pass to collapse vecs onto the Mahalanobis directions.
+    In the second pass, we compute the small second-moment matrix from future_P directly (P.T @ future_P = P.T @ X.T @ X @ P),
+    and use its inverse together with P to collapse vecs onto the Mahalanobis directions.
     """
 
     P: pt.Tensor         # (D, k) current projection matrix (refined each epoch)
-    old_P: pt.Tensor     # (D, k) projection used during the last second-moment accumulation pass
-    future_P: pt.Tensor  # (D, k) accumulated for next P refinement
-    inv_cov: pt.Tensor   # (k, k) = eigvals_min * inv(small_cov)
+    old_P: pt.Tensor     # (D, k) projection used to compute inv_cov
+    future_P: pt.Tensor  # (D, k) accumulated X.T @ X @ P
+    inv_cov: pt.Tensor   # (k, k) = eigvals_min * inv(P.T @ X.T @ X @ P)
 
     def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
@@ -90,21 +90,15 @@ class InvSmallCovCollapser:
 
         self.future_P += vecs.mT @ (vecs @ self.P)
 
-        if self.P_is_ready:
-            Y = vecs @ self.P  # (N, k)
-            self.small_cov += Y.mT @ Y  # (k, k)
-
     def fit(self):
-        k = self.PCs_to_use
-        device = self.P.device
-        if hasattr(self, "small_cov"):
-            small_cov = self.small_cov
+        if self.P_is_ready:  # P is refined (not random), so small_cov is meaningful
+            small_cov = self.P.mT @ self.future_P  # (k, k) = P.T @ X.T @ X @ P, exact
             small_cov.diagonal().add_(1e-6 * small_cov.diagonal().amax().clamp(min=1.0))
             inv_cov = pt.linalg.inv(small_cov)
             self.old_P = self.P
 
             # estimate eigvals_min using power iteration on inv_cov
-            v = pt.randn(k, dtype=pt.float32, device=device)
+            v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=self.P.device)
             for _ in range(10):
                 v = inv_cov @ v
                 v = v / v.norm()
@@ -113,7 +107,6 @@ class InvSmallCovCollapser:
 
         self.P = pt.linalg.qr(self.future_P).Q
         self.future_P = pt.zeros_like(self.P)
-        self.small_cov = pt.zeros(k, k, dtype=pt.float32, device=device)
         self.P_is_ready = True
 
     def collapse(self, vecs):
@@ -218,21 +211,17 @@ class BatchedInvSmallCovCollapser:
         Y = pt._grouped_mm(vecs, self.P, offs=offsets)  # (S, k)
         self.future_P += pt._grouped_mm(vecs.mT.contiguous(), Y, offs=offsets)  # (E, D, k)
 
-        if self.P_is_ready:
-            self.cov += pt._grouped_mm(Y.mT.contiguous(), Y, offs=offsets)  # (E, k, k)
-
     def fit(self):
         k = self.PCs_to_use
-        device = self.P.device
-        if hasattr(self, "cov"):
-            small_cov = self.cov  # (E, k, k)
+        if self.P_is_ready:  # P is refined (not random), so small_cov is meaningful
+            small_cov = self.P.mT @ self.future_P  # (E, k, D) @ (E, D, k) = (E, k, k)
             reg = small_cov.diagonal(dim1=-2, dim2=-1).amax(dim=-1, keepdim=True).clamp(min=1.0)
             small_cov.diagonal(dim1=-2, dim2=-1).add_(1e-6 * reg)  # regularize
             inv_cov = pt.linalg.inv(small_cov)  # (E, k, k)
             self.old_P = self.P
 
             # estimate eigvals_min per expert via batched power iteration on inv_cov
-            v = pt.randn(self.num_experts, k, dtype=pt.float32, device=device)
+            v = pt.randn(self.num_experts, k, dtype=pt.float32, device=self.P.device)
             for _ in range(10):
                 v = (inv_cov @ v.unsqueeze(-1)).squeeze(-1)  # (E, k)
                 v = v / v.norm(dim=1, keepdim=True)
@@ -242,7 +231,6 @@ class BatchedInvSmallCovCollapser:
 
         self.P = pt.linalg.qr(self.future_P).Q  # (E, D, k)
         self.future_P = pt.zeros_like(self.P)
-        self.cov = pt.zeros(self.num_experts, k, k, dtype=pt.float32, device=device)
         self.P_is_ready = True
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
