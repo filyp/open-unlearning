@@ -67,14 +67,13 @@ class SVDCollapser:
 class InvSmallCovCollapser:
     """
     In the first pass (before first call to fit), we prepare an accurate P that captures the most important directions.
-    In the second pass, using that P, we calculate a small covariance matrix in that subspace.
-    In the third pass, we use the inverted covariance together with the P from the previous pass to collapse vecs onto the Mahalanobis directions.
+    In the second pass, using that P, we calculate a small second-moment matrix in that subspace.
+    In the third pass, we use the inverted second-moment matrix together with the P from the previous pass to collapse vecs onto the Mahalanobis directions.
     """
 
     P: pt.Tensor         # (D, k) current projection matrix (refined each epoch)
-    old_P: pt.Tensor     # (D, k) projection used during the last cov-accumulation pass
+    old_P: pt.Tensor     # (D, k) projection used during the last second-moment accumulation pass
     future_P: pt.Tensor  # (D, k) accumulated for next P refinement
-    mean_proj: pt.Tensor  # (k,) mean of projected vectors from last cov-accumulation pass
     inv_cov: pt.Tensor   # (k, k) = eigvals_min * inv(small_cov)
 
     def __init__(self, PCs_to_use: int):
@@ -93,18 +92,19 @@ class InvSmallCovCollapser:
 
         if self.P_is_ready:
             Y = vecs @ self.P  # (N, k)
-            self.small_online_cov.add_vecs(Y)
+            self.small_cov += Y.mT @ Y  # (k, k)
 
     def fit(self):
-        if hasattr(self, "small_online_cov"):
-            small_cov = self.small_online_cov.get_cov().float()
+        k = self.PCs_to_use
+        device = self.P.device
+        if hasattr(self, "small_cov"):
+            small_cov = self.small_cov
             small_cov.diagonal().add_(1e-6 * small_cov.diagonal().amax().clamp(min=1.0))
             inv_cov = pt.linalg.inv(small_cov)
             self.old_P = self.P
-            self.mean_proj = self.small_online_cov.mean.float().clone()
 
             # estimate eigvals_min using power iteration on inv_cov
-            v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=inv_cov.device)
+            v = pt.randn(k, dtype=pt.float32, device=device)
             for _ in range(10):
                 v = inv_cov @ v
                 v = v / v.norm()
@@ -113,22 +113,19 @@ class InvSmallCovCollapser:
 
         self.P = pt.linalg.qr(self.future_P).Q
         self.future_P = pt.zeros_like(self.P)
-        self.small_online_cov = OnlineCovariance(dtype=pt.float32)
+        self.small_cov = pt.zeros(k, k, dtype=pt.float32, device=device)
         self.P_is_ready = True
 
     def collapse(self, vecs):
         original_dtype = vecs.dtype
         vecs = vecs.float()
 
-        mean = self.mean_proj @ self.old_P.mT  # (D,) — P-subspace component of the mean
-        vecs_centered = vecs - mean  # (N, D)
-
-        centered_proj = vecs_centered @ self.old_P  # (N, k)
-        correction_proj = centered_proj - (centered_proj @ self.inv_cov)  # (N, k)
+        x_proj = vecs @ self.old_P  # (N, k)
+        correction_proj = x_proj - (x_proj @ self.inv_cov)  # (N, k)
         correction = correction_proj @ self.old_P.mT  # (N, D)
-        mahal_dirs = vecs_centered - correction
+        mahal_dirs = vecs - correction
 
-        return _proj_to_mahal_dirs(vecs_centered, mahal_dirs).to(original_dtype)
+        return _proj_to_mahal_dirs(vecs, mahal_dirs).to(original_dtype)
 
 
 class BatchedSVDCollapser:
