@@ -10,7 +10,7 @@ from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
-from trainer.unlearn.repselect.collapsers import BatchedCovCollapser
+from trainer.unlearn.repselect.collapsers import BatchedInvSmallCovCollapser
 from trainer.unlearn.repselect.moe_patch import Identity, hooked_grouped_mm_experts_forward
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA  # noqa: F401
 from trainer.utils import normalize_grads
@@ -61,7 +61,7 @@ class RepSelectMOE(UnlearnTrainer):
             # Initialize batched collapsers and stash on probes
             if "n_pcs" in cfg:
                 n, E = cfg.n_pcs, e.num_experts
-                collapser_class = BatchedCovCollapser
+                collapser_class = BatchedInvSmallCovCollapser
                 e.gate_up_output_probe.act_collapser = collapser_class(n, E)
                 e.gate_up_output_probe.grad_collapser = collapser_class(n, E)
                 e.down_output_probe.act_collapser = collapser_class(n, E)
@@ -96,7 +96,7 @@ class RepSelectMOE(UnlearnTrainer):
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # Retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every:
+        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
             r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
             kl, _, _ = self.kl_computor.get_kl(r_batch)
@@ -184,7 +184,7 @@ class RepSelectMOE(UnlearnTrainer):
         module.act_collapser.add_vecs(acts_sorted, offsets)
         module.grad_collapser.add_vecs(grads_sorted, offsets)
 
-        if self.batch_idx < self.recalc_every:
+        if self.batch_idx < self.recalc_every * 2:
             return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
