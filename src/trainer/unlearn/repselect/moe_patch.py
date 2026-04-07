@@ -63,7 +63,7 @@ def hooked_grouped_mm_experts_forward(
     )  # (S, 2 * intermediate_dim) or  (S, intermediate_dim) depending on whether we have gating
 
     # Stash activations and routing info on probe (no circular refs)
-    self.gate_up_output_probe._acts = selected_hidden_states_g.detach()  # ! ADDED
+    self.gate_up_output_probe._acts = selected_hidden_states_g  # ! ADDED (no detach — needed for LoRA gradients)
     self.gate_up_output_probe._offsets = offsets  # ! ADDED
     self.gate_up_output_probe._fused_param = [selected_weights]  # ! ADDED
     up_proj_out = self.gate_up_output_probe(up_proj_out)  # ! ADDED
@@ -80,7 +80,7 @@ def hooked_grouped_mm_experts_forward(
     selected_biases = self.down_proj_bias[expert_ids_g] if self.has_bias else None
 
     # --- Down projection per expert (grouped) ---
-    self.down_output_probe._acts = up_proj_out.detach()  # ! ADDED
+    self.down_output_probe._acts = up_proj_out  # ! ADDED (no detach — needed for LoRA gradients)
     self.down_output_probe._offsets = offsets  # ! ADDED
     self.down_output_probe._fused_param = [self.down_proj]  # ! ADDED
     down_proj_out = _grouped_linear(

@@ -11,8 +11,14 @@ from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import BatchedInvSmallCovCollapser
-from trainer.unlearn.repselect.moe_patch import Identity, hooked_grouped_mm_experts_forward
-from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA  # noqa: F401
+from trainer.unlearn.repselect.moe_patch import (
+    Identity,
+    hooked_grouped_mm_experts_forward,
+)
+from trainer.unlearn.repselect.utils import (  # noqa: F401
+    BatchedManualLoRA,
+    get_banned_tokens,
+)
 from trainer.utils import normalize_grads
 
 logging.basicConfig(level=logging.INFO)
@@ -28,16 +34,16 @@ class RepSelectMOE(UnlearnTrainer):
             len(self.train_dataset) / self.args.per_device_train_batch_size
         )
         logging.info(f"{self.recalc_every=}")
-        assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
-        # assert cfg.get("n_pcs", 0) % 16 == 0, "n_pcs must be a multiple of 16"
 
+        assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
         assert hasattr(self.model.model.layers[0].mlp, "experts")
-        assert getattr(self.model.config, '_experts_implementation', None) == 'grouped_mm', \
-            "RepSelectMOE requires experts_implementation='grouped_mm'"
-        assert "lora_lr" not in cfg, "LoRA not yet supported for fused MoE params"
+        assert (
+            getattr(self.model.config, "_experts_implementation", None) == "grouped_mm"
+        ), "RepSelectMOE requires experts_implementation='grouped_mm'"
 
         self.model.requires_grad_(False)  # train only modules that we specify
         self.base_trainable_params = []
+        self.lora_params = []
         for layer_num in range(len(self.model.model.layers)):
             e = self.model.model.layers[layer_num].mlp.experts
 
@@ -67,15 +73,28 @@ class RepSelectMOE(UnlearnTrainer):
                 e.down_output_probe.act_collapser = collapser_class(n, E)
                 e.down_output_probe.grad_collapser = collapser_class(n, E)
 
-            # # adversarial LoRA (not yet supported for fused MoE params)
-            # if "lora_lr" in cfg:
-            #     module.lora_module = ManualLoRA(
-            #         module.weight.shape[1],  # in_features
-            #         module.weight.shape[0],  # out_features
-            #         cfg.lora_rank,
-            #     ).to(self.model.device, dtype=self.model.dtype)
-            #     self.lora_params.extend(module.lora_module.parameters())
-            #     module.register_forward_hook(self.lora_forward_hook)
+            # adversarial LoRA (per-expert, batched via _grouped_mm)
+            if "lora_lr" in cfg:
+                E = e.num_experts
+                # is_transposed=True:  weight (E, in_dim, out_dim) → in=shape[-2], out=shape[-1]
+                # is_transposed=False: weight (E, out_dim, in_dim) → in=shape[-1], out=shape[-2]
+                if e.is_transposed:
+                    gu_in, gu_out = e.gate_up_proj.shape[-2], e.gate_up_proj.shape[-1]
+                    dn_in, dn_out = e.down_proj.shape[-2], e.down_proj.shape[-1]
+                else:
+                    gu_in, gu_out = e.gate_up_proj.shape[-1], e.gate_up_proj.shape[-2]
+                    dn_in, dn_out = e.down_proj.shape[-1], e.down_proj.shape[-2]
+                dev, dtype = self.model.device, self.model.dtype
+                e.gate_up_output_probe.lora_module = BatchedManualLoRA(
+                    E, gu_in, gu_out, cfg.lora_rank
+                ).to(dev, dtype)
+                e.down_output_probe.lora_module = BatchedManualLoRA(
+                    E, dn_in, dn_out, cfg.lora_rank
+                ).to(dev, dtype)
+                self.lora_params.extend(e.gate_up_output_probe.lora_module.parameters())
+                self.lora_params.extend(e.down_output_probe.lora_module.parameters())
+                e.gate_up_output_probe.register_forward_hook(self.lora_forward_hook)
+                e.down_output_probe.register_forward_hook(self.lora_forward_hook)
 
         # Prepare retain (KLComputor is deferred to first training_step,
         # because the model may not be on CUDA yet during __init__)
@@ -134,11 +153,12 @@ class RepSelectMOE(UnlearnTrainer):
             p.requires_grad_(True)
         self.use_hooks = False
 
-        # # update LoRA adversarially (gradient ascent - adversary tries to relearn)
-        # normalize_grads(self.lora_params)
-        # for p in self.lora_params:
-        #     p.data += self.cfg.lora_lr * self.args.learning_rate * p.grad
-        #     p.grad = None
+        # update LoRA adversarially (gradient ascent - adversary tries to relearn)
+        if self.lora_params:
+            normalize_grads(self.lora_params)
+            for p in self.lora_params:
+                p.data += self.cfg.lora_lr * self.args.learning_rate * p.grad
+                p.grad = None
 
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
@@ -151,18 +171,22 @@ class RepSelectMOE(UnlearnTrainer):
         normalize_grads(self.base_trainable_params)
         return forget_loss.detach()
 
+    def lora_forward_hook(self, module, args, output):
+        if self.use_hooks:
+            return output + module.lora_module(module._acts, module._offsets)
+
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
 
-        acts_sorted = module._acts          # (S, in_dim), stashed during forward
+        acts_sorted = module._acts.detach()  # (S, in_dim), stashed during forward
         fused_param = module._fused_param[0]  # unwrap from list (hidden from nn.Module)
-        offsets = module._offsets            # (num_experts,) cumulative counts
+        offsets = module._offsets  # (num_experts,) cumulative counts
         num_experts = offsets.shape[0]
         is_transposed = module._is_transposed
 
-        grads_sorted = grad_output[0]       # (S, out_dim)
-        module._acts = None                 # free reference
+        grads_sorted = grad_output[0]  # (S, out_dim)
+        module._acts = None  # free reference
 
         # Filter tokens globally: non-zero grads AND token_mask (BOS, padding, template)
         keep = grads_sorted.norm(dim=1) != 0
@@ -174,12 +198,14 @@ class RepSelectMOE(UnlearnTrainer):
         # Recompute offsets after filtering
         # Build per-token expert_ids from cumulative offsets, then filter and recount
         # NOTE: right=True is required in all bucketize calls
-        assert offsets[-1] == keep.shape[0], f"offsets[-1]={offsets[-1]} != S={keep.shape[0]}"
-        expert_ids = pt.bucketize(pt.arange(keep.shape[0], device=keep.device), offsets, right=True)
+        assert offsets[-1] == keep.shape[0]
+        expert_ids = pt.bucketize(
+            pt.arange(keep.shape[0], device=keep.device), offsets, right=True
+        )
         expert_ids = expert_ids[keep]
         tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
-        assert offsets[-1] == acts_sorted.shape[0], f"offsets[-1]={offsets[-1]} != kept tokens={acts_sorted.shape[0]}"
+        assert offsets[-1] == acts_sorted.shape[0]
 
         module.act_collapser.add_vecs(acts_sorted, offsets)
         module.grad_collapser.add_vecs(grads_sorted, offsets)
@@ -196,8 +222,7 @@ class RepSelectMOE(UnlearnTrainer):
             # Dequantize ref_grad once for all experts (instead of per-expert)
             ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
             if is_transposed:
-                ref_grad = ref_grad.transpose(-2, -1)  # (E, out_dim, in_dim) — view, no kernel
-
+                ref_grad = ref_grad.transpose(-2, -1)  # (E, out_dim, in_dim)
             ends = offsets.tolist()
             starts = [0] + ends[:-1]
             token_disr = pt.zeros(acts_sorted.shape[0], device=acts_sorted.device)

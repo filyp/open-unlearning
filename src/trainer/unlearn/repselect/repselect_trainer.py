@@ -141,12 +141,12 @@ class RepSelect(UnlearnTrainer):
     def save_act_input_hook(self, module, args, output):
         if not self.use_hooks:
             return
-        module.last_act_input = args[0].detach()
+        module.last_act_input = args[0]
 
     def collapse_hook(self, module, grad_input, grad_output):
         if not self.use_hooks:
             return
-        acts = module.last_act_input
+        acts = module.last_act_input.detach()
         grads = grad_output[0]
         module.last_act_input = None
 
