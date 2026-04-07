@@ -200,3 +200,5 @@ community/benchmarks/beavertails/classified_dryrun.jsonl
 community/benchmarks/beavertails/staging.jsonl
 .claude/settings.json
 community/benchmarks/beavertails/classified.jsonl
+community/benchmarks/beavertails/contrast_flagged.json
+community/benchmarks/beavertails/contrast.jsonl
