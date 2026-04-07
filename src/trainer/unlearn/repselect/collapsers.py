@@ -6,12 +6,6 @@ from trainer.unlearn.repselect.online_covariance import (
 )
 
 
-def _proj_to_mahal_dirs(centered, mahal_dirs):
-    mahal_dirs_norm = mahal_dirs / mahal_dirs.norm(dim=1, keepdim=True)
-    proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
-    return proj_strenghts * mahal_dirs_norm
-
-
 class InvSmallCovCollapser:
     """
     In the first pass (before first call to fit), we prepare an accurate P that captures the most important directions.
@@ -43,7 +37,7 @@ class InvSmallCovCollapser:
         old_P = self.P
         self.P = pt.linalg.qr(self.cov_P).Q
         self.cov_P = pt.zeros_like(self.P)
-        
+
         # adjust small_cov, to be expressed in the new basis
         _reprojection = old_P.mT @ self.P
         small_cov = _reprojection.mT @ small_cov @ _reprojection
@@ -71,7 +65,7 @@ class InvSmallCovCollapser:
         correction = correction_proj @ self.P.mT  # (N, D)
         mahal_dirs = vecs - correction
 
-        return _proj_to_mahal_dirs(vecs, mahal_dirs).to(original_dtype)
+        return mahal_dirs.to(original_dtype)
 
 
 class BatchedInvSmallCovCollapser:
@@ -134,12 +128,20 @@ class BatchedInvSmallCovCollapser:
         correction = pt._grouped_mm(correction_proj, _up_proj, offs=offsets)  # (S, D)
         mahal_dirs = vecs_sorted - correction
 
-        result = _proj_to_mahal_dirs(vecs_sorted, mahal_dirs)
-        assert result.shape == vecs_sorted.shape
-        return result.to(original_dtype)
+        assert mahal_dirs.shape == vecs_sorted.shape
+        return mahal_dirs.to(original_dtype)
 
 
 ########################################################################################
+
+
+# def _proj_to_mahal_dirs(centered, mahal_dirs):
+#     norms = mahal_dirs.norm(dim=1, keepdim=True)
+#     valid = norms > 0
+#     mahal_dirs_norm = mahal_dirs / norms.clamp(min=1e-30)
+#     proj_strenghts = (mahal_dirs_norm * centered).sum(dim=1, keepdim=True)
+#     result = proj_strenghts * mahal_dirs_norm
+#     return result * valid  # zero out tokens where mahal_dirs is zero
 
 
 class SVDCollapser:
@@ -190,8 +192,9 @@ class SVDCollapser:
         projected = centered @ self.eig_vec  # (N, D)
         proj_diff = projected - projected / self.eig_val  # assumes eig_val.min() == 1
         mahal_dirs = centered - proj_diff @ self.eig_vec.T
+        return mahal_dirs.to(original_dtype)
 
-        return _proj_to_mahal_dirs(centered, mahal_dirs).to(original_dtype)
+        # return _proj_to_mahal_dirs(centered, mahal_dirs).to(original_dtype)
 
 
 class BatchedSVDCollapser:
@@ -255,9 +258,12 @@ class BatchedSVDCollapser:
         correction = pt._grouped_mm(proj_diff, eig_vec_T, offs=offsets)
         mahal_dirs = centered - correction
 
-        result = _proj_to_mahal_dirs(centered, mahal_dirs)
-        assert result.shape == vecs_sorted.shape
-        return result.to(original_dtype)
+        assert mahal_dirs.shape == vecs_sorted.shape
+        return mahal_dirs.to(original_dtype)
+
+        # result = _proj_to_mahal_dirs(centered, mahal_dirs)
+        # assert result.shape == vecs_sorted.shape
+        # return result.to(original_dtype)
 
 
 # #  it is much slower than BatchedInvSmallCovCollapser, and unalernign trajectory is worse
