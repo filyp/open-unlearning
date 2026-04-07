@@ -20,13 +20,11 @@ class InvSmallCovCollapser:
     """
 
     P: pt.Tensor  # (D, k) current projection matrix (refined each epoch)
-    old_P: pt.Tensor  # (D, k) projection used to compute inv_cov
     cov_P: pt.Tensor  # (D, k) accumulated X.T @ X @ P
     inv_cov: pt.Tensor  # (k, k) = eigvals_min * inv(P.T @ X.T @ X @ P)
 
     def __init__(self, PCs_to_use: int):
         self.PCs_to_use = PCs_to_use
-        self.P_is_ready = False
 
     def add_vecs(self, vecs):
         vecs = vecs.float()
@@ -39,35 +37,38 @@ class InvSmallCovCollapser:
         self.cov_P += vecs.mT @ (vecs @ self.P)
 
     def fit(self):
-        if self.P_is_ready:  # P is refined (not random), so small_cov is meaningful
-            small_cov = self.P.mT @ self.cov_P  # (k, k) = P.T @ X.T @ X @ P, exact
-            # regularize
-            _scale = small_cov.diagonal().amax()
-            small_cov.diagonal().add_(1e-6 * _scale.clamp(min=1.0))
-            inv_cov = pt.linalg.inv(small_cov)
+        small_cov = self.P.mT @ self.cov_P  # (k, k) = P.T @ X.T @ X @ P, exact
 
-            # estimate eigvals_min using power iteration on inv_cov
-            v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=self.P.device)
-            for _ in range(10):
-                v = inv_cov @ v
-                v = v / v.norm()
-            eigvals_min = 1.0 / (v @ inv_cov @ v)
-            # absorb scaling so collapse needs no separate eigvals_min
-            self.inv_cov = inv_cov * eigvals_min
-
-            self.old_P = self.P
-
+        # refine P
+        old_P = self.P
         self.P = pt.linalg.qr(self.cov_P).Q
         self.cov_P = pt.zeros_like(self.P)
-        self.P_is_ready = True
+        
+        # adjust small_cov, to be expressed in the new basis
+        _reprojection = old_P.mT @ self.P
+        small_cov = _reprojection.mT @ small_cov @ _reprojection
+
+        # regularize and invert
+        _scale = small_cov.diagonal().amax()
+        small_cov.diagonal().add_(1e-6 * _scale.clamp(min=1.0))
+        inv_cov = pt.linalg.inv(small_cov)
+
+        # estimate eigvals_min using power iteration on inv_cov
+        v = pt.randn(self.PCs_to_use, dtype=pt.float32, device=self.P.device)
+        for _ in range(10):
+            v = inv_cov @ v
+            v = v / v.norm()
+        eigvals_min = 1.0 / (v @ inv_cov @ v)
+        # absorb scaling so collapse needs no separate eigvals_min
+        self.inv_cov = inv_cov * eigvals_min
 
     def collapse(self, vecs):
         original_dtype = vecs.dtype
         vecs = vecs.float()
 
-        x_proj = vecs @ self.old_P  # (N, k)
+        x_proj = vecs @ self.P  # (N, k)
         correction_proj = x_proj - (x_proj @ self.inv_cov)  # (N, k)
-        correction = correction_proj @ self.old_P.mT  # (N, D)
+        correction = correction_proj @ self.P.mT  # (N, D)
         mahal_dirs = vecs - correction
 
         return _proj_to_mahal_dirs(vecs, mahal_dirs).to(original_dtype)
@@ -77,14 +78,12 @@ class BatchedInvSmallCovCollapser:
     """Batched version of InvSmallCovCollapser for MoE experts."""
 
     P: pt.Tensor  # (E, D, k)
-    old_P: pt.Tensor  # (E, D, k)
     cov_P: pt.Tensor  # (E, D, k) accumulated X.T @ X @ P
     inv_cov: pt.Tensor  # (E, k, k) = eigvals_min * inv(small_cov), per expert
 
     def __init__(self, PCs_to_use: int, num_experts: int):
         self.PCs_to_use = PCs_to_use
         self.num_experts = num_experts
-        self.P_is_ready = False
 
     def add_vecs(self, vecs: pt.Tensor, offsets: pt.Tensor):
         vecs = vecs.float()
@@ -99,36 +98,39 @@ class BatchedInvSmallCovCollapser:
 
     def fit(self):
         k = self.PCs_to_use
-        if self.P_is_ready:  # P is refined (not random), so small_cov is meaningful
-            small_cov = self.P.mT @ self.cov_P  # (E, k, D) @ (E, D, k) = (E, k, k)
-            # regularize
-            _scale = small_cov.diagonal(dim1=-2, dim2=-1).amax(dim=-1, keepdim=True)
-            small_cov.diagonal(dim1=-2, dim2=-1).add_(1e-6 * _scale.clamp(min=1.0))
-            inv_cov = pt.linalg.inv(small_cov)  # (E, k, k)
+        small_cov = self.P.mT @ self.cov_P  # (E, k, D) @ (E, D, k) = (E, k, k)
 
-            # estimate eigvals_min per expert via batched power iteration on inv_cov
-            v = pt.randn(self.num_experts, k, dtype=pt.float32, device=self.P.device)
-            for _ in range(10):
-                v = (inv_cov @ v.unsqueeze(-1)).squeeze(-1)  # (E, k)
-                v = v / v.norm(dim=1, keepdim=True)
-            v = v.unsqueeze(-1)  # (E, k, 1)
-            eigvals_min = 1.0 / (v.mT @ inv_cov @ v).squeeze(-1).squeeze(-1)  # (E,)
-            self.inv_cov = inv_cov * eigvals_min[:, None, None]
-
-            self.old_P = self.P
-
+        # refine P
+        old_P = self.P
         self.P = pt.linalg.qr(self.cov_P).Q  # (E, D, k)
         self.cov_P = pt.zeros_like(self.P)
-        self.P_is_ready = True
+
+        # adjust small_cov to be expressed in the new basis
+        _reprojection = old_P.mT @ self.P  # (E, k, k)
+        small_cov = _reprojection.mT @ small_cov @ _reprojection
+
+        # regularize and invert
+        _scale = small_cov.diagonal(dim1=-2, dim2=-1).amax(dim=-1, keepdim=True)
+        small_cov.diagonal(dim1=-2, dim2=-1).add_(1e-6 * _scale.clamp(min=1.0))
+        inv_cov = pt.linalg.inv(small_cov)  # (E, k, k)
+
+        # estimate eigvals_min per expert via batched power iteration on inv_cov
+        v = pt.randn(self.num_experts, k, dtype=pt.float32, device=self.P.device)
+        for _ in range(10):
+            v = (inv_cov @ v.unsqueeze(-1)).squeeze(-1)  # (E, k)
+            v = v / v.norm(dim=1, keepdim=True)
+        v = v.unsqueeze(-1)  # (E, k, 1)
+        eigvals_min = 1.0 / (v.mT @ inv_cov @ v).squeeze(-1).squeeze(-1)  # (E,)
+        self.inv_cov = inv_cov * eigvals_min[:, None, None]
 
     def collapse(self, vecs_sorted: pt.Tensor, offsets: pt.Tensor) -> pt.Tensor:
         """Batched collapse. vecs_sorted: (S, D), offsets: (E,)."""
         original_dtype = vecs_sorted.dtype
         vecs_sorted = vecs_sorted.float()
 
-        x_proj = pt._grouped_mm(vecs_sorted, self.old_P, offs=offsets)  # (S, k)
+        x_proj = pt._grouped_mm(vecs_sorted, self.P, offs=offsets)  # (S, k)
         correction_proj = x_proj - pt._grouped_mm(x_proj, self.inv_cov, offs=offsets)
-        _up_proj = self.old_P.mT.contiguous()
+        _up_proj = self.P.mT.contiguous()
         correction = pt._grouped_mm(correction_proj, _up_proj, offs=offsets)  # (S, D)
         mahal_dirs = vecs_sorted - correction
 
