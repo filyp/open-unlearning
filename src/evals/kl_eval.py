@@ -3,7 +3,6 @@ import logging
 import math
 
 import torch as pt
-import torch.nn.functional as F
 from transformers import BatchEncoding
 
 from data.utils import batched, prep_batch

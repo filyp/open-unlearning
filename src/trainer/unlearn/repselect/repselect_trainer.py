@@ -188,10 +188,16 @@ class RepSelect(UnlearnTrainer):
             ref_grad = dequantize_blockwise(*module.weight.ref_grad)
             ref_grad = ref_grad.to(module.weight.dtype)
 
-            token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
-            kl_mask = token_disr > 0
+            disr_grad = acts @ ref_grad.T
+            kl_mask = (disr_grad * grads).sum(dim=1) > 0
             acts = acts[kl_mask]
             grads = grads[kl_mask]
+
+            # # equivalent to the block above:
+            # token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
+            # kl_mask = token_disr > 0
+            # acts = acts[kl_mask]
+            # grads = grads[kl_mask]
 
             # # the core of DisrCollapse that can be swapped for the block above:
             # disr_grad = acts @ ref_grad.T

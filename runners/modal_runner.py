@@ -12,7 +12,8 @@ def download_models():
 
     for model in [
         # "allenai/OLMoE-1B-7B-0125",
-        "google/gemma-2-2b",
+        # "google/gemma-2-2b",
+        "meta-llama/Llama-3.2-3B",
     ]:
         snapshot_download(model)
 

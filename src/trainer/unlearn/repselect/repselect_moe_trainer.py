@@ -226,6 +226,7 @@ class RepSelectMOE(UnlearnTrainer):
         grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
 
         # KL-masking (zero out instead of selecting, to preserve offsets)
+        # todo: could be vectorized by @ with ref_grad and then dot product with grads_sorted
         if "retain_momentum" in self.cfg:
             # Dequantize ref_grad once for all experts (instead of per-expert)
             ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
