@@ -1,7 +1,6 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepSelect task_name=SAMPLE_UNLEARN
 import logging
 import math
-import random
 import types
 
 import torch as pt
@@ -96,19 +95,30 @@ class RepSelectMOE(UnlearnTrainer):
                 e.gate_up_output_probe.register_forward_hook(self.lora_forward_hook)
                 e.down_output_probe.register_forward_hook(self.lora_forward_hook)
 
-        # Prepare retain (KLComputor is deferred to first training_step,
+        # pre-cache batches (needed for storing data for KL computation)
+        self.forget_batches = [
+            self.data_collator(r)
+            for r in batched(
+                self.train_dataset.forget, self.args.per_device_train_batch_size
+            )
+        ]
+        self.retain_batches = [
+            self.data_collator(r)
+            for r in batched(
+                self.train_dataset.retain, self.args.per_device_train_batch_size
+            )
+        ]
+
+        # KLComputor is deferred to first training_step,
         # because the model may not be on CUDA yet during __init__)
         self.kl_computor = None
-        if "retain_momentum" in self.cfg:
-            self.retain_batches = [
-                self.data_collator(r)
-                for r in batched(
-                    self.train_dataset.retain, self.args.per_device_train_batch_size
-                )
-            ]
+
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
+        idx = self.batch_idx % len(self.forget_batches)
+        f_batch = self.forget_batches[idx]
+        r_batch = self.retain_batches[idx]
 
         # Lazy init KLComputor (model is guaranteed on CUDA here)
         if self.kl_computor is None and "retain_momentum" in self.cfg:
@@ -116,7 +126,6 @@ class RepSelectMOE(UnlearnTrainer):
 
         # Retain pass
         if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
-            r_batch = random.choice(self.retain_batches)
             model.zero_grad(set_to_none=True)
             kl, _, _ = self.kl_computor.get_kl(r_batch)
             kl.backward()
@@ -131,17 +140,16 @@ class RepSelectMOE(UnlearnTrainer):
                 param.ref_grad = quantize_blockwise(ref)
 
         # Unlearning loss
-        batch = inputs["forget"]
-        # token_mask = batch["attention_mask"].bool().clone()
+        # token_mask = f_batch["attention_mask"].bool().clone()
         # token_mask[:, 0] = False  # omit BOS token
         # if self.processing_class.chat_template is not None:
         #     for banned_token in get_banned_tokens(self.processing_class):
-        #         token_mask &= batch["input_ids"] != banned_token
+        #         token_mask &= f_batch["input_ids"] != banned_token
         # self.flat_token_mask = token_mask.reshape(-1)
 
         self.use_hooks = True
         model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(batch, model.device))
+        output = model(**prep_batch(f_batch, model.device))
         forget_loss = -output.loss
         # we will backpropagate because the graph has been built by the forward pass
         # but backward() itself will not compute weight gradients for base params

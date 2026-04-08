@@ -28,10 +28,18 @@ class ForgetRetainDataset(Dataset):
                 "retain dataset can't be None when anchor=retain"
             )
             return len(self.retain)
+        elif self.anchor == "paired":
+            assert len(self.forget) == len(self.retain)
+            return len(self.forget)
         else:
-            raise NotImplementedError(f"{self.anchor} can be only forget or retain")
+            raise NotImplementedError(
+                f"{self.anchor} can be only forget, retain or paired"
+            )
 
     def __getitem__(self, idx):
+        if self.anchor == "paired":
+            return {"forget": self.forget[idx], "retain": self.retain[idx]}
+
         item = {}
         if self.anchor == "forget":
             item["forget"] = self.forget[idx]

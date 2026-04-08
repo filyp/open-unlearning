@@ -37,38 +37,45 @@ tokenizer_cfg:
 # CLI: category=... to switch category
 # curated splits: animal_abuse, terrorism_organized_crime
 # correct counts: animal_abuse=898, terrorism_organized_crime=1595, safe=3729
+# in the contrast set: animal_abuse=871
 category: animal_abuse
 
 data:
+  anchor: paired
   custom_loaders:
     # filypo/beavertails-curated — only label_correct=True examples used
-    - loader: beavertails_curated
+    - loader: beavertails_contrast
+      original: true
       dataset_name: forget
-      range: [0, 385]
-      split: ${category}
-      tokenizer: ${tokenizer_cfg}
-
-    - loader: beavertails_curated
-      dataset_name: relearn
-      range: [385, 770]
-      split: ${category}
-      tokenizer: ${tokenizer_cfg}
-
-    - loader: beavertails_curated
-      dataset_name: holdout_harmful
-      range: [770, 898]
+      range: [0, 371]
       split: ${category}
       tokenizer: ${tokenizer_cfg}
 
     - loader: beavertails_contrast
+      original: true
+      dataset_name: relearn
+      range: [371, 742]
+      split: ${category}
+      tokenizer: ${tokenizer_cfg}
+
+    - loader: beavertails_contrast
+      original: true
+      dataset_name: holdout_harmful
+      range: [742, 870]
+      split: ${category}
+      tokenizer: ${tokenizer_cfg}
+
+    - loader: beavertails_contrast
+      original: false
       dataset_name: retain
-      range: [0, 385]
+      range: [0, 371]
       split: animal_abuse
       tokenizer: ${tokenizer_cfg}
 
     - loader: beavertails_contrast
+      original: false
       dataset_name: safe_eval
-      range: [385, 513]  # note that contrast set is 871, because some examples failed, usually due to safety filters
+      range: [742, 870]  # note that contrast set is 871, because some examples failed, usually due to safety filters
       split: animal_abuse
       tokenizer: ${tokenizer_cfg}
 
