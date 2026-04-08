@@ -75,20 +75,14 @@ class RepSelectMOE(UnlearnTrainer):
             # adversarial LoRA (per-expert, batched via _grouped_mm)
             if "lora_lr" in cfg:
                 E = e.num_experts
-                # is_transposed=True:  weight (E, in_dim, out_dim) → in=shape[-2], out=shape[-1]
-                # is_transposed=False: weight (E, out_dim, in_dim) → in=shape[-1], out=shape[-2]
-                if e.is_transposed:
-                    gu_in, gu_out = e.gate_up_proj.shape[-2], e.gate_up_proj.shape[-1]
-                    dn_in, dn_out = e.down_proj.shape[-2], e.down_proj.shape[-1]
-                else:
-                    gu_in, gu_out = e.gate_up_proj.shape[-1], e.gate_up_proj.shape[-2]
-                    dn_in, dn_out = e.down_proj.shape[-1], e.down_proj.shape[-2]
+                # is_transposed=True:  weight (E, in_dim, out_dim); is_transposed=False: weight (E, out_dim, in_dim)
+                i, o = -2, -1 if e.is_transposed else -1, -2
                 dev, dtype = self.model.device, self.model.dtype
                 e.gate_up_output_probe.lora_module = BatchedManualLoRA(
-                    E, gu_in, gu_out, cfg.lora_rank
+                    E, e.gate_up_proj.shape[i], e.gate_up_proj.shape[o], cfg.lora_rank
                 ).to(dev, dtype)
                 e.down_output_probe.lora_module = BatchedManualLoRA(
-                    E, dn_in, dn_out, cfg.lora_rank
+                    E, e.down_proj.shape[i], e.down_proj.shape[o], cfg.lora_rank
                 ).to(dev, dtype)
                 self.lora_params.extend(e.gate_up_output_probe.lora_module.parameters())
                 self.lora_params.extend(e.down_output_probe.lora_module.parameters())
@@ -96,23 +90,17 @@ class RepSelectMOE(UnlearnTrainer):
                 e.down_output_probe.register_forward_hook(self.lora_forward_hook)
 
         # pre-cache batches (needed for storing data for KL computation)
+        _bsize = self.args.per_device_train_batch_size
         self.forget_batches = [
-            self.data_collator(r)
-            for r in batched(
-                self.train_dataset.forget, self.args.per_device_train_batch_size
-            )
+            self.data_collator(r) for r in batched(self.train_dataset.forget, _bsize)
         ]
         self.retain_batches = [
-            self.data_collator(r)
-            for r in batched(
-                self.train_dataset.retain, self.args.per_device_train_batch_size
-            )
+            self.data_collator(r) for r in batched(self.train_dataset.retain, _bsize)
         ]
 
         # KLComputor is deferred to first training_step,
         # because the model may not be on CUDA yet during __init__)
         self.kl_computor = None
-
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
@@ -139,7 +127,7 @@ class RepSelectMOE(UnlearnTrainer):
                     ref = ref * momentum + param.grad * (1 - momentum)
                 param.ref_grad = quantize_blockwise(ref)
 
-        # Unlearning loss
+        # # to make use of this token mask, we'd need to add hooks to the router, which is not the complication
         # token_mask = f_batch["attention_mask"].bool().clone()
         # token_mask[:, 0] = False  # omit BOS token
         # if self.processing_class.chat_template is not None:
@@ -225,30 +213,24 @@ class RepSelectMOE(UnlearnTrainer):
         acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
         grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
 
-        # KL-masking (zero out instead of selecting, to preserve offsets)
-        # todo: could be vectorized by @ with ref_grad and then dot product with grads_sorted
+        # KL-masking
         if "retain_momentum" in self.cfg:
-            # Dequantize ref_grad once for all experts (instead of per-expert)
             ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
             if is_transposed:
-                ref_grad = ref_grad.transpose(-2, -1)  # (E, out_dim, in_dim)
-            ends = offsets.tolist()
-            starts = [0] + ends[:-1]
-            token_disr = pt.zeros(acts_sorted.shape[0], device=acts_sorted.device)
-            for expert_idx in range(num_experts):
-                start, end = starts[expert_idx], ends[expert_idx]
-                if start == end:
-                    continue
-                token_disr[start:end] = pt.einsum(
-                    "ij,ti,tj->t",
-                    ref_grad[expert_idx],
-                    grads_sorted[start:end],
-                    acts_sorted[start:end],
-                )
+                ref_grad = ref_grad.mT  # (E, out_dim, in_dim)
+            # disr_grad[t] = acts_sorted[t] @ ref_grad[expert_of_t].T  →  (S, out_dim)
+            disr_grad = pt._grouped_mm(
+                acts_sorted, ref_grad.mT.contiguous(), offs=offsets
+            )
 
-            zero_mask = token_disr <= 0
-            acts_sorted[zero_mask] = 0
-            grads_sorted[zero_mask] = 0
+            # # paranoid KL-masking, filtering out whole modules, rather than output channels
+            # zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
+            # acts_sorted[zero_mask] = 0
+            # grads_sorted[zero_mask] = 0
+
+            disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
+            projs = (disr_grad * grads_sorted).sum(dim=1, keepdim=True).clamp(max=0)
+            grads_sorted -= projs * disr_grad
 
         # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
         if is_transposed:

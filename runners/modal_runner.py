@@ -11,9 +11,9 @@ def download_models():
     # note that modal images are up to 30GB, so be mindful of what models you fit
 
     for model in [
-        # "allenai/OLMoE-1B-7B-0125",
+        "allenai/OLMoE-1B-7B-0125",
         # "google/gemma-2-2b",
-        "meta-llama/Llama-3.2-3B",
+        # "meta-llama/Llama-3.2-3B",
     ]:
         snapshot_download(model)
 
@@ -44,9 +44,9 @@ app = modal.App("open-unlearning", image=image)
 
 
 @app.function(
-    gpu="L40S",  # 48GB
+    # gpu="L40S",  # 48GB
     # gpu="A100-80GB",  # if needing 80GB
-    # gpu="H100",
+    gpu="H100",
     # gpu="H200",
     # gpu="B200",
     timeout=3 * 3600,

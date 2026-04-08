@@ -63,17 +63,12 @@ class RepSelect(UnlearnTrainer):
                         module.register_forward_hook(self.lora_forward_hook)
 
         # pre-cache batches (needed for storing data for KL computation)
+        _bsize = self.args.per_device_train_batch_size
         self.forget_batches = [
-            self.data_collator(r)
-            for r in batched(
-                self.train_dataset.forget, self.args.per_device_train_batch_size
-            )
+            self.data_collator(r) for r in batched(self.train_dataset.forget, _bsize)
         ]
         self.retain_batches = [
-            self.data_collator(r)
-            for r in batched(
-                self.train_dataset.retain, self.args.per_device_train_batch_size
-            )
+            self.data_collator(r) for r in batched(self.train_dataset.retain, _bsize)
         ]
 
         self.kl_computor = None
@@ -187,24 +182,17 @@ class RepSelect(UnlearnTrainer):
         if "retain_momentum" in self.cfg:
             ref_grad = dequantize_blockwise(*module.weight.ref_grad)
             ref_grad = ref_grad.to(module.weight.dtype)
-
             disr_grad = acts @ ref_grad.T
-            kl_mask = (disr_grad * grads).sum(dim=1) > 0
-            acts = acts[kl_mask]
-            grads = grads[kl_mask]
 
-            # # equivalent to the block above:
-            # token_disr = pt.einsum("ij,ti,tj->t", ref_grad, grads, acts)
-            # kl_mask = token_disr > 0
+            # kl_mask = (disr_grad * grads).sum(dim=1) > 0
             # acts = acts[kl_mask]
             # grads = grads[kl_mask]
 
-            # # the core of DisrCollapse that can be swapped for the block above:
-            # disr_grad = acts @ ref_grad.T
-            # disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
-            # projections = pt.einsum("tg,tg->t", disr_grad, grads).unsqueeze(1)
-            # projections = projections.clamp(max=0)
-            # grads -= projections * disr_grad
+            # the core of DisrCollapse that can be swapped for the block above:
+            disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
+            projs = pt.einsum("tg,tg->t", disr_grad, grads).unsqueeze(1)
+            projs = projs.clamp(max=0)
+            grads -= projs * disr_grad
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
