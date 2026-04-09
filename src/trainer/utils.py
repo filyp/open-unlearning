@@ -7,6 +7,8 @@ import torch as pt
 import torch.nn.functional as F
 from torch import nn
 
+from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
+
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -149,10 +151,10 @@ def _get_label_logits(logits, labels):
     return logits[pt.arange(len(labels)), labels]
 
 
-def label_logits(logits, labels):
+def label_logits(logits, labels, clip=0):
     label_logits = _get_label_logits(logits, labels)
     # label_logits = pt.atan(label_logits / 20)
-    clipped_label_logits = label_logits.clip(min=0)
+    clipped_label_logits = label_logits.clip(min=clip)
     return clipped_label_logits.float().mean()
 
 
@@ -171,11 +173,10 @@ def normalize_grads(params):
         return
     update_norm = pt.sqrt(
         sum(
-            param.grad.float().norm() ** 2
-            for param in params
-            if param.grad is not None
+            param.grad.float().norm() ** 2 for param in params if param.grad is not None
         )
     )
+    update_norm = update_norm.clamp(min=1e-8)
     # normalize the grads
     for param in params:
         if param.grad is not None:
@@ -186,3 +187,26 @@ def sanitize_tensor(t, epsilon=1e-6):
     sign = t.sign()
     sign[sign == 0] = 1
     return t + sign * epsilon
+
+
+@contextmanager
+def require_grad(params):
+    for p in params:
+        p.requires_grad_(True)
+    try:
+        yield
+    finally:
+        for p in params:
+            p.requires_grad_(False)
+
+
+def update_ref_grad(param, retain_momentum):
+    if hasattr(param, "ref_grad"):
+        ref = dequantize_blockwise(*param.ref_grad)
+    else:
+        ref = pt.zeros_like(param)  # initialize to zero
+
+    if param.grad is not None:
+        momentum = retain_momentum
+        ref = ref * momentum + param.grad * (1 - momentum)
+    param.ref_grad = quantize_blockwise(ref)

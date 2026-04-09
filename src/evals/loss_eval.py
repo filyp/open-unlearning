@@ -58,5 +58,5 @@ class ProbabilityEvaluator:
         for batch in eval_batches:
             results = evaluate_probability(model, batch)
             probs.extend(r["prob"] for r in results)
-        print("answer probabilities: ", [round(p, 3) for p in probs])
+        print("answer probabilities: ", [f"{p:.3f}" for p in probs])
         return {f"{self.dataset_name}_prob": sum(probs) / len(probs)}

@@ -15,6 +15,8 @@ from trainer.utils import normalize_grads
 
 logging.basicConfig(level=logging.INFO)
 
+# todo! choose retain | forget distribution, like in MoE version
+
 
 class RepSelect(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
@@ -91,8 +93,8 @@ class RepSelect(UnlearnTrainer):
             # logging.info(f"\n")
 
             model.zero_grad(set_to_none=True)
-            kl, _, _ = self.kl_computor.get_kl(r_batch)
-            kl.backward()
+            kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
+            kl_loss.backward()
             for param in self.base_trainable_params:
                 if hasattr(param, "ref_grad"):
                     ref = dequantize_blockwise(*param.ref_grad)
@@ -143,6 +145,7 @@ class RepSelect(UnlearnTrainer):
         return forget_loss.detach()
 
     def save_act_input_hook(self, module, args, output):
+        # todo, save it always? so that in_retain_pass can wrap only the backward pass?
         if not self.use_hooks:
             return
         module.last_act_input = args[0]

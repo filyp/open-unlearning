@@ -18,7 +18,7 @@ from trainer.unlearn.repselect.utils import (  # noqa: F401
     BatchedManualLoRA,
     get_banned_tokens,
 )
-from trainer.utils import normalize_grads
+from trainer.utils import label_logits, normalize_grads, require_grad, update_ref_grad
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,7 +27,9 @@ class RepSelectMOE(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-        self.use_hooks = False
+        self.do_add_vecs = False
+        self.do_collapse = False
+        self.use_lora = False
         self.batch_idx = 0
         self.recalc_every = math.ceil(  # on default, recalculate every epoch
             len(self.train_dataset) / self.args.per_device_train_batch_size
@@ -76,7 +78,7 @@ class RepSelectMOE(UnlearnTrainer):
             if "lora_lr" in cfg:
                 E = e.num_experts
                 # is_transposed=True:  weight (E, in_dim, out_dim); is_transposed=False: weight (E, out_dim, in_dim)
-                i, o = -2, -1 if e.is_transposed else -1, -2
+                i, o = (-2, -1) if e.is_transposed else (-1, -2)
                 dev, dtype = self.model.device, self.model.dtype
                 e.gate_up_output_probe.lora_module = BatchedManualLoRA(
                     E, e.gate_up_proj.shape[i], e.gate_up_proj.shape[o], cfg.lora_rank
@@ -98,8 +100,7 @@ class RepSelectMOE(UnlearnTrainer):
             self.data_collator(r) for r in batched(self.train_dataset.retain, _bsize)
         ]
 
-        # KLComputor is deferred to first training_step,
-        # because the model may not be on CUDA yet during __init__)
+        # KLComputor is deferred to first training_step, because the model may not be on CUDA yet during __init__)
         self.kl_computor = None
 
     def training_step(self, model, inputs, num_items_in_batch=None):
@@ -107,27 +108,32 @@ class RepSelectMOE(UnlearnTrainer):
         idx = self.batch_idx % len(self.forget_batches)
         f_batch = self.forget_batches[idx]
         r_batch = self.retain_batches[idx]
+        self.model.requires_grad_(False)  # train only modules that we specify
 
         # Lazy init KLComputor (model is guaranteed on CUDA here)
-        if self.kl_computor is None and "retain_momentum" in self.cfg:
+        if self.kl_computor is None:
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # Retain pass
         if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
             model.zero_grad(set_to_none=True)
-            kl, _, _ = self.kl_computor.get_kl(r_batch)
-            kl.backward()
-            for param in self.base_trainable_params:
-                if hasattr(param, "ref_grad"):
-                    ref = dequantize_blockwise(*param.ref_grad)
-                else:
-                    ref = pt.zeros_like(param)
-                if param.grad is not None:
-                    momentum = self.cfg.retain_momentum
-                    ref = ref * momentum + param.grad * (1 - momentum)
-                param.ref_grad = quantize_blockwise(ref)
+            with require_grad(self.base_trainable_params):
+                kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
+                kl_loss.backward()
+                for param in self.base_trainable_params:
+                    update_ref_grad(param, self.cfg.retain_momentum)
 
-        # # to make use of this token mask, we'd need to add hooks to the router, which is not the complication
+        if self.cfg.use_distribution == "retain":
+            with require_grad(self.base_trainable_params):
+                output = model(**prep_batch(r_batch, model.device))
+            self.do_add_vecs = True
+            # _loss = -output.loss
+            _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
+            _loss.backward()
+            self.do_add_vecs = False
+
+        self.use_lora = True
+
         # token_mask = f_batch["attention_mask"].bool().clone()
         # token_mask[:, 0] = False  # omit BOS token
         # if self.processing_class.chat_template is not None:
@@ -135,26 +141,30 @@ class RepSelectMOE(UnlearnTrainer):
         #         token_mask &= f_batch["input_ids"] != banned_token
         # self.flat_token_mask = token_mask.reshape(-1)
 
-        self.use_hooks = True
-        model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(f_batch, model.device))
-        forget_loss = -output.loss
-        # we will backpropagate because the graph has been built by the forward pass
-        # but backward() itself will not compute weight gradients for base params
+        # we will backpropagate because the graph has been built by the forward pass but backward() itself will not compute weight gradients for base params
         # instead, weights will remain with grad computed by the collapse_hook
-        for p in self.base_trainable_params:
-            p.requires_grad_(False)
-        forget_loss.backward()
-        for p in self.base_trainable_params:
-            p.requires_grad_(True)
-        self.use_hooks = False
 
-        # update LoRA adversarially (gradient ascent - adversary tries to relearn)
-        if self.lora_params:
-            normalize_grads(self.lora_params)
-            for p in self.lora_params:
-                p.data += self.cfg.lora_lr * self.args.learning_rate * p.grad
-                p.grad = None
+        # LORA FORWARD AND BACKWARD PASS AND UPDATE
+        if "lora_lr" in self.cfg:
+            with require_grad(self.lora_params):
+                output = model(**prep_batch(f_batch, model.device))
+                output.loss.backward()
+                normalize_grads(self.lora_params)
+                for p in self.lora_params:
+                    p.data -= self.cfg.lora_lr * self.args.learning_rate * p.grad
+
+        # ! FORGET FORWARD AND BACKWARD PASS
+        model.zero_grad(set_to_none=True)
+        with require_grad(self.base_trainable_params):
+            output = model(**prep_batch(f_batch, model.device))
+        self.do_collapse = True
+        self.do_add_vecs = self.cfg.use_distribution == "forget"
+        forget_loss = label_logits(output.logits, f_batch["labels"])
+        forget_loss.backward()  # retain graph for LoRA backward pass
+        self.do_collapse = False
+        self.do_add_vecs = False
+
+        self.use_lora = False
 
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
@@ -165,14 +175,16 @@ class RepSelectMOE(UnlearnTrainer):
                     m.grad_collapser.fit()
 
         normalize_grads(self.base_trainable_params)
+        for p in self.base_trainable_params:
+            p.requires_grad_(True)  # so that the optimizer updates them
         return forget_loss.detach()
 
     def lora_forward_hook(self, module, args, output):
-        if self.use_hooks:
+        if self.use_lora:
             return output + module.lora_module(module._acts, module._offsets)
 
     def collapse_hook(self, module, grad_input, grad_output):
-        if not self.use_hooks:
+        if not (self.do_add_vecs or self.do_collapse):
             return
 
         acts_sorted = module._acts.detach()  # (S, in_dim), stashed during forward
@@ -203,9 +215,12 @@ class RepSelectMOE(UnlearnTrainer):
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
         assert offsets[-1] == acts_sorted.shape[0]
 
-        module.act_collapser.add_vecs(acts_sorted, offsets)
-        module.grad_collapser.add_vecs(grads_sorted, offsets)
+        if self.do_add_vecs:
+            module.act_collapser.add_vecs(acts_sorted, offsets)
+            module.grad_collapser.add_vecs(grads_sorted, offsets)
 
+        if not self.do_collapse:
+            return
         if self.batch_idx < self.recalc_every * 2:
             return
 
@@ -223,17 +238,19 @@ class RepSelectMOE(UnlearnTrainer):
                 acts_sorted, ref_grad.mT.contiguous(), offs=offsets
             )
 
-            # # paranoid KL-masking, filtering out whole modules, rather than output channels
-            # zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
-            # acts_sorted[zero_mask] = 0
-            # grads_sorted[zero_mask] = 0
-
             disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
             projs = (disr_grad * grads_sorted).sum(dim=1, keepdim=True).clamp(max=0)
             grads_sorted -= projs * disr_grad
 
         # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
+        assert fused_param.grad is None
         if is_transposed:
             fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
         else:
             fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
+
+
+# # paranoid KL-masking, filtering out whole modules, rather than output channels
+# zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
+# acts_sorted[zero_mask] = 0
+# grads_sorted[zero_mask] = 0
