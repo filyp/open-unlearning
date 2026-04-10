@@ -30,39 +30,36 @@ class RepSelect(UnlearnTrainer):
         logging.info(f"{self.recalc_every=}")
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
 
-        self.is_moe = hasattr(self.model.model.layers[0].mlp, "experts")
+        assert not hasattr(self.model.model.layers[0].mlp, "experts")
 
         self.model.requires_grad_(False)  # train only modules that we specify
         self.lora_params = []
         self.base_trainable_params = []
         for layer_num in range(len(self.model.model.layers)):
             mlp = self.model.model.layers[layer_num].mlp
-            experts = mlp.experts if self.is_moe else [mlp]
-            assert isinstance(experts, Iterable), "For new MoE implementation, please use RepSelectMOE"  # fmt: skip
-            for expert in experts:
-                for module in [expert.gate_proj, expert.up_proj, expert.down_proj]:
-                    module.weight.requires_grad = True
-                    self.base_trainable_params.append(module.weight)
+            for module in [mlp.gate_proj, mlp.up_proj, mlp.down_proj]:
+                module.weight.requires_grad = True
+                self.base_trainable_params.append(module.weight)
 
-                    # install hooks
-                    module.register_forward_hook(self.save_act_input_hook)
-                    module.register_full_backward_hook(self.collapse_hook)
+                # install hooks
+                module.register_forward_hook(self.save_act_input_hook)
+                module.register_full_backward_hook(self.collapse_hook)
 
-                    # initialize collapsers
-                    if "n_pcs" in cfg:
-                        collapser_class = InvSmallCovCollapser
-                        module.act_collapser = collapser_class(cfg.n_pcs)
-                        module.grad_collapser = collapser_class(cfg.n_pcs)
+                # initialize collapsers
+                if "n_pcs" in cfg:
+                    collapser_class = InvSmallCovCollapser
+                    module.act_collapser = collapser_class(cfg.n_pcs)
+                    module.grad_collapser = collapser_class(cfg.n_pcs)
 
-                    # ! adversarial LoRA
-                    if "lora_lr" in cfg:
-                        module.lora_module = ManualLoRA(
-                            module.weight.shape[1],  # in_features
-                            module.weight.shape[0],  # out_features
-                            cfg.lora_rank,
-                        ).to(self.model.device, dtype=self.model.dtype)
-                        self.lora_params.extend(module.lora_module.parameters())
-                        module.register_forward_hook(self.lora_forward_hook)
+                # ! adversarial LoRA
+                if "lora_lr" in cfg:
+                    module.lora_module = ManualLoRA(
+                        module.weight.shape[1],  # in_features
+                        module.weight.shape[0],  # out_features
+                        cfg.lora_rank,
+                    ).to(self.model.device, dtype=self.model.dtype)
+                    self.lora_params.extend(module.lora_module.parameters())
+                    module.register_forward_hook(self.lora_forward_hook)
 
         # pre-cache batches (needed for storing data for KL computation)
         _bsize = self.args.per_device_train_batch_size
@@ -88,11 +85,6 @@ class RepSelect(UnlearnTrainer):
 
         # Pass A: retain momentum
         if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
-            # # sanity check that the samples match
-            # logging.info(f"RETAIN: {self.processing_class.decode(r_batch['input_ids'][0])}")
-            # logging.info(f"FORGET: {self.processing_class.decode(f_batch['input_ids'][0])}")
-            # logging.info(f"\n")
-
             model.zero_grad(set_to_none=True)
             with require_grad(self.base_trainable_params):
                 kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
@@ -103,8 +95,7 @@ class RepSelect(UnlearnTrainer):
         # Pass B: distribution collection (retain side)
         if self.cfg.use_distribution == "retain":
             model.zero_grad(set_to_none=True)
-            self.token_mask = r_batch["attention_mask"].bool().clone()
-            self.token_mask[:, 0] = False
+            # we will backpropagate because the graph has been built by the forward pass but backward() itself will not compute weight gradients for base params instead, weights will remain with grad computed by the collapse_hook
             with require_grad(self.base_trainable_params):
                 output = model(**prep_batch(r_batch, model.device))
             self.do_add_vecs = True
@@ -126,22 +117,12 @@ class RepSelect(UnlearnTrainer):
                 p.data -= self.cfg.lora_lr * self.args.learning_rate * p.grad
 
         # Pass D: forget forward+backward
-        self.token_mask = f_batch["attention_mask"].bool().clone()
-        self.token_mask[:, 0] = False  # omit unlearning on the BOS token
-        if self.processing_class.chat_template is not None:  # omit template tokens
-            for banned_token in get_banned_tokens(self.processing_class):
-                self.token_mask &= f_batch["input_ids"] != banned_token
-
         model.zero_grad(set_to_none=True)
         with require_grad(self.base_trainable_params):
             output = model(**prep_batch(f_batch, model.device))
         self.do_collapse = True
         self.do_add_vecs = self.cfg.use_distribution == "forget"
-        # forget_loss = label_logits(output.logits, f_batch["labels"])
-        forget_loss = -output.loss
-        # we will backpropagate because the graph has been built by the forward pass
-        # but backward() itself will not compute weight gradients for base params
-        # instead, weights will remain with grad computed by the collapse_hook
+        forget_loss = label_logits(output.logits, f_batch["labels"])
         forget_loss.backward()
         self.do_collapse = False
         self.do_add_vecs = False
@@ -177,16 +158,10 @@ class RepSelect(UnlearnTrainer):
         grads = grad_output[0]
         module.last_act_input = None
 
-        if self.is_moe:
-            token_mask = grads.norm(dim=1) != 0
-            acts = acts[token_mask]
-            grads = grads[token_mask]
-            if acts.shape[0] == 0:
-                # this expert wasn't selected for any tokens
-                return
-        else:
-            acts = acts[self.token_mask]
-            grads = grads[self.token_mask]
+        token_mask = grads.norm(dim=-1) != 0
+        # token_mask = token_mask & self.token_mask
+        acts = acts[token_mask]
+        grads = grads[token_mask]
 
         # note: we could optimize and reuse the act collapser for gate_proj and up_proj, but for simplicity don't
         if self.do_add_vecs and "n_pcs" in self.cfg:
@@ -223,3 +198,18 @@ class RepSelect(UnlearnTrainer):
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
+
+
+# # sanity check that the samples match
+# logging.info(f"RETAIN: {self.processing_class.decode(r_batch['input_ids'][0])}")
+# logging.info(f"FORGET: {self.processing_class.decode(f_batch['input_ids'][0])}")
+# logging.info(f"\n")
+
+# self.token_mask = get_token_mask(r_batch, self.processing_class)
+
+# def get_token_mask(batch, processing_class):
+#     token_mask = batch["attention_mask"].bool().clone()
+#     token_mask[:, 0] = False  # omit unlearning on the BOS token
+#     if processing_class.chat_template is not None:  # omit template tokens
+#         for banned_token in get_banned_tokens(processing_class):
+#             token_mask &= batch["input_ids"] != banned_token

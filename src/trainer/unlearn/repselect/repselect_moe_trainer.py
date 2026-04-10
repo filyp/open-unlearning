@@ -124,25 +124,16 @@ class RepSelectMOE(UnlearnTrainer):
                     update_ref_grad(param, self.cfg.retain_momentum)
 
         if self.cfg.use_distribution == "retain":
+            # we will backpropagate because the graph has been built by the forward pass but backward() itself will not compute weight gradients for base params instead, weights will remain with grad computed by the collapse_hook
             with require_grad(self.base_trainable_params):
                 output = model(**prep_batch(r_batch, model.device))
             self.do_add_vecs = True
-            # _loss = -output.loss
-            _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
+            # _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
+            _loss = -output.loss
             _loss.backward()
             self.do_add_vecs = False
 
         self.use_lora = True
-
-        # token_mask = f_batch["attention_mask"].bool().clone()
-        # token_mask[:, 0] = False  # omit BOS token
-        # if self.processing_class.chat_template is not None:
-        #     for banned_token in get_banned_tokens(self.processing_class):
-        #         token_mask &= f_batch["input_ids"] != banned_token
-        # self.flat_token_mask = token_mask.reshape(-1)
-
-        # we will backpropagate because the graph has been built by the forward pass but backward() itself will not compute weight gradients for base params
-        # instead, weights will remain with grad computed by the collapse_hook
 
         # LORA FORWARD AND BACKWARD PASS AND UPDATE
         if "lora_lr" in self.cfg:
@@ -197,21 +188,20 @@ class RepSelectMOE(UnlearnTrainer):
         grads_sorted = grad_output[0]  # (S, out_dim)
         module._acts = None  # free reference
 
-        # Filter tokens globally: non-zero grads AND token_mask (BOS, padding, template)
-        keep = grads_sorted.norm(dim=1) != 0
-        # if hasattr(self, 'flat_token_mask'):
-        #     keep = keep & self.flat_token_mask[module._token_idx_sorted]
-        acts_sorted = acts_sorted[keep]
-        grads_sorted = grads_sorted[keep]
+        token_mask = grads_sorted.norm(dim=-1) != 0
+        # keep = keep & self.flat_token_mask[module._token_idx_sorted]
+        acts_sorted = acts_sorted[token_mask]
+        grads_sorted = grads_sorted[token_mask]
 
         # Recompute offsets after filtering
         # Build per-token expert_ids from cumulative offsets, then filter and recount
         # NOTE: right=True is required in all bucketize calls
-        assert offsets[-1] == keep.shape[0]
+        _num_tokens = token_mask.shape[0]
+        assert offsets[-1] == _num_tokens
         expert_ids = pt.bucketize(
-            pt.arange(keep.shape[0], device=keep.device), offsets, right=True
+            pt.arange(_num_tokens, device=token_mask.device), offsets, right=True
         )
-        expert_ids = expert_ids[keep]
+        expert_ids = expert_ids[token_mask]
         tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
         offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
         assert offsets[-1] == acts_sorted.shape[0]
@@ -258,3 +248,10 @@ class RepSelectMOE(UnlearnTrainer):
         else:
             fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
 
+
+# token_mask = f_batch["attention_mask"].bool().clone()
+# token_mask[:, 0] = False  # omit BOS token
+# if self.processing_class.chat_template is not None:
+#     for banned_token in get_banned_tokens(self.processing_class):
+#         token_mask &= f_batch["input_ids"] != banned_token
+# self.flat_token_mask = token_mask.reshape(-1)
