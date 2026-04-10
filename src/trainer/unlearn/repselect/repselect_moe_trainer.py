@@ -238,9 +238,17 @@ class RepSelectMOE(UnlearnTrainer):
                 acts_sorted, ref_grad.mT.contiguous(), offs=offsets
             )
 
-            disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
-            projs = (disr_grad * grads_sorted).sum(dim=1, keepdim=True).clamp(max=0)
-            grads_sorted -= projs * disr_grad
+            if self.cfg.kl_mask == "module":
+                # paranoid KL-masking, filtering out whole modules, rather than output channels
+                zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
+                acts_sorted[zero_mask] = 0
+                grads_sorted[zero_mask] = 0
+            elif self.cfg.kl_mask == "disrproj":
+                disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
+                projs = (disr_grad * grads_sorted).sum(dim=1, keepdim=True).clamp(max=0)
+                grads_sorted -= projs * disr_grad
+            else:
+                raise ValueError(f"Invalid KL mask: {self.cfg.kl_mask}")
 
         # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
         assert fused_param.grad is None
@@ -249,8 +257,3 @@ class RepSelectMOE(UnlearnTrainer):
         else:
             fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
 
-
-# # paranoid KL-masking, filtering out whole modules, rather than output channels
-# zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
-# acts_sorted[zero_mask] = 0
-# grads_sorted[zero_mask] = 0

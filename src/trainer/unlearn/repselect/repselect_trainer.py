@@ -187,15 +187,18 @@ class RepSelect(UnlearnTrainer):
             ref_grad = ref_grad.to(module.weight.dtype)
             disr_grad = acts @ ref_grad.T
 
-            # kl_mask = (disr_grad * grads).sum(dim=1) > 0
-            # acts = acts[kl_mask]
-            # grads = grads[kl_mask]
-
-            # the core of DisrCollapse that can be swapped for the block above:
-            disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
-            projs = pt.einsum("tg,tg->t", disr_grad, grads).unsqueeze(1)
-            projs = projs.clamp(max=0)
-            grads -= projs * disr_grad
+            if self.cfg.kl_mask == "module":
+                kl_mask = (disr_grad * grads).sum(dim=1) > 0
+                acts = acts[kl_mask]
+                grads = grads[kl_mask]
+            elif self.cfg.kl_mask == "disrproj":
+                # the core of DisrCollapse that can be swapped for the block above:
+                disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
+                projs = pt.einsum("tg,tg->t", disr_grad, grads).unsqueeze(1)
+                projs = projs.clamp(max=0)
+                grads -= projs * disr_grad
+            else:
+                raise ValueError(f"Invalid KL mask: {self.cfg.kl_mask}")
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
