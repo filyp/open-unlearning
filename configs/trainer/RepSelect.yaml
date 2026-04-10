@@ -15,4 +15,5 @@ method_args:
     lora_lr: 0.1
     lora_rank: 32
     use_distribution: forget  # forget | retain
-    kl_mask: module  # module | disrproj
+    kl_mask: disrproj  # module | disrproj
+    npo_beta: 0.3

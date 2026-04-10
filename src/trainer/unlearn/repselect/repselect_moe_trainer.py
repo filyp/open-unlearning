@@ -18,7 +18,7 @@ from trainer.unlearn.repselect.utils import (  # noqa: F401
     BatchedManualLoRA,
     get_banned_tokens,
 )
-from trainer.utils import label_logits, normalize_grads, require_grad, update_ref_grad
+from trainer.utils import label_logits, normalize_grads, npo_saturating_loss, require_grad, update_ref_grad
 
 logging.basicConfig(level=logging.INFO)
 
@@ -128,12 +128,11 @@ class RepSelectMOE(UnlearnTrainer):
             with require_grad(self.base_trainable_params):
                 output = model(**prep_batch(r_batch, model.device))
             self.do_add_vecs = True
-            # _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
             _loss = -output.loss
             _loss.backward()
             self.do_add_vecs = False
 
-        self.use_lora = True
+        self.use_lora = True  # should lora be here or before retain pass?
 
         # LORA FORWARD AND BACKWARD PASS AND UPDATE
         if "lora_lr" in self.cfg:
@@ -151,7 +150,8 @@ class RepSelectMOE(UnlearnTrainer):
             output = model(**prep_batch(f_batch, model.device))
         self.do_collapse = True
         self.do_add_vecs = self.cfg.use_distribution == "forget"
-        forget_loss = label_logits(output.logits, f_batch["labels"])
+        # forget_loss = label_logits(output.logits, f_batch["labels"])
+        forget_loss = npo_saturating_loss(output, f_batch, self.cfg.npo_beta)
         forget_loss.backward()  # retain graph for LoRA backward pass
         self.do_collapse = False
         self.do_add_vecs = False

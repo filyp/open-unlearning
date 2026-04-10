@@ -151,22 +151,6 @@ def _get_label_logits(logits, labels):
     return logits[pt.arange(len(labels)), labels]
 
 
-def label_logits(logits, labels, clip=0):
-    label_logits = _get_label_logits(logits, labels)
-    # label_logits = pt.atan(label_logits / 20)
-    clipped_label_logits = label_logits.clip(min=clip)
-    return clipped_label_logits.float().mean()
-
-
-# # loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
-# def saturating_logits(logits, labels, initial_label_logits, sat_speed=1):
-#     label_logits = _get_label_logits(logits, labels)
-#     initial_label_logits = initial_label_logits.to(logits.device)
-#     diff = label_logits.float() - initial_label_logits.float()
-#     unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
-#     return unlearning_saturations.mean()
-
-
 def normalize_grads(params):
     """L2 norm of weight.grad, computed across all the trainable weights."""
     if all(param.grad is None for param in params):
@@ -210,3 +194,40 @@ def update_ref_grad(param, retain_momentum):
         momentum = retain_momentum
         ref = ref * momentum + param.grad * (1 - momentum)
     param.ref_grad = quantize_blockwise(ref)
+
+
+# LOSS FUNCTIONS
+
+
+def label_logits(logits, labels, clip=0):
+    label_logits = _get_label_logits(logits, labels)
+    # label_logits = pt.atan(label_logits / 20)
+    clipped_label_logits = label_logits.clip(min=clip)
+    return clipped_label_logits.float().mean()
+
+
+# # loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
+# def saturating_logits(logits, labels, initial_label_logits, sat_speed=1):
+#     label_logits = _get_label_logits(logits, labels)
+#     initial_label_logits = initial_label_logits.to(logits.device)
+#     diff = label_logits.float() - initial_label_logits.float()
+#     unlearning_saturations = -F.logsigmoid(-sat_speed * diff) / sat_speed
+#     return unlearning_saturations.mean()
+
+
+def npo_saturating_loss(output, batch, beta):
+    logits = output.logits
+    labels = batch["labels"].to(logits.device)
+    shifted_labels = labels[..., 1:].contiguous()
+    shifted_logits = logits[..., :-1, :].contiguous()
+    per_token_nll = F.cross_entropy(
+        shifted_logits.transpose(-1, -2),
+        shifted_labels,
+        ignore_index=-100,
+        reduction="none",
+    )
+    per_seq_nll = per_token_nll.sum(dim=-1)
+    if "initial_nll" not in batch:
+        batch["initial_nll"] = per_seq_nll.detach()
+    diff = per_seq_nll - batch["initial_nll"].to(per_seq_nll.device)
+    return -F.logsigmoid(beta * diff).mean() / beta

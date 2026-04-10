@@ -11,7 +11,7 @@ from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import InvSmallCovCollapser
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
-from trainer.utils import label_logits, normalize_grads, require_grad, update_ref_grad
+from trainer.utils import normalize_grads, npo_saturating_loss, require_grad, update_ref_grad
 
 logging.basicConfig(level=logging.INFO)
 
@@ -92,6 +92,8 @@ class RepSelect(UnlearnTrainer):
                 for param in self.base_trainable_params:
                     update_ref_grad(param, self.cfg.retain_momentum)
 
+        # self.use_lora = True  # todo, should lora be here or after retain pass?
+
         # Pass B: distribution collection (retain side)
         if self.cfg.use_distribution == "retain":
             model.zero_grad(set_to_none=True)
@@ -104,7 +106,7 @@ class RepSelect(UnlearnTrainer):
             _loss.backward()
             self.do_add_vecs = False
 
-        self.use_lora = True
+        self.use_lora = True  # should lora be here or before retain pass?
 
         # Pass C: LoRA adversarial pass
         if "lora_lr" in self.cfg:
@@ -122,7 +124,7 @@ class RepSelect(UnlearnTrainer):
             output = model(**prep_batch(f_batch, model.device))
         self.do_collapse = True
         self.do_add_vecs = self.cfg.use_distribution == "forget"
-        forget_loss = label_logits(output.logits, f_batch["labels"])
+        forget_loss = npo_saturating_loss(output, f_batch, self.cfg.get("npo_beta", 1.0))
         forget_loss.backward()
         self.do_collapse = False
         self.do_add_vecs = False
@@ -213,3 +215,12 @@ class RepSelect(UnlearnTrainer):
 #     if processing_class.chat_template is not None:  # omit template tokens
 #         for banned_token in get_banned_tokens(processing_class):
 #             token_mask &= batch["input_ids"] != banned_token
+
+# if "initial_label_logits" not in f_batch:
+#     f_batch["initial_label_logits"] = _get_label_logits(
+#         output.logits, f_batch["labels"]
+#     ).detach()
+# forget_loss = saturating_logits(
+#     output.logits, f_batch["labels"], f_batch["initial_label_logits"],
+#     self.cfg.get("sat_speed", 1),
+# )
