@@ -111,7 +111,7 @@ class RepSelectMOE(UnlearnTrainer):
         self.model.requires_grad_(False)  # train only modules that we specify
 
         # Lazy init KLComputor (model is guaranteed on CUDA here)
-        if self.kl_computor is None:
+        if self.kl_computor is None and "retain_momentum" in self.cfg:
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
         # Retain pass
@@ -146,12 +146,13 @@ class RepSelectMOE(UnlearnTrainer):
 
         # LORA FORWARD AND BACKWARD PASS AND UPDATE
         if "lora_lr" in self.cfg:
+            model.zero_grad(set_to_none=True)
             with require_grad(self.lora_params):
                 output = model(**prep_batch(f_batch, model.device))
                 output.loss.backward()
-                normalize_grads(self.lora_params)
-                for p in self.lora_params:
-                    p.data -= self.cfg.lora_lr * self.args.learning_rate * p.grad
+            normalize_grads(self.lora_params)
+            for p in self.lora_params:
+                p.data -= self.cfg.lora_lr * self.args.learning_rate * p.grad
 
         # ! FORGET FORWARD AND BACKWARD PASS
         model.zero_grad(set_to_none=True)

@@ -4,25 +4,25 @@ import math
 from typing import Iterable
 
 import torch as pt
-from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
+from bitsandbytes.functional import dequantize_blockwise
 
 from data.utils import batched, prep_batch
 from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import InvSmallCovCollapser
 from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
-from trainer.utils import normalize_grads
+from trainer.utils import label_logits, normalize_grads, require_grad, update_ref_grad
 
 logging.basicConfig(level=logging.INFO)
-
-# todo! choose retain | forget distribution, like in MoE version
 
 
 class RepSelect(UnlearnTrainer):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
-        self.use_hooks = False
+        self.do_add_vecs = False
+        self.do_collapse = False
+        self.use_lora = False
         self.batch_idx = 0
         self.recalc_every = math.ceil(  # on default, recalculate every epoch
             len(self.train_dataset) / self.args.per_device_train_batch_size
@@ -80,12 +80,13 @@ class RepSelect(UnlearnTrainer):
         idx = self.batch_idx % len(self.forget_batches)
         f_batch = self.forget_batches[idx]
         r_batch = self.retain_batches[idx]
+        self.model.requires_grad_(False)  # train only modules that we specify
 
         # Lazy init KLComputor (model is guaranteed on CUDA here)
         if self.kl_computor is None and "retain_momentum" in self.cfg:
             self.kl_computor = KLComputor(self.model, self.retain_batches)
 
-        # ! retain pass
+        # Pass A: retain momentum
         if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
             # # sanity check that the samples match
             # logging.info(f"RETAIN: {self.processing_class.decode(r_batch['input_ids'][0])}")
@@ -93,45 +94,59 @@ class RepSelect(UnlearnTrainer):
             # logging.info(f"\n")
 
             model.zero_grad(set_to_none=True)
-            kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
-            kl_loss.backward()
-            for param in self.base_trainable_params:
-                if hasattr(param, "ref_grad"):
-                    ref = dequantize_blockwise(*param.ref_grad)
-                else:  # initialize
-                    ref = pt.zeros_like(param)
-                if param.grad is not None:  # some experts may be not chosen
-                    momentum = self.cfg.retain_momentum
-                    ref = ref * momentum + param.grad * (1 - momentum)
-                param.ref_grad = quantize_blockwise(ref)  # 8-bit quantization
+            with require_grad(self.base_trainable_params):
+                kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
+                kl_loss.backward()
+                for param in self.base_trainable_params:
+                    update_ref_grad(param, self.cfg.retain_momentum)
 
-        # ! unlearning loss
+        # Pass B: distribution collection (retain side)
+        if self.cfg.use_distribution == "retain":
+            model.zero_grad(set_to_none=True)
+            self.token_mask = r_batch["attention_mask"].bool().clone()
+            self.token_mask[:, 0] = False
+            with require_grad(self.base_trainable_params):
+                output = model(**prep_batch(r_batch, model.device))
+            self.do_add_vecs = True
+            # _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
+            _loss = -output.loss
+            _loss.backward()
+            self.do_add_vecs = False
+
+        self.use_lora = True
+
+        # Pass C: LoRA adversarial pass
+        if "lora_lr" in self.cfg:
+            model.zero_grad(set_to_none=True)
+            with require_grad(self.lora_params):
+                output = model(**prep_batch(f_batch, model.device))
+                output.loss.backward()
+            normalize_grads(self.lora_params)
+            for p in self.lora_params:
+                p.data -= self.cfg.lora_lr * self.args.learning_rate * p.grad
+
+        # Pass D: forget forward+backward
         self.token_mask = f_batch["attention_mask"].bool().clone()
         self.token_mask[:, 0] = False  # omit unlearning on the BOS token
         if self.processing_class.chat_template is not None:  # omit template tokens
             for banned_token in get_banned_tokens(self.processing_class):
                 self.token_mask &= f_batch["input_ids"] != banned_token
 
-        self.use_hooks = True
         model.zero_grad(set_to_none=True)
-        output = model(**prep_batch(f_batch, model.device))
+        with require_grad(self.base_trainable_params):
+            output = model(**prep_batch(f_batch, model.device))
+        self.do_collapse = True
+        self.do_add_vecs = self.cfg.use_distribution == "forget"
         # forget_loss = label_logits(output.logits, f_batch["labels"])
         forget_loss = -output.loss
         # we will backpropagate because the graph has been built by the forward pass
         # but backward() itself will not compute weight gradients for base params
         # instead, weights will remain with grad computed by the collapse_hook
-        for p in self.base_trainable_params:
-            p.requires_grad_(False)
         forget_loss.backward()
-        for p in self.base_trainable_params:
-            p.requires_grad_(True)
-        self.use_hooks = False
+        self.do_collapse = False
+        self.do_add_vecs = False
 
-        # ! update LoRA adversarially (gradient ascent - adversary tries to relearn)
-        normalize_grads(self.lora_params)
-        for p in self.lora_params:
-            p.data += self.cfg.lora_lr * self.args.learning_rate * p.grad
-            p.grad = None
+        self.use_lora = False
 
         self.batch_idx += 1
         if self.batch_idx % self.recalc_every == 0:
@@ -142,23 +157,27 @@ class RepSelect(UnlearnTrainer):
                     module.grad_collapser.fit()
 
         normalize_grads(self.base_trainable_params)
+        for p in self.base_trainable_params:
+            p.requires_grad_(True)  # so that the optimizer updates them
         return forget_loss.detach()
 
     def save_act_input_hook(self, module, args, output):
-        # todo, save it always? so that in_retain_pass can wrap only the backward pass?
-        if not self.use_hooks:
-            return
+        # if not (self.do_add_vecs or self.do_collapse):
+        #     return
         module.last_act_input = args[0]
 
+    def lora_forward_hook(self, module, args, output):
+        if self.use_lora:
+            return output + module.lora_module(args[0])
+
     def collapse_hook(self, module, grad_input, grad_output):
-        if not self.use_hooks:
+        if not (self.do_add_vecs or self.do_collapse):
             return
         acts = module.last_act_input.detach()
         grads = grad_output[0]
         module.last_act_input = None
 
         if self.is_moe:
-            # todo, in future MoE HF5 implementation, make sure we use actual self.token_mask
             token_mask = grads.norm(dim=1) != 0
             acts = acts[token_mask]
             grads = grads[token_mask]
@@ -170,10 +189,12 @@ class RepSelect(UnlearnTrainer):
             grads = grads[self.token_mask]
 
         # note: we could optimize and reuse the act collapser for gate_proj and up_proj, but for simplicity don't
-        if "n_pcs" in self.cfg:
+        if self.do_add_vecs and "n_pcs" in self.cfg:
             module.act_collapser.add_vecs(acts)
             module.grad_collapser.add_vecs(grads)
 
+        if not self.do_collapse:
+            return
         if self.batch_idx < self.recalc_every * 2:
             return  # too early to train, so only collect activations and return early
 
@@ -202,7 +223,3 @@ class RepSelect(UnlearnTrainer):
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
-
-    def lora_forward_hook(self, module, args, output):
-        if self.use_hooks:
-            return output + module.lora_module(args[0])
