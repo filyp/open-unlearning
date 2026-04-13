@@ -202,3 +202,4 @@ community/benchmarks/beavertails/staging.jsonl
 community/benchmarks/beavertails/classified.jsonl
 community/benchmarks/beavertails/contrast_flagged.json
 community/benchmarks/beavertails/contrast.jsonl
+.env.json

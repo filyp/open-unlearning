@@ -31,6 +31,7 @@ image = (
         # "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.12/flash_attn-2.8.3+cu128torch2.10-cp311-cp311-linux_x86_64.whl"
         "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
     )
+    # things above, are equivalent to using docker filyp/open-unlearning:latest
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .pip_install("hf_transfer")
     .run_function(download_models, secrets=[modal.Secret.from_dotenv()])
