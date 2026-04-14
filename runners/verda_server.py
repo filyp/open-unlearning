@@ -4,6 +4,7 @@ import subprocess
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -21,7 +22,9 @@ async def _exit_process(exit_code: int) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "busy" if _job_started else "ok"}
+    if _job_started:
+        return JSONResponse(status_code=200, content={"status": "busy"})
+    return JSONResponse(status_code=200, content={"status": "healthy"})
 
 
 @app.post("/run")
@@ -34,11 +37,17 @@ async def run_job(body: dict):
     repo = body.get("repo", default_repo)
     command = body["command"]
 
+    loop = asyncio.get_event_loop()
+
     # clone the repo
-    subprocess.run(["git", "clone", repo, "/root/repo"], check=True)
+    await loop.run_in_executor(
+        None, lambda: subprocess.run(["git", "clone", repo, "/root/repo"], check=True)
+    )
 
     # run the command
-    result = subprocess.run(command, shell=True, cwd="/root/repo")
+    result = await loop.run_in_executor(
+        None, lambda: subprocess.run(command, shell=True, cwd="/root/repo")
+    )
 
     asyncio.create_task(_exit_process(result.returncode))
 
