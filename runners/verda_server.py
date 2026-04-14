@@ -4,7 +4,6 @@ import subprocess
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -22,15 +21,14 @@ async def _exit_process(exit_code: int) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "busy" if _job_started else "ok"}
 
 
 @app.post("/run")
 async def run_job(body: dict):
     global _job_started
 
-    if _job_started:
-        return JSONResponse(status_code=503, content={"detail": "Busy"})
+    assert not _job_started, "Job already started — Verda should not have routed here"
     _job_started = True
 
     repo = body.get("repo", default_repo)
