@@ -142,22 +142,22 @@ def _get_beavertails_sample(prompt, response, tokenizer, cfg):
 #     return {cfg.dataset_name: samples}
 
 
-# def beavertails_curated(cfg, tokenizer, **kwargs):
-#     # splits: animal_abuse, terrorism_organized_crime, safe
-#     ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
-#     texts = ds.filter(lambda x: x["label_correct"])
-#     len_ = cfg.range[1] - cfg.range[0]
-#     texts = texts.select(range(*cfg.range))
-#     logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
+def beavertails_curated(cfg, tokenizer, **kwargs):
+    # splits: animal_abuse, terrorism_organized_crime, safe
+    ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
+    texts = ds.filter(lambda x: x["label_correct"])
+    len_ = cfg.range[1] - cfg.range[0]
+    texts = texts.select(range(*cfg.range))
+    logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
 
-#     samples = []
-#     for text in texts:
-#         samples.append(
-#             _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
-#         )
+    samples = []
+    for text in texts:
+        samples.append(
+            _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
+        )
 
-#     assert len(samples) == len_
-#     return {cfg.dataset_name: samples}
+    assert len(samples) == len_
+    return {cfg.dataset_name: samples}
 
 
 def beavertails_contrast(cfg, tokenizer, **kwargs):

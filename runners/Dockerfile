@@ -18,5 +18,15 @@ RUN pip install --no-cache-dir lm-eval==0.4.11
 RUN pip install --no-cache-dir \
     "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
 
-# Keep container alive (RunPod needs this so SSH stays available)
-CMD ["sleep", "infinity"]
+
+# Set up a server for Verda
+# (But you can use this container not for Verda too, simply override the CMD)
+RUN pip install --no-cache-dir fastapi uvicorn
+
+COPY runners/verda_server.py /root/verda_server.py
+
+WORKDIR /root
+
+EXPOSE 8000
+
+CMD ["uvicorn", "verda_server:app", "--host", "0.0.0.0", "--port", "8000"]
