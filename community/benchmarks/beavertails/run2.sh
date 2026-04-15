@@ -2,8 +2,8 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-model=gemma-4-E4B
-# model=Llama-3.1-8B
+# model=gemma-4-E4B
+model=Llama-3.1-8B
 # model=Qwen3-30B-A3B-Base
 
 category='animal_abuse'
