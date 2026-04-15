@@ -15,4 +15,3 @@ method_args:
     lora_rank: 32
     use_distribution: forget  # forget | retain
     npo_beta: 0.1
-    lora_before_retain: true  # todo, remove later

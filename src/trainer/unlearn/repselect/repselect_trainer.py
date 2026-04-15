@@ -74,9 +74,6 @@ class RepSelect(UnlearnTrainer):
         r_batch = self.retain_batches[idx]
         self.model.requires_grad_(False)  # train only modules that we specify
 
-        if self.cfg.lora_before_retain:
-            self.use_lora = True  # todo, should lora be here or after retain pass?
-
         # Pass B: distribution collection (retain side)
         if self.cfg.use_distribution == "retain":
             model.zero_grad(set_to_none=True)
@@ -88,11 +85,11 @@ class RepSelect(UnlearnTrainer):
             _loss.backward()
             self.do_add_vecs = False
 
-        if not self.cfg.lora_before_retain:
-            self.use_lora = True  # should lora be here or before retain pass?
+        # if not self.cfg.lora_before_retain:
+        self.use_lora = self.batch_idx >= self.recalc_every
 
         # Pass C: LoRA adversarial pass
-        if "lora_lr" in self.cfg:
+        if "lora_lr" in self.cfg and self.use_lora:
             model.zero_grad(set_to_none=True)
             with require_grad(self.lora_params):
                 output = model(**prep_batch(f_batch, model.device))

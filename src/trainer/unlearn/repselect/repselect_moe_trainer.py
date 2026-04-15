@@ -111,7 +111,7 @@ class RepSelectMOE(UnlearnTrainer):
             _loss.backward()
             self.do_add_vecs = False
 
-        self.use_lora = True  # should lora be here or before retain pass?
+        self.use_lora = self.batch_idx >= self.recalc_every
 
         # LORA FORWARD AND BACKWARD PASS AND UPDATE
         if "lora_lr" in self.cfg:
