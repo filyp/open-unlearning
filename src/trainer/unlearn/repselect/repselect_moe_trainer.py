@@ -4,21 +4,16 @@ import math
 import types
 
 import torch as pt
-from bitsandbytes.functional import dequantize_blockwise, quantize_blockwise
 
 from data.utils import batched, prep_batch
-from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import BatchedInvSmallCovCollapser
 from trainer.unlearn.repselect.moe_patch import (
     Identity,
     hooked_grouped_mm_experts_forward,
 )
-from trainer.unlearn.repselect.utils import (  # noqa: F401
-    BatchedManualLoRA,
-    get_banned_tokens,
-)
-from trainer.utils import label_logits, normalize_grads, npo_saturating_loss, require_grad, update_ref_grad
+from trainer.unlearn.repselect.utils import BatchedManualLoRA
+from trainer.utils import normalize_grads, npo_saturating_loss, require_grad
 
 logging.basicConfig(level=logging.INFO)
 
@@ -100,28 +95,12 @@ class RepSelectMOE(UnlearnTrainer):
             self.data_collator(r) for r in batched(self.train_dataset.retain, _bsize)
         ]
 
-        # KLComputor is deferred to first training_step, because the model may not be on CUDA yet during __init__)
-        self.kl_computor = None
-
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
         idx = self.batch_idx % len(self.forget_batches)
         f_batch = self.forget_batches[idx]
         r_batch = self.retain_batches[idx]
         self.model.requires_grad_(False)  # train only modules that we specify
-
-        # Lazy init KLComputor (model is guaranteed on CUDA here)
-        if self.kl_computor is None and "retain_momentum" in self.cfg:
-            self.kl_computor = KLComputor(self.model, self.retain_batches)
-
-        # Retain pass
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
-            model.zero_grad(set_to_none=True)
-            with require_grad(self.base_trainable_params):
-                kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
-                kl_loss.backward()
-                for param in self.base_trainable_params:
-                    update_ref_grad(param, self.cfg.retain_momentum)
 
         if self.cfg.use_distribution == "retain":
             # we will backpropagate because the graph has been built by the forward pass but backward() itself will not compute weight gradients for base params instead, weights will remain with grad computed by the collapse_hook
@@ -148,7 +127,7 @@ class RepSelectMOE(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         with require_grad(self.base_trainable_params):
             output = model(**prep_batch(f_batch, model.device))
-        self.do_collapse = True
+        self.do_collapse = self.batch_idx >= self.recalc_every * 2
         self.do_add_vecs = self.cfg.use_distribution == "forget"
         # forget_loss = label_logits(output.logits, f_batch["labels"])
         forget_loss = npo_saturating_loss(output, f_batch, self.cfg.npo_beta)
@@ -212,34 +191,10 @@ class RepSelectMOE(UnlearnTrainer):
 
         if not self.do_collapse:
             return
-        if self.batch_idx < self.recalc_every * 2:
-            return
 
         # Batched collapse via _grouped_mm (replaces per-expert loop)
         acts_sorted = module.act_collapser.collapse(acts_sorted, offsets)
         grads_sorted = module.grad_collapser.collapse(grads_sorted, offsets)
-
-        # KL-masking
-        if "retain_momentum" in self.cfg:
-            ref_grad = dequantize_blockwise(*fused_param.ref_grad).to(fused_param.dtype)
-            if is_transposed:
-                ref_grad = ref_grad.mT  # (E, out_dim, in_dim)
-            # disr_grad[t] = acts_sorted[t] @ ref_grad[expert_of_t].T  →  (S, out_dim)
-            disr_grad = pt._grouped_mm(
-                acts_sorted, ref_grad.mT.contiguous(), offs=offsets
-            )
-
-            if self.cfg.kl_mask == "module":
-                # paranoid KL-masking, filtering out whole modules, rather than output channels
-                zero_mask = (disr_grad * grads_sorted).sum(dim=1) <= 0
-                acts_sorted[zero_mask] = 0
-                grads_sorted[zero_mask] = 0
-            elif self.cfg.kl_mask == "disrproj":
-                disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
-                projs = (disr_grad * grads_sorted).sum(dim=1, keepdim=True).clamp(max=0)
-                grads_sorted -= projs * disr_grad
-            else:
-                raise ValueError(f"Invalid KL mask: {self.cfg.kl_mask}")
 
         # Single _grouped_mm call: aggregates per-expert weight gradients via CUTLASS
         assert fused_param.grad is None
@@ -247,11 +202,3 @@ class RepSelectMOE(UnlearnTrainer):
             fused_param.grad = pt._grouped_mm(acts_sorted.T, grads_sorted, offs=offsets)
         else:
             fused_param.grad = pt._grouped_mm(grads_sorted.T, acts_sorted, offs=offsets)
-
-
-# token_mask = f_batch["attention_mask"].bool().clone()
-# token_mask[:, 0] = False  # omit BOS token
-# if self.processing_class.chat_template is not None:
-#     for banned_token in get_banned_tokens(self.processing_class):
-#         token_mask &= f_batch["input_ids"] != banned_token
-# self.flat_token_mask = token_mask.reshape(-1)

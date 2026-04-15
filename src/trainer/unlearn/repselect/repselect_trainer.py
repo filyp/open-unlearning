@@ -1,17 +1,14 @@
 # python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepSelect task_name=SAMPLE_UNLEARN
 import logging
 import math
-from typing import Iterable
 
 import torch as pt
-from bitsandbytes.functional import dequantize_blockwise
 
 from data.utils import batched, prep_batch
-from evals.kl_eval import KLComputor
 from trainer.unlearn.base import UnlearnTrainer
 from trainer.unlearn.repselect.collapsers import InvSmallCovCollapser
-from trainer.unlearn.repselect.utils import get_banned_tokens, ManualLoRA
-from trainer.utils import normalize_grads, npo_saturating_loss, require_grad, update_ref_grad
+from trainer.unlearn.repselect.utils import ManualLoRA
+from trainer.utils import normalize_grads, npo_saturating_loss, require_grad
 
 logging.basicConfig(level=logging.INFO)
 
@@ -70,27 +67,12 @@ class RepSelect(UnlearnTrainer):
             self.data_collator(r) for r in batched(self.train_dataset.retain, _bsize)
         ]
 
-        self.kl_computor = None
-
     def training_step(self, model, inputs, num_items_in_batch=None):
         model.train()
         idx = self.batch_idx % len(self.forget_batches)
         f_batch = self.forget_batches[idx]
         r_batch = self.retain_batches[idx]
         self.model.requires_grad_(False)  # train only modules that we specify
-
-        # Lazy init KLComputor (model is guaranteed on CUDA here)
-        if self.kl_computor is None and "retain_momentum" in self.cfg:
-            self.kl_computor = KLComputor(self.model, self.retain_batches)
-
-        # Pass A: retain momentum
-        if "retain_momentum" in self.cfg and self.batch_idx >= self.recalc_every * 2:
-            model.zero_grad(set_to_none=True)
-            with require_grad(self.base_trainable_params):
-                kl_loss, _, _ = self.kl_computor.get_kl(r_batch)
-                kl_loss.backward()
-                for param in self.base_trainable_params:
-                    update_ref_grad(param, self.cfg.retain_momentum)
 
         # self.use_lora = True  # todo, should lora be here or after retain pass?
 
@@ -101,7 +83,6 @@ class RepSelect(UnlearnTrainer):
             with require_grad(self.base_trainable_params):
                 output = model(**prep_batch(r_batch, model.device))
             self.do_add_vecs = True
-            # _loss = label_logits(output.logits, r_batch["labels"], clip=float("-inf"))
             _loss = -output.loss
             _loss.backward()
             self.do_add_vecs = False
@@ -122,9 +103,9 @@ class RepSelect(UnlearnTrainer):
         model.zero_grad(set_to_none=True)
         with require_grad(self.base_trainable_params):
             output = model(**prep_batch(f_batch, model.device))
-        self.do_collapse = True
+        self.do_collapse = self.batch_idx >= self.recalc_every * 2
         self.do_add_vecs = self.cfg.use_distribution == "forget"
-        forget_loss = npo_saturating_loss(output, f_batch, self.cfg.get("npo_beta", 1.0))
+        forget_loss = npo_saturating_loss(output, f_batch, self.cfg.npo_beta)
         forget_loss.backward()
         self.do_collapse = False
         self.do_add_vecs = False
@@ -145,8 +126,6 @@ class RepSelect(UnlearnTrainer):
         return forget_loss.detach()
 
     def save_act_input_hook(self, module, args, output):
-        # if not (self.do_add_vecs or self.do_collapse):
-        #     return
         module.last_act_input = args[0]
 
     def lora_forward_hook(self, module, args, output):
@@ -172,31 +151,10 @@ class RepSelect(UnlearnTrainer):
 
         if not self.do_collapse:
             return
-        if self.batch_idx < self.recalc_every * 2:
-            return  # too early to train, so only collect activations and return early
 
         if "n_pcs" in self.cfg:
             acts = module.act_collapser.collapse(acts)
             grads = module.grad_collapser.collapse(grads)
-
-        # ! KL-masking, per token and per module
-        if "retain_momentum" in self.cfg:
-            ref_grad = dequantize_blockwise(*module.weight.ref_grad)
-            ref_grad = ref_grad.to(module.weight.dtype)
-            disr_grad = acts @ ref_grad.T
-
-            if self.cfg.kl_mask == "module":
-                kl_mask = (disr_grad * grads).sum(dim=1) > 0
-                acts = acts[kl_mask]
-                grads = grads[kl_mask]
-            elif self.cfg.kl_mask == "disrproj":
-                # the core of DisrCollapse that can be swapped for the block above:
-                disr_grad /= disr_grad.norm(dim=1, keepdim=True) + 1e-8
-                projs = pt.einsum("tg,tg->t", disr_grad, grads).unsqueeze(1)
-                projs = projs.clamp(max=0)
-                grads -= projs * disr_grad
-            else:
-                raise ValueError(f"Invalid KL mask: {self.cfg.kl_mask}")
 
         # without acts and grads modifications, this is equivalent to normal backprop
         module.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
@@ -208,19 +166,9 @@ class RepSelect(UnlearnTrainer):
 # logging.info(f"\n")
 
 # self.token_mask = get_token_mask(r_batch, self.processing_class)
-
 # def get_token_mask(batch, processing_class):
 #     token_mask = batch["attention_mask"].bool().clone()
 #     token_mask[:, 0] = False  # omit unlearning on the BOS token
 #     if processing_class.chat_template is not None:  # omit template tokens
 #         for banned_token in get_banned_tokens(processing_class):
 #             token_mask &= batch["input_ids"] != banned_token
-
-# if "initial_label_logits" not in f_batch:
-#     f_batch["initial_label_logits"] = _get_label_logits(
-#         output.logits, f_batch["labels"]
-#     ).detach()
-# forget_loss = saturating_logits(
-#     output.logits, f_batch["labels"], f_batch["initial_label_logits"],
-#     self.cfg.get("sat_speed", 1),
-# )
