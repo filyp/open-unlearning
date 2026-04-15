@@ -85,7 +85,7 @@ relearning_trainer:
   handler: FinetuneTrainer
   args:
     optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
-    learning_rate: 5e-6  # epochs are long, so use smaller learning rate
+    learning_rate: 5e-6
     lr_scheduler_type: constant
     report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
     run_name: ${task_name}
