@@ -16,7 +16,7 @@ version=v7
 # v4 tunes probability, not loss; also npo saturation was removed from repselect
 # v5 evel smaller relearning LR
 # v6 uses 1e-5 relearning LR, and non-contrastive set (curated.yaml)
-# v7 uses 5e-6 relearning LR, and contrastive set (curated_contrast.yaml)
+# v7 uses 7e-6 relearning LR, and contrastive set (curated_contrast.yaml)
 
 common="run python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/beavertails/curated_contrast model=${model} category=${category}"
 reference="run python src/unlearn_relearn.py --config-name=unlearn.yaml experiment=unlearn/beavertails/curated_contrast trainer.args.num_train_epochs=0 model=${model} category=${category}"
