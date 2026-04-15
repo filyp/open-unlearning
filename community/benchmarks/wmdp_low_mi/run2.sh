@@ -61,3 +61,5 @@ ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 # but NPO,undial OOMs on it
 # ok: graddiff, simnpo, rmu
 # so actually, for gemma use A100 (80GB)
+
+# for Llama-3.1-8B use RTX PRO 6000
