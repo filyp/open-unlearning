@@ -26,11 +26,10 @@ def create_acts_to_logits(model):
     Handles models with lm_head and models with shared embeddings (e.g., MobileLLM).
     Copies the weights so they're preserved even if the model changes during training.
 
-    Note that some models (e.g. gemma2) have custom ways of converting hidden states to logits.
+    Some models (e.g. gemma2, gemma4) apply final_logit_softcapping after the lm_head.
     To make sure that it works correctly, your evaluator should assert that on the evaluation
     before the training starts, the KL divergence is 0 (see WMDPLLowMIEvaluator).
     """
-    model_type = model.config.model_type
 
     # if not hasattr(model, "lm_head"):
     #     # MobileLLM-style: use shared embedding weights
@@ -48,11 +47,13 @@ def create_acts_to_logits(model):
     def _acts_to_logits(hidden_states):
         logits = model._kl_cache["lm_head"](hidden_states)
 
-        if model_type == "gemma2" and model.config.final_logit_softcapping is not None:
+        softcap = getattr(model.config, "final_logit_softcapping", None)
+        if softcap is not None:
             # based on: https://github.com/huggingface/transformers/blob/ab87f2445096554e1c28ffe896afd96fa9469444/src/transformers/models/gemma2/modeling_gemma2.py#L539-L542
-            logits = logits / model.config.final_logit_softcapping
+            assert model.config.model_type in ["gemma2", "gemma4", "gemma4_text"]
+            logits = logits / softcap
             logits = pt.tanh(logits)
-            logits = logits * model.config.final_logit_softcapping
+            logits = logits * softcap
 
         return logits
 

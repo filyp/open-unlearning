@@ -1,4 +1,4 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, Gemma3ForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer, Gemma4ForCausalLM
 from omegaconf import DictConfig, open_dict
 from typing import Dict, Any
 import os
@@ -61,6 +61,12 @@ def get_model(model_cfg: DictConfig):
         raise ValueError(
             f"Error {e} while fetching model using {model_handler}.from_pretrained()."
         )
+    for pattern in model_cfg.get("freeze_keywords", []):
+        for name, param in model.named_parameters():
+            if pattern in name:
+                param.requires_grad_(False)
+                logger.info(f"Froze parameter: {name}")
+
     tokenizer = get_tokenizer(tokenizer_args)
     return model, tokenizer
 
@@ -105,4 +111,4 @@ def get_tokenizer(tokenizer_cfg: DictConfig):
 # register models
 _register_model(AutoModelForCausalLM)
 _register_model(ProbedLlamaForCausalLM)
-_register_model(Gemma3ForCausalLM)
+_register_model(Gemma4ForCausalLM)

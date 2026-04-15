@@ -2,8 +2,8 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-model=gemma-3-4b-pt
-# model=Llama-3.1-8B-Instruct
+model=gemma-4-E4B
+# model=Llama-3.1-8B
 # model=Qwen3-30B-A3B-Base
 
 category='animal_abuse'
@@ -17,13 +17,20 @@ version=v6
 # v5 evel smaller relearning LR
 # v6 uses 1e-5 relearning LR, and contrastive set
 
-common="python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/beavertails/curated model=${model} category=${category}"
-reference="python src/unlearn_relearn.py --config-name=unlearn.yaml experiment=unlearn/beavertails/curated trainer.args.num_train_epochs=0 model=${model} category=${category}"
+common="run python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/beavertails/curated model=${model} category=${category}"
+reference="run python src/unlearn_relearn.py --config-name=unlearn.yaml experiment=unlearn/beavertails/curated trainer.args.num_train_epochs=0 model=${model} category=${category}"
 prefix="${version}_${model}_${category}"
 
 # for running on verda:
-common="bash verda_runner.sh $common"
-reference="bash verda_runner.sh $reference"
+run() {
+  bash verda_runner.sh $*
+}
+
+# # for running on modal:
+# source .venv/bin/activate
+# run() {
+#   modal run runners/modal_runner.py --args "$*"
+# }
 
 ###############################################################
 
