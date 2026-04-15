@@ -44,7 +44,7 @@ ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
 ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-# ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=retain
+${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=retain
 
 # # RepSelect ablations
 # ${common} trainer=RepSelect hydra/sweeper=RepSelect_no_lora '~trainer.method_args.cfg.lora_lr' task_name=${prefix}_RepSelect_no_lora trainer.method_args.cfg.use_distribution=retain
