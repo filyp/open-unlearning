@@ -6,14 +6,20 @@ model=gemma-3-4b-pt
 # model=Llama-3.1-8B-Instruct
 # model=Qwen3-30B-A3B-Base
 
-wmdp_domain='bio'
-# wmdp_domain='cyber'
+category='animal_abuse'
+# category='terrorism,organized_crime'
 
-version=v3
+version=v6
+# "no version" used the original beavertails dataset, where there is data duplication and mislabeling; also, it wasn't finished, got terminated before 50 trials
+# v2 uses our curated high-quality subset
+# v3 uses a 2x smaller LR during relearning, because it was too severe
+# v4 tunes probability, not loss; also npo saturation was removed from repselect
+# v5 evel smaller relearning LR
+# v6 uses 1e-5 relearning LR, and contrastive set
 
-common="python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/wmdp_low_mi/default model=${model} wmdp_domain=${wmdp_domain}"
-reference="python src/unlearn_relearn.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer.args.num_train_epochs=0 model=${model} wmdp_domain=${wmdp_domain}"
-prefix="${version}_${model}_${wmdp_domain}"
+common="python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/beavertails/curated model=${model} category=${category}"
+reference="python src/unlearn_relearn.py --config-name=unlearn.yaml experiment=unlearn/beavertails/curated trainer.args.num_train_epochs=0 model=${model} category=${category}"
+prefix="${version}_${model}_${category}"
 
 # for running on verda:
 common="bash verda_runner.sh $common"
@@ -32,10 +38,9 @@ ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
 # ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect
 
-# # RepSelect ablations - todo, adapt the sweeper configs
+# # RepSelect ablations
 # ${common} trainer=RepSelect hydra/sweeper=RepSelect_no_lora '~trainer.method_args.cfg.lora_lr' task_name=${prefix}_RepSelect_no_lora
 # ${common} trainer=RepSelect hydra/sweeper=RepSelect_no_pcs '~trainer.method_args.cfg.n_pcs' task_name=${prefix}_RepSelect_no_pcs
-
 
 
 # # High disruption experiments
@@ -46,9 +51,3 @@ ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 # ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU2_highdisr
 # ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO_highdisr
 # ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL2_highdisr
-
-
-# for gemma: RTX 6000 Ada (48GB)
-# but NPO,undial OOMs on it
-# ok: graddiff, simnpo, rmu
-# so actually, for gemma use A100 (80GB)
