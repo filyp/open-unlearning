@@ -9,7 +9,7 @@ model=gemma-4-E4B
 wmdp_domain='bio'
 # wmdp_domain='cyber'
 
-version=v5.1
+version=v5.3
 # v5 uses 7e-6 relearning LR
 
 common="run python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/wmdp_low_mi/default model=${model} wmdp_domain=${wmdp_domain}"

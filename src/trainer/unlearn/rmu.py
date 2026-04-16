@@ -41,11 +41,14 @@ class RMU(GradDiff):
         self.control_vec = None
 
     def create_optimizer(self):
-        self._freeze_all_params(self.model, False)
+        req_grads = {name: p.requires_grad for name, p in self.model.named_parameters()}
+        for param in self.model.parameters():
+            param.requires_grad = False
         # This makes the optimizer to select only trainable params
         self._set_trainable_params(self.model, self.trainable_params_regex, True)
         super().create_optimizer()
-        self._freeze_all_params(self.model, True)
+        for name, param in self.model.named_parameters():  # reapply requires_grad
+            param.requires_grad = req_grads[name]
 
     def _get_matching_module(self, model, module_regex):
         """Returns a single module matching the given regex from a DeepSpeed/DDP-wrapped model."""
@@ -67,11 +70,6 @@ class RMU(GradDiff):
             raise ValueError(f"No module matched with {module_regex}")
 
         return next(iter(matched_modules.values()))  # Return the single matched module
-
-    def _freeze_all_params(self, model, requires_grad=True):
-        """Freeze all parameters in the model initially."""
-        for param in model.parameters():
-            param.requires_grad = requires_grad
 
     def _set_trainable_params(self, model, trainable_params_regex, requires_grad=True):
         """Unfreeze specific parameters that match the regex patterns."""
