@@ -9,5 +9,3 @@ tokenizer_args:
 template_args:
   apply_chat_template: False
 model_handler: Gemma4ForCausalLM  # text-only version
-freeze_keywords:
-  - embed_tokens_per_layer
