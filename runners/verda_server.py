@@ -1,6 +1,7 @@
 import asyncio
 import os
 import subprocess
+import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -13,6 +14,8 @@ default_repo = "https://github.com/filyp/open-unlearning.git"
 load_dotenv("/secrets/.env")
 
 _job_started = False
+_start_time = time.monotonic()
+_NO_JOB_TIMEOUT = 180  # seconds
 
 
 async def _exit_process(exit_code: int) -> None:
@@ -24,6 +27,9 @@ async def _exit_process(exit_code: int) -> None:
 def health():
     if _job_started:
         return JSONResponse(status_code=200, content={"status": "busy"})
+    if time.monotonic() - _start_time > _NO_JOB_TIMEOUT:
+        print("No job received within timeout, exiting.")
+        os._exit(1)
     return JSONResponse(status_code=200, content={"status": "healthy"})
 
 
