@@ -2,14 +2,14 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-# model=gemma-4-E4B
-model=Llama-3.1-8B
+model=gemma-4-E4B
+# model=Llama-3.1-8B
 # model=Qwen3-30B-A3B-Base
 
 category='animal_abuse'
 # category='terrorism,organized_crime'
 
-version=v7
+version=v7.1
 # "no version" used the original beavertails dataset, where there is data duplication and mislabeling; also, it wasn't finished, got terminated before 50 trials
 # v2 uses our curated high-quality subset
 # v3 uses a 2x smaller LR during relearning, because it was too severe

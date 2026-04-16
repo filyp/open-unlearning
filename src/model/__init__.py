@@ -62,6 +62,12 @@ def get_model(model_cfg: DictConfig):
             f"Error {e} while fetching model using {model_handler}.from_pretrained()."
         )
 
+    for pattern in model_cfg.get("freeze_keywords", []):
+        for name, param in model.named_parameters():
+            if pattern in name:
+                param.requires_grad_(False)
+                logger.info(f"Froze parameter: {name}")
+
     tokenizer = get_tokenizer(tokenizer_args)
     return model, tokenizer
 

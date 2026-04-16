@@ -2,14 +2,14 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-# model=gemma-4-E4B
-model=Llama-3.1-8B
+model=gemma-4-E4B
+# model=Llama-3.1-8B
 # model=Qwen3-30B-A3B-Base
 
 wmdp_domain='bio'
 # wmdp_domain='cyber'
 
-version=v5
+version=v5.1
 # v5 uses 7e-6 relearning LR
 
 common="run python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun experiment=unlearn/wmdp_low_mi/default model=${model} wmdp_domain=${wmdp_domain}"
