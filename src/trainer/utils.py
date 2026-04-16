@@ -216,6 +216,14 @@ def label_logits(logits, labels, clip=0):
 
 
 def npo_saturating_loss(output, batch, beta):
+    """NPO loss.
+    
+    This implementation doesn't require a reference model. We just store the initial NLL
+    for each sequence in the batch.
+    Note, that this requires running this function on each batch before you start
+    modifying the model.
+    And the batch dicts need to be reused, not recomputed each time.
+    """
     logits = output.logits
     labels = batch["labels"].to(logits.device)
     shifted_labels = labels[..., 1:].contiguous()

@@ -86,7 +86,7 @@ class RepSelectMOE(UnlearnTrainer):
                 e.gate_up_output_probe.register_forward_hook(self.lora_forward_hook)
                 e.down_output_probe.register_forward_hook(self.lora_forward_hook)
 
-        # pre-cache batches (needed for storing data for KL computation)
+        # pre-cache batches
         _bsize = self.args.per_device_train_batch_size
         self.forget_batches = [
             self.data_collator(r) for r in batched(self.train_dataset.forget, _bsize)

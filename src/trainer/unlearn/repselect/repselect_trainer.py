@@ -58,7 +58,9 @@ class RepSelect(UnlearnTrainer):
                     self.lora_params.extend(module.lora_module.parameters())
                     module.register_forward_hook(self.lora_forward_hook)
 
-        # pre-cache batches (needed for storing data for KL computation)
+        # pre-cache batches (needed for our NPO loss implementation)
+        # an alternative would be to use a reference model (what npo.py uses), but that's memory intensive
+        # or to hash the sequences and store their initial NLLs in a dict (but that's more complicated)
         _bsize = self.args.per_device_train_batch_size
         self.forget_batches = [
             self.data_collator(r) for r in batched(self.train_dataset.forget, _bsize)
