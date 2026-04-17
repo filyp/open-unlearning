@@ -267,6 +267,7 @@ references = {
     "v7_Llama-3.1-8B_animal_abuse_reference": 0.20943,
     "v5.3_gemma-4-E4B_bio_reference": 0.15398,
     "v7.3_gemma-4-E4B_animal_abuse_reference": 0.19647,
+    "v7.3_Llama-3.1-8B-Instruct_animal_abuse_reference": 0.20335,
 }
 
 

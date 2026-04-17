@@ -2,8 +2,9 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-model=gemma-4-E4B
+# model=gemma-4-E4B
 # model=Llama-3.1-8B
+model=Llama-3.1-8B-Instruct
 # model=Qwen3-30B-A3B-Base
 
 category='animal_abuse'
@@ -59,3 +60,5 @@ ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelec
 # ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU2_highdisr
 # ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO_highdisr
 # ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL2_highdisr
+
+# note: for Llama-3.1-8B-Instruct, on NPO, UNDIAL, RMU 96GB VRAM is not enough, so these two were run on H200 with 141GB

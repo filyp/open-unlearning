@@ -28,6 +28,34 @@ def _tokenize(text, tokenizer, tokenizer_cfg):
     return sample
 
 
+def _apply_chat_template_pair(prompt, response, tokenizer, tokenizer_cfg):
+    # note that we skip the system prompt
+    chat = [
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": response},
+    ]
+    sample = tokenizer.apply_chat_template(
+        chat,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
+        date_string=DATE_STRING,
+        **tokenizer_cfg,
+    )
+    sample = {k: v.squeeze(0) for k, v in sample.items()}
+    sample["labels"] = sample["input_ids"].clone()
+
+    beginning_encoding = tokenizer.apply_chat_template(
+        chat[:-1],
+        tokenize=True,
+        return_dict=True,
+        add_generation_prompt=True,
+        date_string=DATE_STRING,
+    )
+    beginning_len = len(beginning_encoding["input_ids"])
+    return sample, beginning_len
+
+
 def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
     # note that we don't use a chat template, even with chat models,
     # since the texts are not in a form of chat
@@ -40,18 +68,24 @@ def load_hf_and_tokenize(cfg, tokenizer, **kwargs):
 
 
 ############## WMDP LOW MI ##############
-# todo they don't support chat templates yet - will need to handle that using data.utils
 
 
 def _load_recall_samples(questions, tokenizer_cfg, tokenizer):
     samples = []
     for q in questions:
-        question_txt = f"{q['question'].strip()}\nAnswer:"
-        answer_txt = q["choices"][q["answer"]]
-        full_txt = f"{question_txt} {answer_txt}"
+        prompt = q["question"].strip()
+        response = q["choices"][q["answer"]]
 
-        sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
-        beginning_len = len(tokenizer(question_txt, **tokenizer_cfg)["input_ids"])
+        if tokenizer.chat_template is None:
+            beginning_text = f"{prompt}\nAnswer:"
+            full_txt = f"{beginning_text} {response}"
+            sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
+            beginning_len = len(tokenizer(beginning_text, **tokenizer_cfg)["input_ids"])
+        else:
+            sample, beginning_len = _apply_chat_template_pair(
+                prompt, response, tokenizer, tokenizer_cfg
+            )
+
         sample["labels"][:beginning_len] = -100
         samples.append(sample)
     return samples
@@ -83,6 +117,18 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):
 
     recall_samples = _load_recall_samples(split2, cfg.tokenizer, tokenizer)
 
+    # # TEMP sanity check: print formatting of one sample from each split
+    # print("\n===== wmdp_low_mi sample formatting sanity check =====")
+    # print(f"[forget] full text:\n{tokenizer.decode(training_samples[0]['input_ids'])}")
+    # print(f"[relearn] full text:\n{tokenizer.decode(relearning_samples[0]['input_ids'])}")
+    # rs = recall_samples[0]
+    # unmasked_ids = rs["input_ids"][rs["labels"] != -100]
+    # masked_ids = rs["input_ids"][rs["labels"] == -100]
+    # print(f"[recall] full text:\n{tokenizer.decode(rs['input_ids'])}")
+    # print(f"[recall] masked prefix (labels=-100):\n{tokenizer.decode(masked_ids)}")
+    # print(f"[recall] unmasked target (loss computed here):\n{tokenizer.decode(unmasked_ids)}")
+    # print("======================================================\n")
+
     return dict(
         forget=training_samples,
         relearn=relearning_samples,
@@ -97,26 +143,15 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):
 def _get_beavertails_sample(prompt, response, tokenizer, cfg):
     if tokenizer.chat_template is None:
         # we don't use "Question:...\nAnswer:..." format, to not have unlearning base too much on these tokens
-        full_txt = f"{prompt} {response}"
         beginning_text = prompt
+        full_txt = f"{prompt} {response}"
+        sample = _tokenize(full_txt, tokenizer, cfg.tokenizer)
+        beginning_len = len(tokenizer(beginning_text, **cfg.tokenizer)["input_ids"])
     else:
-        chat = [
-            # note that we skip the system prompt
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": response},
-        ]
-        full_txt = tokenizer.apply_chat_template(
-            chat, tokenize=False, date_string=DATE_STRING
-        )
-        beginning_text = tokenizer.apply_chat_template(
-            chat[:-1],
-            tokenize=False,
-            date_string=DATE_STRING,
-            add_generation_prompt=True,
+        sample, beginning_len = _apply_chat_template_pair(
+            prompt, response, tokenizer, cfg.tokenizer
         )
 
-    sample = _tokenize(full_txt, tokenizer, cfg.tokenizer)
-    beginning_len = len(tokenizer(beginning_text, **cfg.tokenizer)["input_ids"])
     sample["labels"][:beginning_len] = -100
     return sample
 
@@ -142,22 +177,22 @@ def _get_beavertails_sample(prompt, response, tokenizer, cfg):
 #     return {cfg.dataset_name: samples}
 
 
-def beavertails_curated(cfg, tokenizer, **kwargs):
-    # splits: animal_abuse, terrorism_organized_crime, safe
-    ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
-    texts = ds.filter(lambda x: x["label_correct"])
-    len_ = cfg.range[1] - cfg.range[0]
-    texts = texts.select(range(*cfg.range))
-    logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
+# def beavertails_curated(cfg, tokenizer, **kwargs):
+#     # splits: animal_abuse, terrorism_organized_crime, safe
+#     ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
+#     texts = ds.filter(lambda x: x["label_correct"])
+#     len_ = cfg.range[1] - cfg.range[0]
+#     texts = texts.select(range(*cfg.range))
+#     logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
 
-    samples = []
-    for text in texts:
-        samples.append(
-            _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
-        )
+#     samples = []
+#     for text in texts:
+#         samples.append(
+#             _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
+#         )
 
-    assert len(samples) == len_
-    return {cfg.dataset_name: samples}
+#     assert len(samples) == len_
+#     return {cfg.dataset_name: samples}
 
 
 def beavertails_contrast(cfg, tokenizer, **kwargs):
@@ -177,6 +212,17 @@ def beavertails_contrast(cfg, tokenizer, **kwargs):
         samples.append(_get_beavertails_sample(prompt, response, tokenizer, cfg))
 
     assert len(samples) == len_
+
+    # # TEMP sanity check: print formatting of the first sample
+    # s = samples[0]
+    # unmasked_ids = s["input_ids"][s["labels"] != -100]
+    # masked_ids = s["input_ids"][s["labels"] == -100]
+    # print(f"\n===== beavertails_contrast[{cfg.dataset_name}] sanity check =====")
+    # print(f"full text:\n{tokenizer.decode(s['input_ids'])}")
+    # print(f"masked prefix (labels=-100):\n{tokenizer.decode(masked_ids)}")
+    # print(f"unmasked target (loss computed here):\n{tokenizer.decode(unmasked_ids)}")
+    # print("======================================================\n")
+
     return {cfg.dataset_name: samples}
 
 

@@ -79,12 +79,6 @@ data:
       split: animal_abuse
       tokenizer: ${tokenizer_cfg}
 
-    # - loader: beavertails_curated
-    #   dataset_name: safe_eval
-    #   range: [1000, 1128]
-    #   split: safe
-    #   tokenizer: ${tokenizer_cfg}
-
     - loader: load_hf_and_tokenize
       dataset_name: wikitext
       hf_args:

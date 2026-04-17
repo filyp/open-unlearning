@@ -1,12 +1,12 @@
-# original: "google/gemma-4-E4B"
+# original: "google/gemma-4-E4B-it"
 model_args:
-  pretrained_model_name_or_path: "filypo/gemma-4-E4B-text-only"
+  pretrained_model_name_or_path: "principled-intelligence/gemma-4-E4B-it-text-only"
   # attn_implementation: 'flash_attention_2'  # causes error, that head dimension is too high
   torch_dtype: bfloat16
 tokenizer_args:
-  pretrained_model_name_or_path: "filypo/gemma-4-E4B-text-only"
+  pretrained_model_name_or_path: "principled-intelligence/gemma-4-E4B-it-text-only"
 template_args:
-  apply_chat_template: False
+  apply_chat_template: True
 model_handler: Gemma4ForCausalLM  # text-only version
 freeze_keywords:
   - embed_tokens_per_layer  # needed because this huge per-layer embedding is too big for bitsandbytes to handle
