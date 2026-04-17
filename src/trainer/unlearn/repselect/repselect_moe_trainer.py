@@ -114,7 +114,7 @@ class RepSelectMOE(UnlearnTrainer):
         self.use_lora = self.batch_idx >= self.recalc_every
 
         # LORA FORWARD AND BACKWARD PASS AND UPDATE
-        if "lora_lr" in self.cfg:
+        if "lora_lr" in self.cfg and self.use_lora:
             model.zero_grad(set_to_none=True)
             with require_grad(self.lora_params):
                 output = model(**prep_batch(f_batch, model.device))
