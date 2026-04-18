@@ -32,7 +32,6 @@ class RepSelectMOE(UnlearnTrainer):
         logging.info(f"{self.recalc_every=}")
 
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
-        assert hasattr(self.model.model.layers[0].mlp, "experts")
         assert (
             getattr(self.model.config, "_experts_implementation", None) == "grouped_mm"
         ), "RepSelectMOE requires experts_implementation='grouped_mm'"
@@ -40,8 +39,11 @@ class RepSelectMOE(UnlearnTrainer):
         self.model.requires_grad_(False)  # train only modules that we specify
         self.base_trainable_params = []
         self.lora_params = []
-        for layer_num in range(len(self.model.model.layers)):
-            e = self.model.model.layers[layer_num].mlp.experts
+        for layer_num, layer in enumerate(self.model.model.layers):
+            if not hasattr(layer.mlp, "experts"):
+                logging.info(f"layer {layer_num} is a dense layer, skipping")
+                continue  # dense layer (e.g. layer 0 in DeepSeek-V2-Lite)
+            e = layer.mlp.experts
 
             for param in [e.gate_up_proj, e.down_proj]:
                 param.requires_grad = True
@@ -131,7 +133,7 @@ class RepSelectMOE(UnlearnTrainer):
         self.do_add_vecs = self.cfg.use_distribution == "forget"
         # forget_loss = label_logits(output.logits, f_batch["labels"])
         forget_loss = npo_saturating_loss(output, f_batch, self.cfg.npo_beta)
-        forget_loss.backward()  # retain graph for LoRA backward pass
+        forget_loss.backward()
         self.do_collapse = False
         self.do_add_vecs = False
 
@@ -158,32 +160,17 @@ class RepSelectMOE(UnlearnTrainer):
         if not (self.do_add_vecs or self.do_collapse):
             return
 
-        acts_sorted = module._acts.detach()  # (S, in_dim), stashed during forward
+        acts_sorted = module._acts.detach().clone()  # (S, in_dim), stashed in forward
         fused_param = module._fused_param[0]  # unwrap from list (hidden from nn.Module)
         offsets = module._offsets  # (num_experts,) cumulative counts
-        num_experts = offsets.shape[0]
         is_transposed = module._is_transposed
 
-        grads_sorted = grad_output[0]  # (S, out_dim)
+        grads_sorted = grad_output[0].clone()  # (S, out_dim)
         module._acts = None  # free reference
 
         token_mask = grads_sorted.norm(dim=-1) != 0
         # keep = keep & self.flat_token_mask[module._token_idx_sorted]
-        acts_sorted = acts_sorted[token_mask]
-        grads_sorted = grads_sorted[token_mask]
-
-        # Recompute offsets after filtering
-        # Build per-token expert_ids from cumulative offsets, then filter and recount
-        # NOTE: right=True is required in all bucketize calls
-        _num_tokens = token_mask.shape[0]
-        assert offsets[-1] == _num_tokens
-        expert_ids = pt.bucketize(
-            pt.arange(_num_tokens, device=token_mask.device), offsets, right=True
-        )
-        expert_ids = expert_ids[token_mask]
-        tokens_per_expert = pt.bincount(expert_ids, minlength=num_experts)
-        offsets = pt.cumsum(tokens_per_expert, dim=0, dtype=pt.int32)
-        assert offsets[-1] == acts_sorted.shape[0]
+        acts_sorted[~token_mask] = 0
 
         if self.do_add_vecs:
             module.act_collapser.add_vecs(acts_sorted, offsets)

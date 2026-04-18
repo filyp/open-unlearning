@@ -1,7 +1,6 @@
 model_args:
   pretrained_model_name_or_path: "Qwen/Qwen2.5-3B"
-  # for Qwen3, flash attention conflicts with right padding
-  attn_implementation: null
+  attn_implementation: 'flash_attention_2'
   torch_dtype: bfloat16
 tokenizer_args:
   pretrained_model_name_or_path: "Qwen/Qwen2.5-3B"

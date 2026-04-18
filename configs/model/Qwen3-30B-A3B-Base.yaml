@@ -3,6 +3,7 @@ model_args:
   # for Qwen3, flash attention conflicts with right padding
   attn_implementation: null
   torch_dtype: bfloat16
+  experts_implementation: "grouped_mm"
 tokenizer_args:
   pretrained_model_name_or_path: "Qwen/Qwen3-30B-A3B-Base"
 template_args:
