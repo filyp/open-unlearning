@@ -46,7 +46,7 @@ ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
 if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
-    ${common} trainer=RepSelect hydra/sweeper=RepSelect_highLR task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=retain trainer.handler=RepSelectMOE
+    ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=retain trainer.handler=RepSelectMOE
 else
     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=retain
 fi

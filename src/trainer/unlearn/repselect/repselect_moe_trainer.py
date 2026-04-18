@@ -32,6 +32,7 @@ class RepSelectMOE(UnlearnTrainer):
         logging.info(f"{self.recalc_every=}")
 
         assert self.args.gradient_accumulation_steps == 1  # we modify grads in-place
+        assert cfg.get("n_pcs", 0) % 8 == 0, "grouped_mm requires n_pcs divisible by 8"
         assert (
             getattr(self.model.config, "_experts_implementation", None) == "grouped_mm"
         ), "RepSelectMOE requires experts_implementation='grouped_mm'"
