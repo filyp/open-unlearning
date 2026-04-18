@@ -114,9 +114,7 @@ class RepSelect(UnlearnTrainer):
         self.use_lora = False
 
         self.batch_idx += 1
-        if (self.batch_idx % self.recalc_every == 0) and (
-            self.batch_idx <= 2 * self.recalc_every
-        ):
+        if self.batch_idx % self.recalc_every == 0:
             for module in model.modules():
                 if hasattr(module, "act_collapser"):
                     module.act_collapser.fit()
