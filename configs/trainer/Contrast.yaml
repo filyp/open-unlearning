@@ -1,0 +1,13 @@
+defaults:
+  - finetune
+
+handler: Contrast
+args:
+  optim: sgd
+  learning_rate: 0.001
+  lr_scheduler_type: constant
+  gradient_accumulation_steps: 1  # must be one, because Contrast modifies gradients in-place
+
+method_args:
+  cfg:
+    npo_beta: 0.1
