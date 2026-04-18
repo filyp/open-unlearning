@@ -88,7 +88,7 @@ class BatchedInvSmallCovCollapser:
             self.cov_P = pt.zeros_like(self.P)
 
         Y = pt._grouped_mm(vecs, self.P, offs=offsets)  # (S, k)
-        self.cov_P += pt._grouped_mm(vecs.mT.contiguous(), Y, offs=offsets)  # (E, D, k)
+        self.cov_P += pt._grouped_mm(vecs.mT, Y, offs=offsets)  # (E, D, k)
 
     def fit(self):
         k = self.PCs_to_use
@@ -124,7 +124,7 @@ class BatchedInvSmallCovCollapser:
 
         x_proj = pt._grouped_mm(vecs_sorted, self.P, offs=offsets)  # (S, k)
         correction_proj = x_proj - pt._grouped_mm(x_proj, self.inv_cov, offs=offsets)
-        _up_proj = self.P.mT.contiguous()
+        _up_proj = self.P.mT
         correction = pt._grouped_mm(correction_proj, _up_proj, offs=offsets)  # (S, D)
         mahal_dirs = vecs_sorted - correction
 
@@ -254,7 +254,7 @@ class BatchedSVDCollapser:
         proj_diff = projected - projected / eig_val_tok
 
         # Back-project: (S, k) × (E, k, D) → (S, D)
-        eig_vec_T = self.eig_vec.mT.contiguous()
+        eig_vec_T = self.eig_vec.mT
         correction = pt._grouped_mm(proj_diff, eig_vec_T, offs=offsets)
         mahal_dirs = centered - correction
 
