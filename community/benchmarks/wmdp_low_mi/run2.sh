@@ -2,9 +2,9 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-model=gemma-4-E4B
+# model=gemma-4-E4B
 # model=Llama-3.1-8B
-# model=Qwen3-30B-A3B-Base
+model=DeepSeek-V2-Lite
 
 wmdp_domain='bio'
 # wmdp_domain='cyber'
@@ -39,7 +39,11 @@ ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
 ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget
+if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
+    ${common} trainer=RepSelect hydra/sweeper=RepSelect_highLR task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
+else
+    ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget
+fi
 
 # # RepSelect ablations - todo, adapt the sweeper configs
 # ${common} trainer=RepSelect hydra/sweeper=RepSelect_no_lora '~trainer.method_args.cfg.lora_lr' task_name=${prefix}_RepSelect_no_lora trainer.method_args.cfg.use_distribution=forget
@@ -63,3 +67,5 @@ ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelec
 # so actually, for gemma use A100 (80GB)
 
 # for Llama-3.1-8B use RTX PRO 6000
+
+# for DeepSeek-V2-Lite use B200 (180GB)
