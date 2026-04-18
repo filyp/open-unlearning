@@ -2,12 +2,17 @@
 
 # sleep 5  # needed to avoid verda deploying blank instances?
 
-curl -X POST https://tasks.datacrunch.io/open-unlearning/run \
-  -H "Authorization: Bearer $(cat verda_token.txt)" \
-  -H "Content-Type: application/json" \
-  -d "{\"command\": \"$*\"}"
+# curl -X POST https://tasks.datacrunch.io/open-unlearning/run \
+#   -H "Authorization: Bearer $(cat verda_token.txt)" \
+#   -H "Content-Type: application/json" \
+#   -d "{\"command\": \"$*\"}"
 
 # curl -X POST https://tasks.datacrunch.io/open-unlearning2/run \
 #   -H "Authorization: Bearer $(cat verda_token.txt)" \
 #   -H "Content-Type: application/json" \
 #   -d "{\"command\": \"$*\"}"
+
+curl -X POST https://tasks.datacrunch.io/open-unlearning3/run \
+  -H "Authorization: Bearer $(cat verda_token.txt)" \
+  -H "Content-Type: application/json" \
+  -d "{\"command\": \"$*\"}"
