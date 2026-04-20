@@ -19,7 +19,7 @@ def _prep_batch(batch):
     return {k: batch[k] for k in ("input_ids", "attention_mask", "labels")}
 
 
-class WGradSVDOneShot(UnlearnTrainer):
+class RepSelectSimple(UnlearnTrainer):
     """
     Single-shot variant of WGradSVD, over MLP gate/up/down projections:
     1. Adversarial LoRA pretrain: freeze base, SGD-descent LoRA on forget NLL.

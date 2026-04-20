@@ -22,7 +22,7 @@ from trainer.unlearn.repselect.disrcollapse_trainer import DisrCollapse
 from trainer.unlearn.repselect.contrast_trainer import Contrast
 from trainer.unlearn.repselect.wgrad_svd_trainer import WGradSVD
 from trainer.unlearn.repselect.wgrad_svd_joint_trainer import WGradSVDJoint
-from trainer.unlearn.repselect.wgrad_svd_oneshot_trainer import WGradSVDOneShot
+from trainer.unlearn.repselect.repselect_simple import RepSelectSimple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -112,4 +112,4 @@ _register_trainer(DisrCollapse)
 _register_trainer(Contrast)
 _register_trainer(WGradSVD)
 _register_trainer(WGradSVDJoint)
-_register_trainer(WGradSVDOneShot)
+_register_trainer(RepSelectSimple)
