@@ -176,6 +176,22 @@ class WeightGradSVDCollapser:
         mahal_dirs = vecs - proj_diff @ eig_vec.T
         return mahal_dirs.to(original_dtype)
 
+    def collapse_joint(self, acts: pt.Tensor, grads: pt.Tensor) -> pt.Tensor:
+        """
+        Joint collapse: rescale each joint PC direction of this batch's weight gradient
+        by 1/eig_val, without ever materializing the correction in the full (D_out, D_in)
+        space from dense projections. Returns the corrected weight gradient (D_out, D_in).
+        """
+        acts = acts.float()
+        grads = grads.float()
+        a_proj = acts @ self.V  # (t, k)
+        g_proj = grads @ self.U  # (t, k)
+        strength = (a_proj * g_proj).sum(0)  # (k,)
+        correction_strength = strength - strength / self.eig_val  # (k,)
+        wg = grads.mT @ acts  # (D_out, D_in)
+        correction = (self.U * correction_strength) @ self.V.T  # (D_out, D_in)
+        return wg - correction
+
 ########################################################################################
 
 
