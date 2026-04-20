@@ -3,14 +3,10 @@ defaults:
 
 handler: WGradSVDOneShot
 args:
-  optim: sgd
-  learning_rate: 0.2
-  lr_scheduler_type: constant
-  gradient_accumulation_steps: 1  # must be one, we set weight.grad directly
+  learning_rate: 0.01
 
 method_args:
   cfg:
     n_pcs: 400
-    npo_beta: 0.1
     lora_rank: 8
-    lora_lr: 0.01
+    lora_lr: 0.02
