@@ -132,6 +132,50 @@ class BatchedInvSmallCovCollapser:
         return mahal_dirs.to(original_dtype)
 
 
+class WeightGradSVDCollapser:
+    """
+    Accumulates the outer-product weight gradient (grads.T @ acts) across an epoch,
+    then SVDs it to get a joint activation/gradient basis in one shot.
+    U (D_out, k) is the gradient-side basis, V (D_in, k) is the activation-side basis,
+    and the singular values S (normalized so min=1) are shared between the two sides.
+    Collapse is SVDCollapser-style, applied separately to acts (with V) and grads (with U).
+    """
+
+    grad_acc: pt.Tensor  # (D_out, D_in)
+    U: pt.Tensor  # (D_out, k)
+    V: pt.Tensor  # (D_in, k)
+    eig_val: pt.Tensor  # (k,) = S / S.min()
+
+    def __init__(self, PCs_to_use: int):
+        self.PCs_to_use = PCs_to_use
+
+    def add_weight_grad(self, acts: pt.Tensor, grads: pt.Tensor):
+        acts = acts.float()
+        grads = grads.float()
+        if not hasattr(self, "grad_acc"):
+            D_in = acts.shape[-1]
+            D_out = grads.shape[-1]
+            self.grad_acc = pt.zeros(D_out, D_in, dtype=pt.float32, device=acts.device)
+        self.grad_acc += grads.mT @ acts
+
+    def fit(self):
+        U, S, V = pt.svd_lowrank(self.grad_acc, q=self.PCs_to_use)
+        self.U = U  # (D_out, k)
+        self.V = V  # (D_in, k)
+        self.eig_val = S / S.min()
+        self.grad_acc.zero_()
+
+    def collapse_vecs(self, vecs: pt.Tensor, side: str) -> pt.Tensor:
+        assert side in ["acts", "grads"]
+        eig_vec = self.V if side == "acts" else self.U
+
+        original_dtype = vecs.dtype
+        vecs = vecs.float()
+        projected = vecs @ eig_vec  # (N, k)
+        proj_diff = projected - projected / self.eig_val  # assumes eig_val.min() == 1
+        mahal_dirs = vecs - proj_diff @ eig_vec.T
+        return mahal_dirs.to(original_dtype)
+
 ########################################################################################
 
 

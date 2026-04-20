@@ -1,0 +1,15 @@
+defaults:
+  - finetune
+
+handler: WGradSVD
+args:
+  optim: sgd
+  learning_rate: 0.2
+  lr_scheduler_type: constant
+  gradient_accumulation_steps: 1  # must be one, because WGradSVD modifies gradients in-place
+
+method_args:
+  cfg:
+    n_pcs: 400
+    npo_beta: 0.1
+    use_distribution: forget  # forget | retain

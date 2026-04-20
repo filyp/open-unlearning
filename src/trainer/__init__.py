@@ -20,6 +20,7 @@ from trainer.unlearn.repselect.repselect_cohen_trainer import RepSelectCohen
 from trainer.unlearn.repselect.repselect_moe_trainer import RepSelectMOE
 from trainer.unlearn.repselect.disrcollapse_trainer import DisrCollapse
 from trainer.unlearn.repselect.contrast_trainer import Contrast
+from trainer.unlearn.repselect.wgrad_svd_trainer import WGradSVD
 import logging
 
 logger = logging.getLogger(__name__)
@@ -107,3 +108,4 @@ _register_trainer(RepSelectCohen)
 _register_trainer(RepSelectMOE)
 _register_trainer(DisrCollapse)
 _register_trainer(Contrast)
+_register_trainer(WGradSVD)
