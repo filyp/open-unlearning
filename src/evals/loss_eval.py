@@ -20,7 +20,6 @@ class LossEvaluator:
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
-        model.zero_grad(set_to_none=True)
         trainer = kwargs["trainer"]
 
         eval_batches = [
@@ -45,7 +44,6 @@ class ProbabilityEvaluator:
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model.eval()
-        model.zero_grad(set_to_none=True)
         trainer = kwargs["trainer"]
 
         eval_batches = [
@@ -58,5 +56,5 @@ class ProbabilityEvaluator:
         for batch in eval_batches:
             results = evaluate_probability(model, batch)
             probs.extend(r["prob"] for r in results)
-        print("answer probabilities: ", [f"{p:.3f}" for p in probs])
+        # print("answer probabilities: ", [f"{p:.3f}" for p in probs])
         return {f"{self.dataset_name}_prob": sum(probs) / len(probs)}
