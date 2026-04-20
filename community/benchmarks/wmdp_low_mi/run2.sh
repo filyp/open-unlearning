@@ -30,19 +30,26 @@ run() {
 
 ###############################################################
 
-${reference} trainer=GradDiff task_name=${prefix}_reference
+# ${reference} trainer=GradDiff task_name=${prefix}_reference
 
-# Main experiments
-${common} trainer=GradDiff hydra/sweeper=GradDiff task_name=${prefix}_GradDiff
-${common} trainer=NPO hydra/sweeper=NPO task_name=${prefix}_NPO
-${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
-${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
-${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
+# # Main experiments
+# ${common} trainer=GradDiff hydra/sweeper=GradDiff task_name=${prefix}_GradDiff
+# ${common} trainer=NPO hydra/sweeper=NPO task_name=${prefix}_NPO
+# ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
+# ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
+# ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
+# if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
+# else
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget
+# fi
+
+# ABLATIONS
 if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
-    ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
+    ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_retain trainer.method_args.cfg.use_distribution=retain trainer.handler=RepSelectMOE
 else
-    ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget
+    ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect_retain trainer.method_args.cfg.use_distribution=retain
 fi
 
 # # RepSelect ablations - todo, adapt the sweeper configs
