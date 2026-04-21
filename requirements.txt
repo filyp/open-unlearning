@@ -26,3 +26,5 @@ psycopg2-binary==2.9.11
 hydra-optuna-sweeper @ git+https://github.com/dahlem/hydra.git@feature/upgrade-optuna-4.2.1#subdirectory=plugins/hydra_optuna_sweeper
 python-dotenv==1.2.1
 peft==0.18.1
+# for Qwen3.5 speedup:
+flash-linear-attention==0.4.2

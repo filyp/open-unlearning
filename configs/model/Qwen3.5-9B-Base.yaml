@@ -1,6 +1,7 @@
 model_args:
   pretrained_model_name_or_path: "Qwen/Qwen3.5-9B-Base"
-  attn_implementation: 'flash_attention_2'
+  # attn_implementation: 'flash_attention_2'
+  attn_implementation: null  # flash attn is supported, but for our short texts it can actually slow us down by >50%
   torch_dtype: bfloat16
 tokenizer_args:
   pretrained_model_name_or_path: "Qwen/Qwen3.5-9B-Base"
