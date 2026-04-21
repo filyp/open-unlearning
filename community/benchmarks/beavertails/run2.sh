@@ -94,3 +94,5 @@ ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_R
 
 # note: for Llama-3.1-8B-Instruct, on NPO, UNDIAL, RMU 96GB VRAM is not enough, so these two were run on H200 with 141GB
 # note: for DeepSeek-V2-Lite, NPO OOMed on B200, so for this run, we used trainer.args.per_device_train_batch_size=6 instead of 8
+#
+# v7.3_Qwen3.5-9B_animal_abuse_NPO had to be run with B200 because of OOM

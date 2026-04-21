@@ -89,10 +89,14 @@ def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
         try:
             study = optuna.load_study(study_name=actual, storage=storage)
         except KeyError:
-            import warnings
-            warnings.warn(f"Study not found: {actual} (method={method}); skipping")
-            studies[method] = None
-            continue
+            # # soft, for temporary plots:
+            # import warnings
+            # warnings.warn(f"Study not found: {actual} (method={method}); skipping")
+            # studies[method] = None
+            # continue
+
+            # hard, for final plots:
+            raise ValueError(f"Study not found: {actual} (method={method})")
         frozen = SimpleNamespace(trials=list(study.trials))
         with open(cache_file, "wb") as f:
             pickle.dump(frozen, f)
