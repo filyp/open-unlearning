@@ -2,11 +2,8 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-# model=gemma-4-E4B
-# model=Llama-3.1-8B
-model=DeepSeek-V2-Lite
-
-# model=Llama-3.1-8B-Instruct
+# gemma-4-E4B, Llama-3.1-8B, DeepSeek-V2-Lite
+model=$1
 
 category='animal_abuse'
 # category='terrorism,organized_crime'
@@ -46,7 +43,12 @@ run() {
 # ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 # ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-${common} trainer=RepSelectSimple hydra/sweeper=RepSelectSimple task_name=${prefix}_RepSelectSimple
+# MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we require to shift the range
+case "${model}" in
+  DeepSeek-V2-Lite|Qwen3-30B-A3B) sweeper=RepSelectSimpleMoE ;;
+  *)                              sweeper=RepSelectSimple ;;
+esac
+${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_RepSelectSimple2
 
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
 #     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE

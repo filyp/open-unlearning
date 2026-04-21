@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO)
 
 def _collapse(mat: pt.Tensor, eig_vec: pt.Tensor, eig_val: pt.Tensor) -> pt.Tensor:
     projected = mat @ eig_vec
-    proj_diff = projected - projected / eig_val
-    return mat - proj_diff @ eig_vec.T
+    proj_diff = projected - projected / eig_val.unsqueeze(-2)
+    return mat - proj_diff @ eig_vec.mT
 
 
 def _prep_batch(batch):
@@ -30,22 +30,35 @@ class RepSelectSimple(UnlearnTrainer):
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
-    # todo implement moe support
-    def __init__(self, cfg, *args, **kwargs):
+    def __init__(self, n_pcs, lora_lr, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.cfg = cfg
-        assert not hasattr(self.model.model.layers[0].mlp, "experts")
+        self.n_pcs = n_pcs
+        self.lora_lr = lora_lr
 
-        lora_config = LoraConfig(
-            r=cfg.lora_rank,
-            target_modules=["gate_proj", "up_proj", "down_proj"],
-        )
-        self.model = get_peft_model(self.model, lora_config)
+        is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
+        if is_moe:
+            lora_config = LoraConfig(target_parameters=["mlp.experts.gate_up_proj"])
+            self.model = get_peft_model(self.model, lora_config)
+            self.base_trainable_params = [
+                layer.mlp.experts.base_layer.gate_up_proj
+                for layer in self.model.base_model.model.model.layers
+                if hasattr(layer.mlp, "experts")
+            ]
+        else:
+            lora_config = LoraConfig(
+                target_modules=["gate_proj", "up_proj", "down_proj"]
+            )
+            self.model = get_peft_model(self.model, lora_config)
+            self.base_trainable_params = [
+                module.base_layer.weight
+                for layer in self.model.base_model.model.model.layers
+                for module in [
+                    layer.mlp.gate_proj,
+                    layer.mlp.up_proj,
+                    layer.mlp.down_proj,
+                ]
+            ]
 
-        self.base_trainable_params = []
-        for layer in self.model.base_model.model.model.layers:
-            for module in [layer.mlp.gate_proj, layer.mlp.up_proj, layer.mlp.down_proj]:
-                self.base_trainable_params.append(module.base_layer.weight)
         self.lora_params = [p for n, p in self.model.named_parameters() if "lora_" in n]
 
     def train(self, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None):
@@ -65,7 +78,7 @@ class RepSelectSimple(UnlearnTrainer):
             output = self.model(**f_batch)
             output.loss.backward()
             for p in self.lora_params:
-                p.data -= self.cfg.lora_lr * p.grad
+                p.data -= self.lora_lr * p.grad
 
         # one epoch: accumulate forget weight-gradient with LoRA active
         self.model.zero_grad(set_to_none=True)
@@ -83,8 +96,8 @@ class RepSelectSimple(UnlearnTrainer):
         # SVD and collapse
         for weight in self.base_trainable_params:
             raw_grad = weight.grad.float()
-            U, S, V = pt.svd_lowrank(raw_grad, q=self.cfg.n_pcs)
-            eig_val = S / S.min()
+            U, S, V = pt.svd_lowrank(raw_grad, q=self.n_pcs)
+            eig_val = S / S.amin(dim=-1, keepdim=True)
             filtered = _collapse(raw_grad, V, eig_val)  # filter D_in side
             filtered = _collapse(filtered.mT, U, eig_val).mT  # filter D_out side
             weight.filtered_grad = filtered.to(weight.dtype)

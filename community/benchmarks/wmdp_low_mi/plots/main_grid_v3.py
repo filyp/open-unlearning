@@ -34,7 +34,7 @@ titles_dict = {
     "RepSelect_retain": "RepSelect Retain",
     "RepSelect_no_lora": "RepSelect (no LoRA)",
     # "RepSelect_no_pcs": "RepSelect (no PCs)",
-    "RepSelectSimple": "RepSelect Simple",
+    "RepSelectSimple2": "RepSelect Simple",
 }
 
 # Canonical study name -> actual name in Optuna (for the weirdly-named runs).

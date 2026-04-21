@@ -204,3 +204,4 @@ community/benchmarks/beavertails/contrast_flagged.json
 community/benchmarks/beavertails/contrast.jsonl
 .env.json
 verda_token.txt
+top_runner.sh

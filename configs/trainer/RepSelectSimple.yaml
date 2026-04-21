@@ -3,10 +3,8 @@ defaults:
 
 handler: RepSelectSimple
 args:
-  learning_rate: 0.01
+  learning_rate: 0.05
 
 method_args:
-  cfg:
-    n_pcs: 400
-    lora_rank: 8
-    lora_lr: 0.01
+  n_pcs: 500
+  lora_lr: 0.01
