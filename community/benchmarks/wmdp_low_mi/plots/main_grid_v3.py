@@ -93,15 +93,17 @@ def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
             warnings.warn(f"Study not found: {actual} (method={method}); skipping")
             studies[method] = None
             continue
+        frozen = SimpleNamespace(trials=list(study.trials))
+        with open(cache_file, "wb") as f:
+            pickle.dump(frozen, f)
+        studies[method] = frozen
+
+    for study in studies.values():
         n_complete = sum(
             1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         )
         print(f"  {method}: {n_complete} completed trials")
         assert n_complete == 30
-        frozen = SimpleNamespace(trials=list(study.trials))
-        with open(cache_file, "wb") as f:
-            pickle.dump(frozen, f)
-        studies[method] = frozen
     return studies
 
 
