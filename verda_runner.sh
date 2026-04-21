@@ -8,6 +8,8 @@ if [[ "$*" == *DeepSeek*RepSelect* || "$*" == *RepSelect*DeepSeek* ]]; then
   URL="https://tasks.datacrunch.io/open-unlearning3/run"  # H200 141GB
 elif [[ "$*" == *DeepSeek* ]]; then
   URL="https://tasks.datacrunch.io/open-unlearning/run"  # B200 180GB
+elif [[ "$*" == *Qwen3.5-9B* ]]; then
+  URL="https://tasks.datacrunch.io/open-unlearning3/run"  # H200 141GB
 else
   URL="https://tasks.datacrunch.io/open-unlearning2/run"  # RTX PRO 6000 96GB
 fi

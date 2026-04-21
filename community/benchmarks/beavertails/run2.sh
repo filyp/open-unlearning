@@ -2,7 +2,7 @@
 
 # note, experiments were done with adamw_8bit as the default optimizer in finetune.yaml
 
-# gemma-4-E4B, Llama-3.1-8B, DeepSeek-V2-Lite
+# gemma-4-E4B, Llama-3.1-8B, DeepSeek-V2-Lite, Qwen3.5-9B
 model=$1
 
 category='animal_abuse'
@@ -34,16 +34,16 @@ run() {
 
 ###############################################################
 
-# ${reference} trainer=GradDiff task_name=${prefix}_reference
+${reference} trainer=GradDiff task_name=${prefix}_reference
 
-# # Main experiments
-# ${common} trainer=GradDiff hydra/sweeper=GradDiff task_name=${prefix}_GradDiff
-# ${common} trainer=NPO hydra/sweeper=NPO task_name=${prefix}_NPO
-# ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
-# ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
-# ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
+# Main experiments
+${common} trainer=GradDiff hydra/sweeper=GradDiff task_name=${prefix}_GradDiff
+${common} trainer=NPO hydra/sweeper=NPO task_name=${prefix}_NPO
+${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
+${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
+${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-# MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we require to shift the range
+# MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we need to shift the range
 case "${model}" in
   DeepSeek-V2-Lite|Qwen3-30B-A3B) sweeper=RepSelectSimpleMoE ;;
   *)                              sweeper=RepSelectSimple ;;

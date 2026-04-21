@@ -1,0 +1,8 @@
+model_args:
+  pretrained_model_name_or_path: "Qwen/Qwen3.5-9B-Base"
+  attn_implementation: 'flash_attention_2'
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "Qwen/Qwen3.5-9B-Base"
+template_args:
+  apply_chat_template: false
