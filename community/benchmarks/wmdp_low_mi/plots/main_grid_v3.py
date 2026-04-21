@@ -1,5 +1,8 @@
 # %%
 import os
+import pickle
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -7,25 +10,60 @@ import numpy as np
 import optuna
 from scipy import stats
 
+CACHE_DIR = Path(__file__).parent / ".study_cache"
+CACHE_DIR.mkdir(exist_ok=True)
+
 plt.style.use("default")
 plt.rcParams["font.size"] = 10
 plt.rcParams["font.family"] = "Times New Roman"
 
 
 # === CELL 1: Load studies (slow, run once) ===
-def get_storage():
-    """Get Optuna storage from environment variable."""
-    storage_url = os.environ.get("OPTUNA_STORAGE_URL")
-    if storage_url is None:
-        raise ValueError("OPTUNA_STORAGE_URL environment variable not set")
-    return storage_url
+
+storage = os.environ.get("OPTUNA_STORAGE_URL")
+assert storage is not None, "OPTUNA_STORAGE_URL environment variable not set"
+
+# Method names (keys) and display labels (values)
+titles_dict = {
+    "SimNPO": "SimNPO",
+    "RMU": "RMU",
+    "GradDiff": "GradDiff",
+    "UNDIAL": "UNDIAL",
+    "NPO": "NPO",
+    "RepSelect_forget": "RepSelect",
+    "RepSelect_retain": "RepSelect Retain",
+    "RepSelect_no_lora": "RepSelect (no LoRA)",
+    # "RepSelect_no_pcs": "RepSelect (no PCs)",
+    "RepSelectSimple": "RepSelect Simple",
+}
+
+# Canonical study name -> actual name in Optuna (for the weirdly-named runs).
+# Canonical scheme: always v5.3/v7.3, RepSelect always carries explicit _forget.
+study_remap = {
+    # Llama bio: actual runs use v5 (no .3)
+    "v5.3_Llama-3.1-8B_bio_GradDiff":         "v5_Llama-3.1-8B_bio_GradDiff",
+    "v5.3_Llama-3.1-8B_bio_NPO":              "v5_Llama-3.1-8B_bio_NPO",
+    "v5.3_Llama-3.1-8B_bio_RMU":              "v5_Llama-3.1-8B_bio_RMU",
+    "v5.3_Llama-3.1-8B_bio_SimNPO":           "v5_Llama-3.1-8B_bio_SimNPO",
+    "v5.3_Llama-3.1-8B_bio_UNDIAL":           "v5_Llama-3.1-8B_bio_UNDIAL",
+    # Llama animal_abuse: actual runs use v7 (no .3) for non-RepSelect methods
+    "v7.3_Llama-3.1-8B_animal_abuse_GradDiff": "v7_Llama-3.1-8B_animal_abuse_GradDiff",
+    "v7.3_Llama-3.1-8B_animal_abuse_NPO":      "v7_Llama-3.1-8B_animal_abuse_NPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_RMU":      "v7_Llama-3.1-8B_animal_abuse_RMU",
+    "v7.3_Llama-3.1-8B_animal_abuse_SimNPO":   "v7_Llama-3.1-8B_animal_abuse_SimNPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_UNDIAL":   "v7_Llama-3.1-8B_animal_abuse_UNDIAL",
+    # Bio RepSelect runs are bare (no _forget suffix)
+    "v5.3_Llama-3.1-8B_bio_RepSelect_forget": "v5_Llama-3.1-8B_bio_RepSelect",
+    "v5.3_gemma-4-E4B_bio_RepSelect_forget":      "v5.3_gemma-4-E4B_bio_RepSelect",
+    "v5.3_DeepSeek-V2-Lite_bio_RepSelect_forget": "v5.3_DeepSeek-V2-Lite_bio_RepSelect",
+    # animal_abuse RepSelect retain runs are bare (no _retain suffix)
+    "v7.3_Llama-3.1-8B_animal_abuse_RepSelect_retain":     "v7_Llama-3.1-8B_animal_abuse_RepSelect",
+    "v7.3_gemma-4-E4B_animal_abuse_RepSelect_retain":      "v7.3_gemma-4-E4B_animal_abuse_RepSelect",
+    "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect_retain": "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect",
+}
 
 
-def load_studies(
-    study_pattern: str,
-    method_names: List[str],
-    storage: str,
-) -> Dict[str, optuna.Study]:
+def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
     """
     Load Optuna studies for each method.
 
@@ -38,60 +76,39 @@ def load_studies(
         Dict mapping method name to Study object
     """
     studies = {}
-    for method in method_names:
-        study_name = study_pattern.format(method)
-        study = optuna.load_study(study_name=study_name, storage=storage)
+    for method in titles_dict.keys():
+        canonical = study_pattern.format(method)
+        actual = study_remap.get(canonical, canonical)
+        cache_file = CACHE_DIR / f"{actual}.pkl"
+        if cache_file.exists():
+            print(f"  loading cached: {cache_file.name}")
+            with open(cache_file, "rb") as f:
+                studies[method] = pickle.load(f)
+            continue
+
+        try:
+            study = optuna.load_study(study_name=actual, storage=storage)
+        except KeyError:
+            import warnings
+            warnings.warn(f"Study not found: {actual} (method={method}); skipping")
+            studies[method] = None
+            continue
         n_complete = sum(
             1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         )
         print(f"  {method}: {n_complete} completed trials")
         assert n_complete == 30
-        studies[method] = study
+        frozen = SimpleNamespace(trials=list(study.trials))
+        with open(cache_file, "wb") as f:
+            pickle.dump(frozen, f)
+        studies[method] = frozen
     return studies
-
-
-storage = get_storage()
-
-# Method names from run2.sh
-method_names = [
-    "GradDiff",
-    "NPO",
-    "RMU",
-    "SimNPO",
-    "UNDIAL",
-    "RepSelect",
-]
-
-llama_bio_studies = load_studies(
-    study_pattern="v5_Llama-3.1-8B_bio_{}",
-    method_names=method_names,
-    storage=storage,
-)
-
-llama_beavertails_studies = load_studies(
-    study_pattern="v7_Llama-3.1-8B_animal_abuse_{}",
-    method_names=method_names,
-    storage=storage,
-)
-
-gemma_bio_studies = load_studies(
-    study_pattern="v5.3_gemma-4-E4B_bio_{}",
-    method_names=method_names,
-    storage=storage,
-)
-
-gemma_beavertails_studies = load_studies(
-    study_pattern="v7.3_gemma-4-E4B_animal_abuse_{}",
-    method_names=method_names,
-    storage=storage,
-)
 
 
 # %%
 def get_stats_from_studies(
-    studies: Dict[str, optuna.Study],
-    reference: float,
-    top_n: int = 5,
+    study_pattern: str,
+    top_n: int = 10,
 ) -> Tuple[Dict[str, Tuple[float, float, float]], float]:
     """
     Get mean and SEM of top N trials for each study, plus the baseline.
@@ -107,11 +124,16 @@ def get_stats_from_studies(
     """
     from collections import Counter
 
+    studies = load_studies(study_pattern)
+    reference = references[study_pattern.format("reference")]
+
     method_stats = {}
     all_values = []  # Collect ALL values from all studies for sanity check
 
     print("Method stats (top {} runs):".format(top_n))
     for method, study in studies.items():
+        if study is None:
+            continue
         completed_trials = [
             t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         ]
@@ -148,27 +170,23 @@ def get_stats_from_studies(
 
 
 def plot_grid(
-    rows: List[dict],
-    method_names: List[str],
+    rows: List[list],
     figsize: Tuple[float, float],
     col_titles: List[str] = None,
     row_titles: List[str] = None,
-    titles_dict: Dict[str, str] = None,
     save_path: str = None,
     gap_before: List[str] = None,
 ):
     """
     Create a grid of horizontal bar plots. Each row is a model, columns are benchmarks.
 
-    Each entry in `rows` is a dict with keys:
-        left_stats, right_stats, left_baseline, right_baseline
+    Each entry in `rows` is a list of (method_stats, baseline) tuples, one per column.
 
     Bars extend left from baseline (lower = better = longer bar).
     """
-    if titles_dict is None:
-        titles_dict = {m: m for m in method_names}
     if gap_before is None:
         gap_before = []
+    method_names = list(titles_dict.keys())
 
     nrows = len(rows)
     fig, axes = plt.subplots(nrows, 2, figsize=figsize)
@@ -179,10 +197,9 @@ def plot_grid(
     method_to_color = {m: colors[i % len(colors)] for i, m in enumerate(method_names)}
 
     for row_idx, row in enumerate(rows):
-        left_stats = row["left_stats"]
-        right_stats = row["right_stats"]
+        # Keep all methods present in at least one column; missing entries render as empty bars
         common_methods = [
-            m for m in method_names if m in left_stats and m in right_stats
+            m for m in method_names if any(m in stats for stats, _ in row)
         ]
 
         # Y positions with optional gaps
@@ -195,16 +212,17 @@ def plot_grid(
                 current_y += 0.5
         y_positions = list(reversed(y_positions))
 
-        for col_idx, (method_stats, baseline) in enumerate(
-            [
-                (left_stats, row["left_baseline"]),
-                (right_stats, row["right_baseline"]),
-            ]
-        ):
+        for col_idx, (method_stats, baseline) in enumerate(row):
             ax = axes[row_idx][col_idx]
-            means = [method_stats[m][0] * 100 for m in common_methods]
-            stds = [method_stats[m][2] * 100 for m in common_methods]
             baseline_pct = baseline * 100
+            means = [
+                method_stats[m][0] * 100 if m in method_stats else baseline_pct
+                for m in common_methods
+            ]
+            stds = [
+                method_stats[m][2] * 100 if m in method_stats else 0.0
+                for m in common_methods
+            ]
             widths = [m - baseline_pct for m in means]
 
             ax.barh(
@@ -263,78 +281,36 @@ def plot_grid(
 # Reference values from dedicated reference runs in wandb
 # (no epochs of unlearning, i.e. just relearning from the base model)
 references = {
-    "v5_Llama-3.1-8B_bio_reference": 0.16739,
-    "v7_Llama-3.1-8B_animal_abuse_reference": 0.20943,
+    "v5.3_Llama-3.1-8B_bio_reference": 0.16739,  # taken from the v5_ version
+    "v7.3_Llama-3.1-8B_animal_abuse_reference": 0.20943,  # taken from the v7_ version
     "v5.3_gemma-4-E4B_bio_reference": 0.15398,
     "v7.3_gemma-4-E4B_animal_abuse_reference": 0.19647,
     "v7.3_Llama-3.1-8B-Instruct_animal_abuse_reference": 0.20335,
-}
-
-
-top_n = 5
-
-# Get stats from studies
-print("\nLlama WMDP-Bio:")
-llama_bio_stats, llama_bio_baseline = get_stats_from_studies(
-    llama_bio_studies,
-    reference=references["v5_Llama-3.1-8B_bio_reference"],
-    top_n=top_n,
-)
-
-print("\nLlama BeaverTails (animal_abuse):")
-llama_bt_stats, llama_bt_baseline = get_stats_from_studies(
-    llama_beavertails_studies,
-    reference=references["v7_Llama-3.1-8B_animal_abuse_reference"],
-    top_n=top_n,
-)
-
-print("\nGemma WMDP-Bio:")
-gemma_bio_stats, gemma_bio_baseline = get_stats_from_studies(
-    gemma_bio_studies,
-    reference=references["v5.3_gemma-4-E4B_bio_reference"],
-    top_n=top_n,
-)
-
-print("\nGemma BeaverTails (animal_abuse):")
-gemma_bt_stats, gemma_bt_baseline = get_stats_from_studies(
-    gemma_beavertails_studies,
-    reference=references["v7.3_gemma-4-E4B_animal_abuse_reference"],
-    top_n=top_n,
-)
-
-# Display labels for methods
-titles_dict = {
-    "SimNPO": "SimNPO",
-    "RMU": "RMU",
-    "GradDiff": "GradDiff",
-    "UNDIAL": "UNDIAL",
-    "NPO": "NPO",
-    "RepSelect": "RepSelect",
+    "v7.3_DeepSeek-V2-Lite_animal_abuse_reference": 0.21067,
+    "v5.3_DeepSeek-V2-Lite_bio_reference": 0.063342,
 }
 
 # %%
 
-# Create 2x2 grid: rows = models, columns = benchmarks
+# Create grid: rows = models, columns = benchmarks
 fig = plot_grid(
     rows=[
-        dict(
-            left_stats=llama_bio_stats,
-            right_stats=llama_bt_stats,
-            left_baseline=llama_bio_baseline,
-            right_baseline=llama_bt_baseline,
-        ),
-        dict(
-            left_stats=gemma_bio_stats,
-            right_stats=gemma_bt_stats,
-            left_baseline=gemma_bio_baseline,
-            right_baseline=gemma_bt_baseline,
-        ),
+        [
+            get_stats_from_studies("v5.3_Llama-3.1-8B_bio_{}"),
+            get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
+        ],
+        [
+            get_stats_from_studies("v5.3_gemma-4-E4B_bio_{}"),
+            get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
+        ],
+        [
+            get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
+            get_stats_from_studies("v7.3_DeepSeek-V2-Lite_animal_abuse_{}"),
+        ],
     ],
-    method_names=list(titles_dict.keys()),
     col_titles=["WMDP - Bio", "BeaverTails - Animal Abuse"],
-    row_titles=["Llama 3.1 8B", "Gemma 4 E4B"],
-    figsize=(5.5, 3.6),
-    titles_dict=titles_dict,
+    row_titles=["Llama 3.1 8B", "Gemma 4 E4B", "DeepSeek-V2-Lite"],
+    figsize=(5.5, 5.4),
     save_path="main_grid_v3.pdf",
 )
 

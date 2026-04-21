@@ -42,9 +42,9 @@ run() {
 ${common} trainer=RepSelectSimple hydra/sweeper=RepSelectSimple task_name=${prefix}_RepSelectSimple
 
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
 # else
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect trainer.method_args.cfg.use_distribution=forget
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget
 # fi
 
 # # ABLATIONS
