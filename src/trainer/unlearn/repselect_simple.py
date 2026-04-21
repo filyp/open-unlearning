@@ -1,4 +1,4 @@
-# python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=WGradSVDOneShot task_name=SAMPLE_UNLEARN
+# python src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepSelectSimple task_name=SAMPLE_UNLEARN
 import logging
 
 import torch as pt

@@ -22,7 +22,7 @@ from trainer.unlearn.repselect.disrcollapse_trainer import DisrCollapse
 from trainer.unlearn.repselect.contrast_trainer import Contrast
 from trainer.unlearn.repselect.wgrad_svd_trainer import WGradSVD
 from trainer.unlearn.repselect.wgrad_svd_joint_trainer import WGradSVDJoint
-from trainer.unlearn.repselect.repselect_simple import RepSelectSimple
+from trainer.unlearn.repselect_simple import RepSelectSimple
 import logging
 
 logger = logging.getLogger(__name__)
