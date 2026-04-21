@@ -48,7 +48,20 @@ case "${model}" in
   DeepSeek-V2-Lite|Qwen3-30B-A3B) sweeper=RepSelectSimpleMoE ;;
   *)                              sweeper=RepSelectSimple ;;
 esac
+
 ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_RepSelectSimple2
+
+# # # ABLATIONS
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
+#   '~trainer.method_args.lora_lr' \
+#   '~hydra.sweeper.params.trainer.method_args.lora_lr' \
+#   task_name=${prefix}_RepSelectSimple_no_lora
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \  # todo probably use a smaller LR
+#   '~trainer.method_args.n_pcs' \
+#   '~hydra.sweeper.params.trainer.method_args.n_pcs' \
+#   task_name=${prefix}_RepSelectSimple_no_pcs
+
+
 
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
 #     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE

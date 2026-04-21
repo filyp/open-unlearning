@@ -38,12 +38,26 @@ ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
 ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
+
 # MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we need to shift the range
 case "${model}" in
   DeepSeek-V2-Lite|Qwen3-30B-A3B) sweeper=RepSelectSimpleMoE ;;
   *)                              sweeper=RepSelectSimple ;;
 esac
+
 ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_RepSelectSimple2
+
+
+# # # ABLATIONS
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
+#   '~trainer.method_args.lora_lr' \
+#   '~hydra.sweeper.params.trainer.method_args.lora_lr' \
+#   task_name=${prefix}_RepSelectSimple_no_lora
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \  # todo probably use a smaller LR
+#   '~trainer.method_args.n_pcs' \
+#   '~hydra.sweeper.params.trainer.method_args.n_pcs' \
+#   task_name=${prefix}_RepSelectSimple_no_pcs
+
 
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
 #     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE

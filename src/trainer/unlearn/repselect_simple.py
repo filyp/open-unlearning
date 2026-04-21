@@ -30,7 +30,7 @@ class RepSelectSimple(UnlearnTrainer):
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
-    def __init__(self, n_pcs, lora_lr, *args, **kwargs):
+    def __init__(self, n_pcs=None, lora_lr=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_pcs = n_pcs
         self.lora_lr = lora_lr
@@ -69,16 +69,17 @@ class RepSelectSimple(UnlearnTrainer):
         self.model.train()
 
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
-        self.model.requires_grad_(False)
-        for p in self.lora_params:
-            p.requires_grad_(True)
-        for batch_pair in self.get_train_dataloader():
-            self.model.zero_grad(set_to_none=True)
-            f_batch = _prep_batch(batch_pair["forget"])
-            output = self.model(**f_batch)
-            output.loss.backward()
+        if self.lora_lr is not None:  # line needed for ablations
+            self.model.requires_grad_(False)
             for p in self.lora_params:
-                p.data -= self.lora_lr * p.grad
+                p.requires_grad_(True)
+            for batch_pair in self.get_train_dataloader():
+                self.model.zero_grad(set_to_none=True)
+                f_batch = _prep_batch(batch_pair["forget"])
+                output = self.model(**f_batch)
+                output.loss.backward()
+                for p in self.lora_params:
+                    p.data -= self.lora_lr * p.grad
 
         # one epoch: accumulate forget weight-gradient with LoRA active
         self.model.zero_grad(set_to_none=True)
@@ -95,12 +96,13 @@ class RepSelectSimple(UnlearnTrainer):
 
         # SVD and collapse
         for weight in self.base_trainable_params:
-            raw_grad = weight.grad.float()
-            U, S, V = pt.svd_lowrank(raw_grad, q=self.n_pcs)
-            eig_val = S / S.amin(dim=-1, keepdim=True)
-            filtered = _collapse(raw_grad, V, eig_val)  # filter D_in side
-            filtered = _collapse(filtered.mT, U, eig_val).mT  # filter D_out side
-            weight.filtered_grad = filtered.to(weight.dtype)
+            grad = weight.grad.float()
+            if self.n_pcs is not None:  # line needed for ablations
+                U, S, V = pt.svd_lowrank(grad, q=self.n_pcs)
+                eig_val = S / S.amin(dim=-1, keepdim=True)
+                grad = _collapse(grad, V, eig_val)  # filter D_in side
+                grad = _collapse(grad.mT, U, eig_val).mT  # filter D_out side
+            weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
 
         # perform dummy epochs, simply applying the filtered gradient
