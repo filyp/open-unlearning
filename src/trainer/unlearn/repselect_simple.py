@@ -64,6 +64,10 @@ class RepSelectSimple(UnlearnTrainer):
             ]
 
         self.lora_params = [p for n, p in self.model.named_parameters() if "lora_" in n]
+        
+        if not self.use_collapse:
+            # when not collapsing, intreventions are much more disrputive, so adjust LR to keep the sweeper range valid
+            self.args.learning_rate /= 500
 
     def train(self, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None):
         self.model = self.accelerator.prepare(self.model)
