@@ -49,12 +49,12 @@ esac
 
 
 # # # ABLATIONS
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
+#   trainer.method_args.use_lora=false \
+#   task_name=${prefix}_RepSelectSimple_no_lora
 ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
-  trainer.method_args.use_lora=false \
-  task_name=${prefix}_RepSelectSimple_no_lora
-# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \  # todo probably use a smaller LR
-#   trainer.method_args.use_collapse=false \
-#   task_name=${prefix}_RepSelectSimple_no_pcs
+  trainer.method_args.use_collapse=false \
+  task_name=${prefix}_RepSelectSimple_no_pcs
 
 
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here

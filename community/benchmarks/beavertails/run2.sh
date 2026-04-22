@@ -52,12 +52,12 @@ esac
 # ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_RepSelectSimple2
 
 # # # ABLATIONS
+# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
+#   trainer.method_args.use_lora=false \
+#   task_name=${prefix}_RepSelectSimple_no_lora
 ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
-  trainer.method_args.use_lora=false \
-  task_name=${prefix}_RepSelectSimple_no_lora
-# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \  # todo probably use a smaller LR
-#   trainer.method_args.use_collapse=false \
-#   task_name=${prefix}_RepSelectSimple_no_pcs
+  trainer.method_args.use_collapse=false \
+  task_name=${prefix}_RepSelectSimple_no_pcs
 
 
 

@@ -20,7 +20,7 @@ if [[ "$*" == *DeepSeek* ]]; then
   URL="https://tasks.datacrunch.io/open-unlearning/run"
 else
   # need RTX PRO 6000 96GB
-  URL="https://tasks.datacrunch.io/open-unlearning3/run"
+  URL="https://tasks.datacrunch.io/open-unlearning2/run"
 fi
 
 curl -X POST "$URL" \
