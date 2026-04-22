@@ -18,26 +18,32 @@ plt.rcParams["font.size"] = 10
 plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["axes.titlesize"] = 10
 
+strict = True
 
-# === CELL 1: Load studies (slow, run once) ===
+plot_name = "main_grid_v3.pdf"
+height = 3.2
+titles_dict = {
+    "RepSelectSimple2": "RepSelect",
+    "RMU": "RMU",
+    "NPO": "NPO",
+    "UNDIAL": "UNDIAL",
+    "SimNPO": "SimNPO",
+    "GradDiff": "GradDiff",
+}
+
+# plot_name = "ablations.pdf"
+# height = 2.7
+# titles_dict = {
+#     "RepSelectSimple2": "RepSelect",
+#     "RepSelect_forget": "Cont. Forget",
+#     "RepSelect_retain": "Cont. Retain",
+#     "RepSelectSimple_no_lora": "no LoRA",
+#     # "RepSelect_no_lora": "Cont. no LoRA",
+#     "RepSelectSimple_no_pcs": "no collapse",
+# }
 
 storage = os.environ.get("OPTUNA_STORAGE_URL")
 assert storage is not None, "OPTUNA_STORAGE_URL environment variable not set"
-
-# Method names (keys) and display labels (values)
-titles_dict = {
-    "SimNPO": "SimNPO",
-    "RMU": "RMU",
-    "GradDiff": "GradDiff",
-    "UNDIAL": "UNDIAL",
-    "NPO": "NPO",
-    "RepSelectSimple2": "RepSelect",
-    # ablation:
-    # "RepSelect_forget": "Cont. Forget",
-    # "RepSelect_retain": "Cont. Retain",
-    # "RepSelect_no_lora": "Cont. no LoRA",
-    # # "RepSelect_no_pcs": "Cont. no PCs",
-}
 
 # Canonical study name -> actual name in Optuna (for the weirdly-named runs).
 # Canonical scheme: always v5.3/v7.3, RepSelect always carries explicit _forget.
@@ -83,33 +89,44 @@ def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
         actual = study_remap.get(canonical, canonical)
         cache_file = CACHE_DIR / f"{actual}.pkl"
         if cache_file.exists():
-            print(f"  loading cached: {cache_file.name}")
             with open(cache_file, "rb") as f:
-                studies[method] = pickle.load(f)
-            continue
+                cached = pickle.load(f)
+            n_complete_cached = sum(
+                1 for t in cached.trials if t.state == optuna.trial.TrialState.COMPLETE
+            )
+            if n_complete_cached >= 30:
+                print(f"  loading cached: {cache_file.name}")
+                studies[method] = cached
+                continue
+            print(
+                f"  cache has only {n_complete_cached} completed trials; reloading from Optuna: {cache_file.name}"
+            )
 
         try:
             study = optuna.load_study(study_name=actual, storage=storage)
         except KeyError:
-            # # soft, for temporary plots:
-            # import warnings
-            # warnings.warn(f"Study not found: {actual} (method={method}); skipping")
-            # studies[method] = None
-            # continue
+            if strict:
+                # hard, for final plots:
+                raise ValueError(f"Study not found: {actual} (method={method})")
+            else:
+                # soft, for temporary plots:
+                import warnings
+                warnings.warn(f"Study not found: {actual} (method={method}); skipping")
+                studies[method] = None
+                continue
 
-            # hard, for final plots:
-            raise ValueError(f"Study not found: {actual} (method={method})")
         frozen = SimpleNamespace(trials=list(study.trials))
         with open(cache_file, "wb") as f:
             pickle.dump(frozen, f)
         studies[method] = frozen
 
-    for study in studies.values():
-        n_complete = sum(
-            1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
-        )
-        print(f"  {method}: {n_complete} completed trials")
-        assert n_complete == 30
+    if strict:
+        for method, study in studies.items():
+            n_complete = sum(
+                1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
+            )
+            print(f"  {method}: {n_complete} completed trials")
+            assert n_complete == 30
     return studies
 
 
@@ -138,7 +155,7 @@ def get_stats_from_studies(
     method_stats = {}
     all_values = []  # Collect ALL values from all studies for sanity check
 
-    print("Method stats (top {} runs):".format(top_n))
+    # print("Method stats (top {} runs):".format(top_n))
     for method, study in studies.items():
         if study is None:
             continue
@@ -150,9 +167,6 @@ def get_stats_from_studies(
         # Collect all values for sanity check
         all_values.extend(values)
 
-        # Track worst run for this method
-        method_worst = max(values)
-
         # Sort ascending (best = lowest for minimization)
         values_sorted = sorted(values)
         top_n_values = values_sorted[:top_n]
@@ -162,9 +176,9 @@ def get_stats_from_studies(
         std = np.std(top_n_values)
         method_stats[method] = (mean, sem, std)
 
-        print(
-            f"  {method}: mean={mean*100:.2f}%, sem={sem*100:.2f}%, std={std*100:.2f}%, worst={method_worst*100:.2f}%"
-        )
+        # print(
+        #     f"  {method}: mean={mean*100:.2f}%, sem={sem*100:.2f}%, std={std*100:.2f}%"
+        # )
 
     # Sanity check: log most common value across all runs
     counter = Counter(all_values)
@@ -276,7 +290,7 @@ def plot_grid(
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.15)
     fig.text(
-        0.5, -0.02, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
+        0.5, -0.03, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
     )
 
     if save_path:
@@ -322,8 +336,8 @@ fig = plot_grid(
     ],
     col_titles=["Llama-3.1-8B", "Gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"],
     row_titles=["WMDP-Bio", "Animal Abuse"],
-    figsize=(5.5, 3.2),
-    save_path="main_grid_v3.pdf",
+    figsize=(5.5, height),
+    save_path=plot_name,
 )
 
 plt.show()
