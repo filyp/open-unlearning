@@ -45,10 +45,10 @@ app = modal.App("open-unlearning", image=image)
 
 
 @app.function(
-    # gpu="L40S",  # 48GB
+    gpu="L40S",  # 48GB
     # gpu="A100-80GB",  # if needing 80GB
     # gpu="H100",  # 80GB
-    gpu="RTX-PRO-6000",  # 96GB
+    # gpu="RTX-PRO-6000",  # 96GB
     # gpu="H200",  # 141GB
     # gpu="B200",  # 180GB
     # B300 262GB, but can't be set in modal

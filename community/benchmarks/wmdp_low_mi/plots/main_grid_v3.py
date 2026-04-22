@@ -16,6 +16,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 plt.style.use("default")
 plt.rcParams["font.size"] = 10
 plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["axes.titlesize"] = 10
 
 
 # === CELL 1: Load studies (slow, run once) ===
@@ -30,35 +31,36 @@ titles_dict = {
     "GradDiff": "GradDiff",
     "UNDIAL": "UNDIAL",
     "NPO": "NPO",
-    "RepSelect_forget": "RepSelect",
-    "RepSelect_retain": "RepSelect Retain",
-    "RepSelect_no_lora": "RepSelect (no LoRA)",
-    # "RepSelect_no_pcs": "RepSelect (no PCs)",
-    "RepSelectSimple2": "RepSelect Simple",
+    "RepSelectSimple2": "RepSelect",
+    # ablation:
+    # "RepSelect_forget": "Cont. Forget",
+    # "RepSelect_retain": "Cont. Retain",
+    # "RepSelect_no_lora": "Cont. no LoRA",
+    # # "RepSelect_no_pcs": "Cont. no PCs",
 }
 
 # Canonical study name -> actual name in Optuna (for the weirdly-named runs).
 # Canonical scheme: always v5.3/v7.3, RepSelect always carries explicit _forget.
 study_remap = {
     # Llama bio: actual runs use v5 (no .3)
-    "v5.3_Llama-3.1-8B_bio_GradDiff":         "v5_Llama-3.1-8B_bio_GradDiff",
-    "v5.3_Llama-3.1-8B_bio_NPO":              "v5_Llama-3.1-8B_bio_NPO",
-    "v5.3_Llama-3.1-8B_bio_RMU":              "v5_Llama-3.1-8B_bio_RMU",
-    "v5.3_Llama-3.1-8B_bio_SimNPO":           "v5_Llama-3.1-8B_bio_SimNPO",
-    "v5.3_Llama-3.1-8B_bio_UNDIAL":           "v5_Llama-3.1-8B_bio_UNDIAL",
+    "v5.3_Llama-3.1-8B_bio_GradDiff": "v5_Llama-3.1-8B_bio_GradDiff",
+    "v5.3_Llama-3.1-8B_bio_NPO": "v5_Llama-3.1-8B_bio_NPO",
+    "v5.3_Llama-3.1-8B_bio_RMU": "v5_Llama-3.1-8B_bio_RMU",
+    "v5.3_Llama-3.1-8B_bio_SimNPO": "v5_Llama-3.1-8B_bio_SimNPO",
+    "v5.3_Llama-3.1-8B_bio_UNDIAL": "v5_Llama-3.1-8B_bio_UNDIAL",
     # Llama animal_abuse: actual runs use v7 (no .3) for non-RepSelect methods
     "v7.3_Llama-3.1-8B_animal_abuse_GradDiff": "v7_Llama-3.1-8B_animal_abuse_GradDiff",
-    "v7.3_Llama-3.1-8B_animal_abuse_NPO":      "v7_Llama-3.1-8B_animal_abuse_NPO",
-    "v7.3_Llama-3.1-8B_animal_abuse_RMU":      "v7_Llama-3.1-8B_animal_abuse_RMU",
-    "v7.3_Llama-3.1-8B_animal_abuse_SimNPO":   "v7_Llama-3.1-8B_animal_abuse_SimNPO",
-    "v7.3_Llama-3.1-8B_animal_abuse_UNDIAL":   "v7_Llama-3.1-8B_animal_abuse_UNDIAL",
+    "v7.3_Llama-3.1-8B_animal_abuse_NPO": "v7_Llama-3.1-8B_animal_abuse_NPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_RMU": "v7_Llama-3.1-8B_animal_abuse_RMU",
+    "v7.3_Llama-3.1-8B_animal_abuse_SimNPO": "v7_Llama-3.1-8B_animal_abuse_SimNPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_UNDIAL": "v7_Llama-3.1-8B_animal_abuse_UNDIAL",
     # Bio RepSelect runs are bare (no _forget suffix)
     "v5.3_Llama-3.1-8B_bio_RepSelect_forget": "v5_Llama-3.1-8B_bio_RepSelect",
-    "v5.3_gemma-4-E4B_bio_RepSelect_forget":      "v5.3_gemma-4-E4B_bio_RepSelect",
+    "v5.3_gemma-4-E4B_bio_RepSelect_forget": "v5.3_gemma-4-E4B_bio_RepSelect",
     "v5.3_DeepSeek-V2-Lite_bio_RepSelect_forget": "v5.3_DeepSeek-V2-Lite_bio_RepSelect",
     # animal_abuse RepSelect retain runs are bare (no _retain suffix)
-    "v7.3_Llama-3.1-8B_animal_abuse_RepSelect_retain":     "v7_Llama-3.1-8B_animal_abuse_RepSelect",
-    "v7.3_gemma-4-E4B_animal_abuse_RepSelect_retain":      "v7.3_gemma-4-E4B_animal_abuse_RepSelect",
+    "v7.3_Llama-3.1-8B_animal_abuse_RepSelect_retain": "v7_Llama-3.1-8B_animal_abuse_RepSelect",
+    "v7.3_gemma-4-E4B_animal_abuse_RepSelect_retain": "v7.3_gemma-4-E4B_animal_abuse_RepSelect",
     "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect_retain": "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect",
 }
 
@@ -195,9 +197,12 @@ def plot_grid(
     method_names = list(titles_dict.keys())
 
     nrows = len(rows)
-    fig, axes = plt.subplots(nrows, 2, figsize=figsize)
+    ncols = len(rows[0])
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
     if nrows == 1:
         axes = [axes]
+    if ncols == 1:
+        axes = [[ax] for ax in axes]
 
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     method_to_color = {m: colors[i % len(colors)] for i, m in enumerate(method_names)}
@@ -256,16 +261,12 @@ def plot_grid(
             min_val -= (baseline_pct - min_val) * 0.05
             ax.set_xlim(min_val, baseline_pct)
 
-            # Only show x-label on bottom row
-            if row_idx == nrows - 1:
-                ax.set_xlabel("Answer Probability (%) ↓")
-
             y_min = min(y_positions) - 0.5
             y_max = max(y_positions) + 0.5
             ax.set_ylim(y_min, y_max)
 
             # Method labels on right side of right column only
-            if col_idx == 1:
+            if col_idx == ncols - 1:
                 ax.set_yticks(y_positions)
                 ax.set_yticklabels([titles_dict.get(m, m) for m in common_methods])
                 ax.yaxis.tick_right()
@@ -274,6 +275,9 @@ def plot_grid(
 
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.15)
+    fig.text(
+        0.5, -0.02, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
+    )
 
     if save_path:
         fig.savefig(save_path, bbox_inches="tight", dpi=150)
@@ -294,6 +298,8 @@ references = {
     "v7.3_Llama-3.1-8B-Instruct_animal_abuse_reference": 0.20335,
     "v7.3_DeepSeek-V2-Lite_animal_abuse_reference": 0.21067,
     "v5.3_DeepSeek-V2-Lite_bio_reference": 0.063342,
+    "v5.3_Qwen3.5-9B_bio_reference": 0.07283087448756162,
+    "v7.3_Qwen3.5-9B_animal_abuse_reference": 0.2186462093377486,
 }
 
 # %%
@@ -303,20 +309,20 @@ fig = plot_grid(
     rows=[
         [
             get_stats_from_studies("v5.3_Llama-3.1-8B_bio_{}"),
-            get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
-        ],
-        [
             get_stats_from_studies("v5.3_gemma-4-E4B_bio_{}"),
-            get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
+            get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
+            get_stats_from_studies("v5.3_Qwen3.5-9B_bio_{}"),
         ],
         [
-            get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
+            get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
+            get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
             get_stats_from_studies("v7.3_DeepSeek-V2-Lite_animal_abuse_{}"),
+            get_stats_from_studies("v7.3_Qwen3.5-9B_animal_abuse_{}"),
         ],
     ],
-    col_titles=["WMDP - Bio", "BeaverTails - Animal Abuse"],
-    row_titles=["Llama 3.1 8B", "Gemma 4 E4B", "DeepSeek-V2-Lite"],
-    figsize=(5.5, 5.4),
+    col_titles=["Llama-3.1-8B", "Gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"],
+    row_titles=["WMDP-Bio", "Animal Abuse"],
+    figsize=(5.5, 3.2),
     save_path="main_grid_v3.pdf",
 )
 

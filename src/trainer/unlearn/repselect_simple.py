@@ -30,10 +30,14 @@ class RepSelectSimple(UnlearnTrainer):
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
-    def __init__(self, n_pcs=None, lora_lr=None, *args, **kwargs):
+    def __init__(
+        self, n_pcs, lora_lr, use_lora=True, use_collapse=True, *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.n_pcs = n_pcs
         self.lora_lr = lora_lr
+        self.use_lora = use_lora
+        self.use_collapse = use_collapse
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
         if is_moe:
@@ -69,7 +73,7 @@ class RepSelectSimple(UnlearnTrainer):
         self.model.train()
 
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
-        if self.lora_lr is not None:  # line needed for ablations
+        if self.use_lora:  # toggle for ablations
             self.model.requires_grad_(False)
             for p in self.lora_params:
                 p.requires_grad_(True)
@@ -97,7 +101,7 @@ class RepSelectSimple(UnlearnTrainer):
         # SVD and collapse
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
-            if self.n_pcs is not None:  # line needed for ablations
+            if self.use_collapse:  # toggle for ablations
                 U, S, V = pt.svd_lowrank(grad, q=self.n_pcs)
                 eig_val = S / S.amin(dim=-1, keepdim=True)
                 grad = _collapse(grad, V, eig_val)  # filter D_in side
