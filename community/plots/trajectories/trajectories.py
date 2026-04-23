@@ -26,15 +26,22 @@ CACHE_FILE = SCRIPT_DIR / "trajectories.pkl"
 OUT_DIR = SCRIPT_DIR / "methods"
 # titles_dict is imported from main_grid.py above
 
-# # --- uncomment for ablations instead ---
-# OUT_DIR = SCRIPT_DIR / "ablations"
-# titles_dict = {
-#     "RepSelectSimple2": "RepSelect",
-#     "RepSelect_forget": "Cont. Forget",
-#     "RepSelect_retain": "Cont. Retain",
-#     "RepSelectSimple_no_lora": "no LoRA",
-#     "RepSelectSimple_no_pcs": "no collapse",
-# }
+# --- uncomment for ablations instead ---
+# select best trial by: "relearn" (max relearning metric) or "unlearn"
+# (last valid unlearning metric with KL <= threshold). Lower is better in both.
+# SELECT_BY = "unlearn"
+SELECT_BY = "relearn"
+OUT_DIR = SCRIPT_DIR / ("ablations_optim_unlearn" if SELECT_BY == "unlearn" else "ablations")
+titles_dict = {
+    "RepSelectSimple2": "Forget",
+    "RepSelectSimple_retain": "Retain",
+    "RepSelect_forget": "Cont. Forget",
+    "RepSelect_retain": "Cont. Retain",
+    "RepSelectSimple_no_lora": "no LoRA",
+    # "RepSelect_no_lora": "Cont. no LoRA",
+    "RepSelectSimple_no_pcs": "no collapse",
+}
+
 
 UNL_PROJECT = "filyp/selective-unlearning"
 REL_PROJECT = "filyp/rel-selective-unlearning"
@@ -195,10 +202,22 @@ def trial_score(actual_name, i, metric):
     entry = trajectories.get(run_name)
     if entry is None:
         return None
-    _, rel_hist = entry
-    if rel_hist is None or metric not in rel_hist.columns or len(rel_hist) == 0:
-        return None
-    score = rel_hist[metric].head(REL_STEPS).max()
+    unl_hist, rel_hist = entry
+    if SELECT_BY == "unlearn":
+        if unl_hist is None or metric not in unl_hist.columns or DISR_METRIC not in unl_hist.columns:
+            return None
+        hist = unl_hist.copy()
+        hist[DISR_METRIC] = pd.to_numeric(hist[DISR_METRIC], errors="coerce")
+        hist[metric] = pd.to_numeric(hist[metric], errors="coerce")
+        hist = hist.dropna(subset=[DISR_METRIC, metric])
+        valid = hist[hist[DISR_METRIC] <= DISR_THRESHOLD]
+        if len(valid) == 0:
+            return None
+        score = valid[metric].iloc[-1]
+    else:
+        if rel_hist is None or metric not in rel_hist.columns or len(rel_hist) == 0:
+            return None
+        score = rel_hist[metric].head(REL_STEPS).max()
     if pd.isna(score):
         return None
     return score

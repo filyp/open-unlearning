@@ -34,7 +34,8 @@ titles_dict = {
 # plot_name = "ablations.pdf"
 # height = 2.7
 # titles_dict = {
-#     "RepSelectSimple2": "RepSelect",
+#     "RepSelectSimple2": "Forget",
+#     "RepSelectSimple_retain": "Retain",
 #     "RepSelect_forget": "Cont. Forget",
 #     "RepSelect_retain": "Cont. Retain",
 #     "RepSelectSimple_no_lora": "no LoRA",
