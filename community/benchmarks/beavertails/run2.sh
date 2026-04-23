@@ -32,6 +32,12 @@ run() {
 #   modal run runners/modal_runner.py --args "$*"
 # }
 
+# MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we need to shift the range
+case "${model}" in
+  DeepSeek-V2-Lite|Qwen3-30B-A3B) rs_sweeper=RepSelectSimpleMoE ;;
+  *)                              rs_sweeper=RepSelectSimple ;;
+esac
+
 ###############################################################
 
 ${reference} trainer=GradDiff task_name=${prefix}_reference
@@ -43,21 +49,18 @@ ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
 ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-# MoE requires 30-100x larger LRs - other methods use adam so it's fine, but with sgd, we need to shift the range
-case "${model}" in
-  DeepSeek-V2-Lite|Qwen3-30B-A3B) sweeper=RepSelectSimpleMoE ;;
-  *)                              sweeper=RepSelectSimple ;;
-esac
-
-${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} task_name=${prefix}_RepSelectSimple2
+${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix}_RepSelectSimple2
 
 # # ABLATIONS
-# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
+# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.use_lora=false \
 #   task_name=${prefix}_RepSelectSimple_no_lora
-# ${common} trainer=RepSelectSimple hydra/sweeper=${sweeper} \
-#   trainer.method_args.use_collapse=false \
+# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
+#   trainer.method_args.distribution=none \
 #   task_name=${prefix}_RepSelectSimple_no_pcs
+# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
+#   trainer.method_args.distribution=retain \
+#   task_name=${prefix}_RepSelectSimple_retain
 
 # # RepSelect old continuous version
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here

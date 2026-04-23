@@ -19,25 +19,33 @@ def _prep_batch(batch):
     return {k: batch[k] for k in ("input_ids", "attention_mask", "labels")}
 
 
+def _train_on(params, model):
+    model.requires_grad_(False)
+    for p in params:
+        p.requires_grad_(True)
+
+
 class RepSelectSimple(UnlearnTrainer):
     """
     Single-shot variant of WGradSVD, over MLP gate/up/down projections:
     1. Adversarial LoRA pretrain: freeze base, SGD-descent LoRA on forget NLL.
     2. Freeze LoRA, accumulate forget weight-gradient over one pass (LoRA
        still active in forward).
-    3. Unload LoRA, SVD the accumulated grad, collapse its top principal
-       components on both D_in (via V) and D_out (via U).
+    3. Unload LoRA, SVD the weight-gradient of the chosen `distribution`
+       ("forget" or "retain"; "none" skips collapse), collapse its top
+       principal components on both D_in (via V) and D_out (via U).
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
     def __init__(
-        self, n_pcs, lora_lr, use_lora=True, use_collapse=True, *args, **kwargs
+        self, n_pcs, lora_lr, distribution="forget", use_lora=True, *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.n_pcs = n_pcs
         self.lora_lr = lora_lr
+        self.distribution = distribution
         self.use_lora = use_lora
-        self.use_collapse = use_collapse
+        assert distribution in ["forget", "retain", "none"]
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
         if is_moe:
@@ -64,9 +72,9 @@ class RepSelectSimple(UnlearnTrainer):
             ]
 
         self.lora_params = [p for n, p in self.model.named_parameters() if "lora_" in n]
-        
-        if not self.use_collapse:
-            # when not collapsing, intreventions are much more disrputive, so adjust LR to keep the sweeper range valid
+
+        if self.distribution == "none":
+            # when not collapsing, interventions are much more disrputive, so adjust LR to keep the sweeper range valid
             self.args.learning_rate /= 500
 
     def train(self, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None):
@@ -76,11 +84,21 @@ class RepSelectSimple(UnlearnTrainer):
         )
         self.model.train()
 
+        # retain epoch
+        if self.distribution == "retain":
+            self.model.zero_grad(set_to_none=True)
+            _train_on(self.base_trainable_params, self.model)
+            for batch_pair in self.get_train_dataloader():
+                r_batch = _prep_batch(batch_pair["retain"])
+                output = self.model(**r_batch)
+                (-output.loss).backward()
+            # retain SVD
+            for weight in self.base_trainable_params:
+                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
+
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
         if self.use_lora:  # toggle for ablations
-            self.model.requires_grad_(False)
-            for p in self.lora_params:
-                p.requires_grad_(True)
+            _train_on(self.lora_params, self.model)
             for batch_pair in self.get_train_dataloader():
                 self.model.zero_grad(set_to_none=True)
                 f_batch = _prep_batch(batch_pair["forget"])
@@ -91,9 +109,7 @@ class RepSelectSimple(UnlearnTrainer):
 
         # one epoch: accumulate forget weight-gradient with LoRA active
         self.model.zero_grad(set_to_none=True)
-        self.model.requires_grad_(False)
-        for p in self.base_trainable_params:
-            p.requires_grad_(True)
+        _train_on(self.base_trainable_params, self.model)
         for batch_pair in self.get_train_dataloader():
             f_batch = _prep_batch(batch_pair["forget"])
             output = self.model(**f_batch)
@@ -102,11 +118,16 @@ class RepSelectSimple(UnlearnTrainer):
         # strip LoRA
         self.model = self.model.unload()
 
-        # SVD and collapse
+        # forget SVD
+        if self.distribution == "forget":
+            for weight in self.base_trainable_params:
+                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
+
+        # collapse
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
-            if self.use_collapse:  # toggle for ablations
-                U, S, V = pt.svd_lowrank(grad, q=self.n_pcs)
+            if self.distribution != "none":
+                U, S, V = weight.USV
                 eig_val = S / S.amin(dim=-1, keepdim=True)
                 grad = _collapse(grad, V, eig_val)  # filter D_in side
                 grad = _collapse(grad.mT, U, eig_val).mT  # filter D_out side
