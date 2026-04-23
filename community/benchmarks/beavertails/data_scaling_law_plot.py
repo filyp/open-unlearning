@@ -1,4 +1,6 @@
 # %%
+# results: just 10 samples already gives us over 50% (57%) of the 360 sample post-attack probability drop (for llama, for qwen it looks even more)
+# at 90 samples, there are no further improvements visible, 90 samples is enough
 import pickle
 import time
 from pathlib import Path
@@ -20,11 +22,12 @@ REL_PROJECT = "filyp/rel-selective-unlearning"
 
 # (range_size, color) — rainbow by range size
 RANGES = [
-    (25, "red"),
-    (45, "orange"),
+    (10, "red"),
+    (25, "orange"),
+    # (45, "gold"),
     (90, "green"),
-    (180, "blue"),
-    (360, "purple"),
+    # (180, "blue"),
+    (360, "blue"),
 ]
 
 # (display_name, model_field_in_task_name, ylim)
@@ -142,7 +145,7 @@ for row_idx, (model_display, model_field, ylim) in enumerate(MODELS):
         color="black",
         linestyle="--",
         alpha=0.6,
-        label="reference",
+        label="no unlearning",
     )
 
     ax_unl.set_xticks([0.0, 0.005, 0.01])
@@ -173,7 +176,7 @@ for row_idx, (model_display, model_field, ylim) in enumerate(MODELS):
 
 color_handles, color_labels = axes[0][0].get_legend_handles_labels()
 ref_handles, ref_labels = axes[0][1].get_legend_handles_labels()
-ref_only = [(h, lbl) for h, lbl in zip(ref_handles, ref_labels) if lbl == "reference"]
+ref_only = [(h, lbl) for h, lbl in zip(ref_handles, ref_labels) if lbl == "no unlearning"]
 handles = color_handles + [h for h, _ in ref_only]
 labels = color_labels + [lbl for _, lbl in ref_only]
 fig.legend(
