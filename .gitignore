@@ -206,3 +206,5 @@ community/benchmarks/beavertails/contrast.jsonl
 verda_token.txt
 top_runner.sh
 community/plots/.archival/_ablation_dirty.pdf
+community/plots/trajectories/methods/*.pdf
+community/plots/trajectories/ablations/*.pdf

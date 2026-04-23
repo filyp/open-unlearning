@@ -43,7 +43,6 @@ titles_dict = {
 # }
 
 storage = os.environ.get("OPTUNA_STORAGE_URL")
-assert storage is not None, "OPTUNA_STORAGE_URL environment variable not set"
 
 # Canonical study name -> actual name in Optuna (for the weirdly-named runs).
 # Canonical scheme: always v5.3/v7.3, RepSelect always carries explicit _forget.
@@ -83,6 +82,7 @@ def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
     Returns:
         Dict mapping method name to Study object
     """
+    assert storage is not None, "OPTUNA_STORAGE_URL environment variable not set"
     studies = {}
     for method in titles_dict.keys():
         canonical = study_pattern.format(method)
@@ -318,28 +318,29 @@ references = {
 
 # %%
 
-# Create grid: rows = models, columns = benchmarks
-fig = plot_grid(
-    rows=[
-        [
-            get_stats_from_studies("v5.3_Llama-3.1-8B_bio_{}"),
-            get_stats_from_studies("v5.3_gemma-4-E4B_bio_{}"),
-            get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
-            get_stats_from_studies("v5.3_Qwen3.5-9B_bio_{}"),
+if __name__ == "__main__":
+    # Create grid: rows = models, columns = benchmarks
+    fig = plot_grid(
+        rows=[
+            [
+                get_stats_from_studies("v5.3_Llama-3.1-8B_bio_{}"),
+                get_stats_from_studies("v5.3_gemma-4-E4B_bio_{}"),
+                get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
+                get_stats_from_studies("v5.3_Qwen3.5-9B_bio_{}"),
+            ],
+            [
+                get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
+                get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
+                get_stats_from_studies("v7.3_DeepSeek-V2-Lite_animal_abuse_{}"),
+                get_stats_from_studies("v7.3_Qwen3.5-9B_animal_abuse_{}"),
+            ],
         ],
-        [
-            get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
-            get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
-            get_stats_from_studies("v7.3_DeepSeek-V2-Lite_animal_abuse_{}"),
-            get_stats_from_studies("v7.3_Qwen3.5-9B_animal_abuse_{}"),
-        ],
-    ],
-    col_titles=["Llama-3.1-8B", "Gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"],
-    row_titles=["WMDP-Bio", "Animal Abuse"],
-    figsize=(5.5, height),
-    save_path=plot_name,
-)
+        col_titles=["Llama-3.1-8B", "Gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"],
+        row_titles=["WMDP-Bio", "Animal Abuse"],
+        figsize=(5.5, height),
+        save_path=plot_name,
+    )
 
-plt.show()
+    plt.show()
 
 # %%
