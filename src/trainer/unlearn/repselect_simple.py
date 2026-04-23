@@ -134,6 +134,13 @@ class RepSelectSimple(UnlearnTrainer):
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
 
+        self._apply_unlearn_loop()
+
+        self.control = self.callback_handler.on_train_end(
+            self.args, self.state, self.control
+        )
+
+    def _apply_unlearn_loop(self):
         # perform dummy epochs, simply applying the filtered gradient
         self.evaluate()
         for epoch in range(self.args.num_train_epochs):
@@ -144,7 +151,3 @@ class RepSelectSimple(UnlearnTrainer):
             self.evaluate()
             if self.control.should_training_stop:
                 break
-
-        self.control = self.callback_handler.on_train_end(
-            self.args, self.state, self.control
-        )
