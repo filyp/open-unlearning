@@ -205,3 +205,4 @@ community/benchmarks/beavertails/contrast.jsonl
 .env.json
 verda_token.txt
 top_runner.sh
+community/plots/.archival/_ablation_dirty.pdf

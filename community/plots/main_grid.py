@@ -20,7 +20,7 @@ plt.rcParams["axes.titlesize"] = 10
 
 strict = True
 
-plot_name = "main_grid_v3.pdf"
+plot_name = "main_grid.pdf"
 height = 3.2
 titles_dict = {
     "RepSelectSimple2": "RepSelect",
