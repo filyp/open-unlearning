@@ -9,11 +9,16 @@ from trainer.unlearn.base import UnlearnTrainer
 logging.basicConfig(level=logging.INFO)
 
 
-def _collapse(mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor) -> pt.Tensor:
-    S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
+def _collapse(
+    mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor, hard_soft: str
+) -> pt.Tensor:
     projected = mat @ eig_vec
-    proj_diff = projected - projected / S.unsqueeze(-2)
-    return mat - proj_diff @ eig_vec.mT
+    if hard_soft == "hard":  # top N PCs projection
+        return mat - projected @ eig_vec.mT
+    else:  # Mahalanobis collapse
+        S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
+        proj_diff = projected - projected / S.unsqueeze(-2)
+        return mat - proj_diff @ eig_vec.mT
 
 
 def _prep_batch(batch):
@@ -45,6 +50,7 @@ class RepSelectSimple(UnlearnTrainer):
         distribution="forget",
         collapse_on="both",
         use_lora=True,
+        hard_soft="soft",
         *args,
         **kwargs,
     ):
@@ -54,8 +60,10 @@ class RepSelectSimple(UnlearnTrainer):
         self.distribution = distribution
         self.collapse_on = collapse_on
         self.use_lora = use_lora
+        self.hard_soft = hard_soft
         assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
+        assert hard_soft in ["hard", "soft"]
         # note though, that for some MoE models act and grad dimensions may be transposed
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
@@ -135,9 +143,9 @@ class RepSelectSimple(UnlearnTrainer):
             grad = weight.grad.float()
             U, S, V = weight.USV
             if self.collapse_on in ["act", "both"]:
-                grad = _collapse(grad, V, S)  # filter D_in side
+                grad = _collapse(grad, V, S, self.hard_soft)  # filter D_in side
             if self.collapse_on in ["grad", "both"]:
-                grad = _collapse(grad.mT, U, S).mT  # filter D_out side
+                grad = _collapse(grad.mT, U, S, self.hard_soft).mT  # filter D_out side
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
 

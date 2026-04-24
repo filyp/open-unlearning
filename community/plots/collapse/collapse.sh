@@ -29,6 +29,8 @@ for dist in forget retain; do
   done
 done
 
+# note that these experiments were run with n_pcs=500, not current 512
+
 # # retain act + forget grad experiment; note that it uses outdated args from commit 4911cbb7dcdde3adaea4b4586cb047bacffd37ce
 # run python src/unlearn_relearn.py --config-name=unlearn.yaml \
 #   trainer=RepSelectSimple \

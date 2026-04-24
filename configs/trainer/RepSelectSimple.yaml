@@ -11,3 +11,4 @@ method_args:
   distribution: forget  # forget | retain
   collapse_on: both  # act | grad | both | none
   use_lora: true
+  hard_soft: soft  # hard | soft
