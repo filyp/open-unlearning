@@ -8,6 +8,8 @@ args:
 method_args:
   n_pcs: 500
   lora_lr: 0.01
-  distribution: forget  # forget | retain
-  collapse_on: both  # act | grad | both | none
+  act_collapse: forget  # forget | retain | none
+  grad_collapse: forget  # forget | retain | none
+  # distribution: forget  # forget | retain
+  # collapse_on: both  # act | grad | both | none
   use_lora: true
