@@ -24,20 +24,23 @@ plot_name = "main_grid.pdf"
 height = 3.2
 titles_dict = {
     "RepSelectSimple2": "RepSelect",
-    "RMU": "RMU",
+    "RepSelect_forget": "└ multiepoch",
+    "RepSelectSimple_no_lora": "└ w/o LoRA",
     "NPO": "NPO",
+    "RMU": "RMU",
     "UNDIAL": "UNDIAL",
     "SimNPO": "SimNPO",
     "GradDiff": "GradDiff",
 }
 
+# # actuually, abandon this branch; collapse comparisons are much better served by collapse_grid.py
 # plot_name = "ablations.pdf"
 # height = 2.7
 # titles_dict = {
 #     "RepSelectSimple2": "Forget",
-#     "RepSelectSimple_retain": "Retain",
+#     "RepSelectSimple_retain": "Retain",  # ignore retain here
 #     "RepSelect_forget": "Cont. Forget",
-#     "RepSelect_retain": "Cont. Retain",
+#     "RepSelect_retain": "Cont. Retain",  # ignore retain here
 #     "RepSelectSimple_no_lora": "no LoRA",
 #     # "RepSelect_no_lora": "Cont. no LoRA",
 #     "RepSelectSimple_no_pcs": "no collapse",
