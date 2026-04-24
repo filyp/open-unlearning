@@ -12,43 +12,30 @@ model=Llama-3.1-8B
 # model=DeepSeek-V2-Lite
 # model=Qwen3.5-9B
 
-# experiment=unlearn/wmdp_low_mi/default exp_name=bio
-experiment=unlearn/beavertails/curated_contrast exp_name=aa
+experiment=unlearn/wmdp_low_mi/default exp_name=bio
+# experiment=unlearn/beavertails/curated_contrast exp_name=aa
 
-# # note, stale args, use act_collapse and grad_collapse instead
-# for dist in forget retain; do
-#   for collapse in act grad both none; do
-#     run python src/unlearn_relearn.py --config-name=unlearn.yaml \
-#       trainer=RepSelectSimple \
-#       trainer.handler=RepSelectAdaptive \
-#       trainer.method_args.use_lora=false \
-#       experiment=${experiment} \
-#       model=${model} \
-#       trainer.method_args.distribution=${dist} \
-#       trainer.method_args.collapse_on=${collapse} \
-#       task_name=collapse_${exp_name}_${model}_${dist}_${collapse}
-#   done
-# done
+for dist in forget retain; do
+  for collapse in act grad both none; do
+    run python src/unlearn_relearn.py --config-name=unlearn.yaml \
+      trainer=RepSelectSimple \
+      trainer.handler=RepSelectAdaptive \
+      trainer.method_args.use_lora=false \
+      experiment=${experiment} \
+      model=${model} \
+      trainer.method_args.distribution=${dist} \
+      trainer.method_args.collapse_on=${collapse} \
+      task_name=collapse_${exp_name}_${model}_${dist}_${collapse}
+  done
+done
 
-run python src/unlearn_relearn.py --config-name=unlearn.yaml \
-  trainer=RepSelectSimple \
-  trainer.handler=RepSelectAdaptive \
-  trainer.method_args.use_lora=false \
-  experiment=${experiment} \
-  model=${model} \
-  trainer.method_args.act_collapse=retain \
-  trainer.method_args.grad_collapse=forget \
-  task_name=collapse_${exp_name}_${model}_actretain_gradforget
-
-
-# # failing:
-# run python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun \
+# # retain act + forget grad experiment; note that it uses outdated args from commit 4911cbb7dcdde3adaea4b4586cb047bacffd37ce
+# run python src/unlearn_relearn.py --config-name=unlearn.yaml \
 #   trainer=RepSelectSimple \
 #   trainer.handler=RepSelectAdaptive \
 #   trainer.method_args.use_lora=false \
 #   experiment=${experiment} \
 #   model=${model} \
-#   task_name="collapse_${exp_name}_${model}_\${trainer.method_args.distribution}_\${trainer.method_args.collapse_on}" \
-#   hydra/sweeper=basic \
-#   trainer.method_args.distribution=forget,retain \
-#   trainer.method_args.collapse_on=act,grad,both,none
+#   trainer.method_args.act_collapse=retain \
+#   trainer.method_args.grad_collapse=forget \
+#   task_name=collapse_${exp_name}_${model}_actretain_gradforget

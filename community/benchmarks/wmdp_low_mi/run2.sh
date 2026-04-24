@@ -49,13 +49,12 @@ ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix
 # ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.use_lora=false \
 #   task_name=${prefix}_RepSelectSimple_no_lora
-# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper}_lowLR \
+# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.distribution=none \
 #   task_name=${prefix}_RepSelectSimple_no_pcs
 # ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.distribution=retain \
 #   task_name=${prefix}_RepSelectSimple_retain
-# # note that for distribution=none ablation, we also divided LR by 500 to account for the unlearning speedup and remain in a valid sweep range
 
 # # RepSelect old continuous version
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
