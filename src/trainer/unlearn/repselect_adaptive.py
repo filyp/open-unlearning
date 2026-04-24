@@ -10,6 +10,10 @@ BRACKET_FACTOR = 8.0
 MAX_ITERS = 30
 
 
+# note that previous implementation kept adding updates to the model, to save on memory,
+# but in bfloat16 that introduced to much error
+# so currently we store the original weights and intervene simply by:
+# weight = original - update * alpha
 class RepSelectAdaptive(RepSelectSimple):
     """Adaptive variant of RepSelectSimple.
 

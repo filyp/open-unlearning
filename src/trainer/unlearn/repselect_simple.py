@@ -9,9 +9,10 @@ from trainer.unlearn.base import UnlearnTrainer
 logging.basicConfig(level=logging.INFO)
 
 
-def _collapse(mat: pt.Tensor, eig_vec: pt.Tensor, eig_val: pt.Tensor) -> pt.Tensor:
+def _collapse(mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor) -> pt.Tensor:
+    S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
     projected = mat @ eig_vec
-    proj_diff = projected - projected / eig_val.unsqueeze(-2)
+    proj_diff = projected - projected / S.unsqueeze(-2)
     return mat - proj_diff @ eig_vec.mT
 
 
@@ -55,6 +56,7 @@ class RepSelectSimple(UnlearnTrainer):
         self.use_lora = use_lora
         assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
+        # note though, that for some MoE models act and grad dimensions may be transposed
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
         if is_moe:
@@ -136,11 +138,10 @@ class RepSelectSimple(UnlearnTrainer):
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
             U, S, V = weight.USV
-            eig_val = S / S.amin(dim=-1, keepdim=True)
             if self.collapse_on in ["act", "both"]:
-                grad = _collapse(grad, V, eig_val)  # filter D_in side
+                grad = _collapse(grad, V, S)  # filter D_in side
             if self.collapse_on in ["grad", "both"]:
-                grad = _collapse(grad.mT, U, eig_val).mT  # filter D_out side
+                grad = _collapse(grad.mT, U, S).mT  # filter D_out side
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
 
