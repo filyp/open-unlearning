@@ -22,6 +22,7 @@ CACHE_FILE = SCRIPT_DIR / "collapse_cache.pkl"
 REL_PROJECT = "filyp/rel-selective-unlearning"
 REL_STEPS = 10
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
+SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
 
 MODELS = [
     ("Llama-3.1-8B", "Llama-3.1-8B"),
@@ -36,21 +37,28 @@ BENCHMARKS = [
     ("AA", "Animal Abuse", "animal_abuse", "train/holdout_harmful_prob"),
 ]
 
-# (label, dist, collapse). forget/none == retain/none so we show one
+# (label, task-suffix). forget_none == retain_none so we show one
 # "no collapse" row at the bottom (pick forget arbitrarily to fetch).
-CONFIGS = [
-    ("forget / act", "forget", "act"),
-    ("forget / grad", "forget", "grad"),
-    ("forget / both", "forget", "both"),
-    ("retain / act", "retain", "act"),
-    ("retain / grad", "retain", "grad"),
-    ("retain / both", "retain", "both"),
-    ("no collapse", "forget", "none"),
+BASE_CONFIGS = [
+    ("forget / act", "forget_act"),
+    ("forget / grad", "forget_grad"),
+    ("forget / both", "forget_both"),
+    ("retain / act", "retain_act"),
+    ("retain / grad", "retain_grad"),
+    ("retain / both", "retain_both"),
+    ("no collapse", "forget_none"),
 ]
+# Per-benchmark configs. AA has the extra mixed (retain-act, forget-grad) run.
+BENCH_CONFIGS = {
+    "bio": BASE_CONFIGS,
+    "AA": BASE_CONFIGS + (
+        [("r. act, f. grad", "actretain_gradforget")] if SHOW_MIXED else []
+    ),
+}
 
 
-def task_name(exp_name, model, dist, collapse):
-    return f"collapse_{exp_name}_{model}_{dist}_{collapse}"
+def task_name(exp_name, model, suffix):
+    return f"collapse_{exp_name}_{model}_{suffix}"
 
 
 def ref_key(model, bench_tag):
@@ -71,8 +79,8 @@ else:
 expected = []
 for _, model_field in MODELS:
     for exp_name, _, _, _ in BENCHMARKS:
-        for _, d, c in CONFIGS:
-            expected.append((exp_name, task_name(exp_name, model_field, d, c)))
+        for _, suffix in BENCH_CONFIGS[exp_name]:
+            expected.append((exp_name, task_name(exp_name, model_field, suffix)))
 
 missing = [(e, t) for e, t in expected if t not in cache]
 if missing:
@@ -115,21 +123,29 @@ if ncols == 1:
 colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 # Color by collapse kind so forget/retain pairs share color; retain is hatched.
 collapse_color = {"act": colors[0], "grad": colors[1], "both": colors[2], "none": colors[3]}
-bar_colors = [collapse_color[c] for _, _, c in CONFIGS]
-bar_hatches = ["///" if d == "retain" else "" for _, d, _ in CONFIGS]
 
-# Top-to-bottom: first config is on top.
-y_positions = list(range(len(CONFIGS) - 1, -1, -1))
+
+def style_for(suffix):
+    if suffix == "actretain_gradforget":
+        return colors[4], "xxx"  # mixed: distinct color + cross-hatch
+    dist, coll = suffix.split("_")
+    return collapse_color[coll], ("///" if dist == "retain" else "")
 
 for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARKS):
+    configs = BENCH_CONFIGS[exp_name]
+    bar_colors = [style_for(s)[0] for _, s in configs]
+    bar_hatches = [style_for(s)[1] for _, s in configs]
+    # Top-to-bottom: first config is on top.
+    y_positions = list(range(len(configs) - 1, -1, -1))
+
     for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
         baseline = references[ref_key(model_field, bench_tag)] * 100
 
         maxes = []
         initials = []
-        for _, d, c in CONFIGS:
-            t = task_name(exp_name, model_field, d, c)
+        for _, suffix in configs:
+            t = task_name(exp_name, model_field, suffix)
             hist = cache.get(t)
             if hist is None or metric not in hist.columns or len(hist) == 0:
                 # Render nothing: bar width = 0, initial = baseline.
@@ -182,7 +198,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
         if col_idx == ncols - 1:
             ax.set_yticks(y_positions)
-            ax.set_yticklabels([label for label, _, _ in CONFIGS])
+            ax.set_yticklabels([label for label, _ in configs])
             ax.yaxis.tick_right()
         else:
             ax.set_yticks([])
