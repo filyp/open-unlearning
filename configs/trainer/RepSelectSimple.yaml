@@ -6,7 +6,7 @@ args:
   learning_rate: 0.05
 
 method_args:
-  n_pcs: 500
+  n_pcs: 512
   lora_lr: 0.01
   distribution: forget  # forget | retain
   collapse_on: both  # act | grad | both | none

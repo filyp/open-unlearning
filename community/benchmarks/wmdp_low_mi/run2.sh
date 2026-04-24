@@ -43,12 +43,12 @@ ${common} trainer=RMU hydra/sweeper=RMU task_name=${prefix}_RMU
 ${common} trainer=SimNPO hydra/sweeper=SimNPO task_name=${prefix}_SimNPO
 ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 
-${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix}_RepSelectSimple2
+${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix}_RepSelectSimple_forget
 
 # # ABLATIONS
 # ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.use_lora=false \
-#   task_name=${prefix}_RepSelectSimple_no_lora
+#   task_name=${prefix}_RepSelectSimple_forget_no_lora
 # ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.distribution=none \
 #   task_name=${prefix}_RepSelectSimple_no_pcs
@@ -58,9 +58,7 @@ ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix
 
 # # RepSelect old continuous version
 # if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget trainer.handler=RepSelectMOE
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect_retain trainer.method_args.cfg.use_distribution=retain trainer.handler=RepSelectMOE
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect2_forget trainer.handler=RepSelectMOE
 # else
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect_forget trainer.method_args.cfg.use_distribution=forget
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect_retain trainer.method_args.cfg.use_distribution=retain
+#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect2_forget
 # fi

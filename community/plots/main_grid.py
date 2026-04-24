@@ -23,9 +23,9 @@ strict = True
 plot_name = "main_grid.pdf"
 height = 3.2
 titles_dict = {
-    "RepSelectSimple2": "RepSelect",
-    "RepSelect_forget": "└ multiepoch",
-    "RepSelectSimple_no_lora": "└ w/o LoRA",
+    "RepSelectSimple2": "RepSelect",  # todo use RepSelectSimple_forget instead
+    "RepSelect_forget": "└ multi-epoch",  # todo use RepSelect2_forget instead
+    "RepSelectSimple_no_lora": "└ w/o LoRA",  # todo use RepSelectSimple_forget_no_lora instead
     "NPO": "NPO",
     "RMU": "RMU",
     "UNDIAL": "UNDIAL",

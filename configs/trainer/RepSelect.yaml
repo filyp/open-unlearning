@@ -10,7 +10,7 @@ args:
 
 method_args:
   cfg:
-    n_pcs: 400
+    n_pcs: 512
     lora_lr: 0.2
     lora_rank: 32
     use_distribution: forget  # forget | retain

@@ -2,5 +2,4 @@
 params:
   trainer.args.learning_rate: "tag(log, interval(0.5, 5))"
   trainer.method_args.cfg.lora_lr: "tag(log, interval(0.03, 0.5))"
-  trainer.method_args.cfg.n_pcs: "range(304, 600, 8)"  # must be multiple of 8
   trainer.method_args.cfg.npo_beta: "tag(log, interval(0.07, 0.3))"
