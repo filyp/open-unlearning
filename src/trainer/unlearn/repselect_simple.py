@@ -38,14 +38,23 @@ class RepSelectSimple(UnlearnTrainer):
     """
 
     def __init__(
-        self, n_pcs, lora_lr, distribution="forget", use_lora=True, *args, **kwargs
+        self,
+        n_pcs,
+        lora_lr,
+        distribution="forget",
+        collapse_on="both",
+        use_lora=True,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.n_pcs = n_pcs
         self.lora_lr = lora_lr
         self.distribution = distribution
+        self.collapse_on = collapse_on
         self.use_lora = use_lora
-        assert distribution in ["forget", "retain", "none"]
+        assert distribution in ["forget", "retain"]
+        assert collapse_on in ["act", "grad", "both", "none"]
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
         if is_moe:
@@ -73,7 +82,7 @@ class RepSelectSimple(UnlearnTrainer):
 
         self.lora_params = [p for n, p in self.model.named_parameters() if "lora_" in n]
 
-        if self.distribution == "none":
+        if self.collapse_on == "none":
             # when not collapsing, interventions are much more disrputive, so adjust LR to keep the sweeper range valid
             self.args.learning_rate /= 500
 
@@ -126,10 +135,11 @@ class RepSelectSimple(UnlearnTrainer):
         # collapse
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
-            if self.distribution != "none":
-                U, S, V = weight.USV
-                eig_val = S / S.amin(dim=-1, keepdim=True)
+            U, S, V = weight.USV
+            eig_val = S / S.amin(dim=-1, keepdim=True)
+            if self.collapse_on in ["act", "both"]:
                 grad = _collapse(grad, V, eig_val)  # filter D_in side
+            if self.collapse_on in ["grad", "both"]:
                 grad = _collapse(grad.mT, U, eig_val).mT  # filter D_out side
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
