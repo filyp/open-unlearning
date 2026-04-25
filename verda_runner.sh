@@ -27,3 +27,4 @@ curl -X POST "$URL" \
   -H "Authorization: Bearer $(cat verda_token.txt)" \
   -H "Content-Type: application/json" \
   -d "{\"command\": \"$*\"}"
+  # -d "{\"command\": \"git checkout COMMIT_HASH && $*\"}"

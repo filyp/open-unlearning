@@ -61,7 +61,7 @@ class RepSelectSimple(UnlearnTrainer):
         self.collapse_on = collapse_on
         self.use_lora = use_lora
         self.hard_soft = hard_soft
-        assert distribution in ["forget", "retain", "weight"]
+        assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
         assert hard_soft in ["hard", "soft"]
         # note though, that for some MoE models act and grad dimensions may be transposed
@@ -137,10 +137,6 @@ class RepSelectSimple(UnlearnTrainer):
         if self.distribution == "forget":
             for weight in self.base_trainable_params:
                 weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
-
-        if self.distribution == "weight":
-            for weight in self.base_trainable_params:
-                weight.USV = pt.svd_lowrank(weight.data.float(), q=self.n_pcs)
 
         # collapse
         for weight in self.base_trainable_params:
