@@ -9,16 +9,8 @@ from trainer.unlearn.base import UnlearnTrainer
 logging.basicConfig(level=logging.INFO)
 
 
-def _collapse(
-    mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor, hard_soft: str
-) -> pt.Tensor:
-    projected = mat @ eig_vec
-    if hard_soft == "hard":  # top N PCs projection
-        return mat - projected @ eig_vec.mT
-    else:  # Mahalanobis collapse
-        S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
-        proj_diff = projected - projected / S.unsqueeze(-2)
-        return mat - proj_diff @ eig_vec.mT
+def _keep(mat: pt.Tensor, eig_vec: pt.Tensor) -> pt.Tensor:
+    return (mat @ eig_vec) @ eig_vec.mT
 
 
 def _prep_batch(batch):
@@ -50,7 +42,6 @@ class RepSelectSimple(UnlearnTrainer):
         distribution="forget",
         collapse_on="both",
         use_lora=True,
-        hard_soft="soft",
         *args,
         **kwargs,
     ):
@@ -60,10 +51,8 @@ class RepSelectSimple(UnlearnTrainer):
         self.distribution = distribution
         self.collapse_on = collapse_on
         self.use_lora = use_lora
-        self.hard_soft = hard_soft
         assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
-        assert hard_soft in ["hard", "soft"]
         # note though, that for some MoE models act and grad dimensions may be transposed
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
@@ -109,7 +98,9 @@ class RepSelectSimple(UnlearnTrainer):
                 (-output.loss).backward()
             # retain SVD
             for weight in self.base_trainable_params:
-                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
+                U, S, V = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs[1])
+                lo = self.n_pcs[0]
+                weight.USV = (U[..., lo:], S[..., lo:], V[..., lo:])
 
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
         if self.use_lora:  # toggle for ablations
@@ -136,16 +127,18 @@ class RepSelectSimple(UnlearnTrainer):
         # forget SVD
         if self.distribution == "forget":
             for weight in self.base_trainable_params:
-                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
+                U, S, V = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs[1])
+                lo = self.n_pcs[0]
+                weight.USV = (U[..., lo:], S[..., lo:], V[..., lo:])
 
-        # collapse
+        # keep only the selected PC range
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
             U, S, V = weight.USV
             if self.collapse_on in ["act", "both"]:
-                grad = _collapse(grad, V, S, self.hard_soft)  # filter D_in side
+                grad = _keep(grad, V)  # filter D_in side
             if self.collapse_on in ["grad", "both"]:
-                grad = _collapse(grad.mT, U, S, self.hard_soft).mT  # filter D_out side
+                grad = _keep(grad.mT, U).mT  # filter D_out side
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
 

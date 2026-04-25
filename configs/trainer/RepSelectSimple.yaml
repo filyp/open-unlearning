@@ -6,9 +6,9 @@ args:
   learning_rate: 0.05
 
 method_args:
-  n_pcs: 512
+  n_pcs: [256, 1024]
   lora_lr: 0.01
   distribution: forget  # forget | retain
   collapse_on: both  # act | grad | both | none
   use_lora: true
-  hard_soft: soft  # hard | soft
+  # hard_soft: soft  # hard | soft
