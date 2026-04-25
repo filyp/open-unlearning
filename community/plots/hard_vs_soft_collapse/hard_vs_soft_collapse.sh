@@ -74,4 +74,13 @@ done
 #       model=${model} \
 #       trainer.method_args.n_pcs="[${lo},${hi}]" \
 #       task_name=hardvssoft_${exp_name}_${model}_${lo}-${hi}_ranges
+#     run python src/unlearn_relearn.py --config-name=unlearn.yaml \
+#       trainer=RepSelectSimple \
+#       trainer.handler=RepSelectAdaptive \
+#       trainer.method_args.use_lora=false \
+#       experiment=${experiment} \
+#       model=${model} \
+#       trainer.method_args.n_pcs="[${lo},${hi}]" \
+#       trainer.method_args.distribution=retain \
+#       task_name=hardvssoft_${exp_name}_${model}_${lo}-${hi}_ranges_retain
 # done

@@ -30,7 +30,10 @@ RANGES = [(0, 4), (4, 16), (16, 64), (64, 256), (256, 1024)]
 # Tail bucket: old hard-collapse with n_pcs=1024 projected out top 1024 PCs,
 # leaving everything from index 1024 onward — i.e. the "1024-" range.
 TAIL_LABEL = "1024-"
-TAIL_TASK_TEMPLATE = "hardvssoft_{exp}_{model}_1024_hard"
+TAIL_TASK_TEMPLATE = "hardvssoft_{exp}_{model}_1024_hard{suffix}"
+
+# (label, suffix, linestyle)
+DISTRIBUTIONS = [("forget", "", "-"), ("retain", "_retain", "--")]
 
 # (exp_name_in_task, display, metric)
 BENCHMARKS = [
@@ -38,7 +41,7 @@ BENCHMARKS = [
     ("aa", "Animal Abuse", "train/holdout_harmful_prob"),
 ]
 
-TASK_TEMPLATE = "hardvssoft_{exp}_{model}_{lo}-{hi}_ranges"
+TASK_TEMPLATE = "hardvssoft_{exp}_{model}_{lo}-{hi}_ranges{suffix}"
 
 # %%
 # === CELL 1: fetch relearning trajectories (cached) ===
@@ -53,15 +56,18 @@ else:
 expected = []
 for exp, _, metric in BENCHMARKS:
     for _, model_field in MODELS:
-        for lo, hi in RANGES:
+        for _, suffix, _ in DISTRIBUTIONS:
+            for lo, hi in RANGES:
+                expected.append(
+                    (metric, TASK_TEMPLATE.format(
+                        exp=exp, model=model_field, lo=lo, hi=hi, suffix=suffix
+                    ))
+                )
             expected.append(
-                (metric, TASK_TEMPLATE.format(
-                    exp=exp, model=model_field, lo=lo, hi=hi
+                (metric, TAIL_TASK_TEMPLATE.format(
+                    exp=exp, model=model_field, suffix=suffix
                 ))
             )
-        expected.append(
-            (metric, TAIL_TASK_TEMPLATE.format(exp=exp, model=model_field))
-        )
 
 missing = [(m, t) for m, t in expected if t not in trajectories]
 if missing:
@@ -104,27 +110,33 @@ xs = list(range(len(range_labels)))
 for row_idx, (model_display, model_field) in enumerate(MODELS):
     for col_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
         ax = axes[row_idx][col_idx]
-        task_names = [
-            TASK_TEMPLATE.format(exp=exp, model=model_field, lo=lo, hi=hi)
-            for lo, hi in RANGES
-        ] + [TAIL_TASK_TEMPLATE.format(exp=exp, model=model_field)]
-        plot_xs, max_ys, init_ys = [], [], []
-        for x, t in zip(xs, task_names):
-            hist = trajectories.get(t)
-            if hist is None or metric not in hist.columns or len(hist) == 0:
-                continue
-            head = hist.head(REL_STEPS)[metric].dropna()
-            if len(head) == 0:
-                continue
-            plot_xs.append(x)
-            max_ys.append(head.max() * 100)
-            init_ys.append(head.iloc[0] * 100)
-        ax.plot(plot_xs, init_ys, color="tab:blue", label="initial (pre-attack)")
-        ax.plot(plot_xs, max_ys, color="tab:orange", label="post-attack max")
-        for x, y0, y1 in zip(plot_xs, init_ys, max_ys):
-            ax.annotate(
-                "", xy=(x, y1), xytext=(x, y0),
-                arrowprops=dict(arrowstyle="->", color="gray", lw=0.7),
+        for dist_label, suffix, linestyle in DISTRIBUTIONS:
+            task_names = [
+                TASK_TEMPLATE.format(
+                    exp=exp, model=model_field, lo=lo, hi=hi, suffix=suffix
+                )
+                for lo, hi in RANGES
+            ] + [TAIL_TASK_TEMPLATE.format(
+                exp=exp, model=model_field, suffix=suffix
+            )]
+            plot_xs, max_ys, init_ys = [], [], []
+            for x, t in zip(xs, task_names):
+                hist = trajectories.get(t)
+                if hist is None or metric not in hist.columns or len(hist) == 0:
+                    continue
+                head = hist.head(REL_STEPS)[metric].dropna()
+                if len(head) == 0:
+                    continue
+                plot_xs.append(x)
+                max_ys.append(head.max() * 100)
+                init_ys.append(head.iloc[0] * 100)
+            ax.plot(
+                plot_xs, init_ys, color="tab:blue", linestyle=linestyle,
+                label=f"initial pre-attack ({dist_label})",
+            )
+            ax.plot(
+                plot_xs, max_ys, color="tab:orange", linestyle=linestyle,
+                label=f"post-attack max ({dist_label})",
             )
 
         ax.set_xticks(xs)
@@ -145,8 +157,8 @@ for row_idx, (model_display, model_field) in enumerate(MODELS):
 
 handles, labels = axes[0][0].get_legend_handles_labels()
 fig.legend(
-    handles, labels, loc="lower center", ncol=2,
-    bbox_to_anchor=(0.5, -0.04), frameon=False,
+    handles, labels, loc="lower center", ncol=len(DISTRIBUTIONS),
+    bbox_to_anchor=(0.5, -0.09), frameon=False,
 )
 
 plt.tight_layout(rect=[0.04, 0.04, 1, 1])
