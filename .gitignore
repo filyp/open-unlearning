@@ -212,3 +212,4 @@ community/plots/trajectories/ablations/*.pdf
 community/plots/trajectories/ablations_optim_unlearn/*.pdf
 community/plots/trajectories/methods_png/
 community/plots/trajectories/methods_png_separate/
+community/plots/disruption_and_robustness/methods_png/
