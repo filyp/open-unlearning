@@ -205,8 +205,10 @@ community/benchmarks/beavertails/contrast.jsonl
 .env.json
 verda_token.txt
 top_runner.sh
+paper
 community/plots/.archival/_ablation_dirty.pdf
 community/plots/trajectories/methods/*.pdf
 community/plots/trajectories/ablations/*.pdf
 community/plots/trajectories/ablations_optim_unlearn/*.pdf
-paper
+community/plots/trajectories/methods_png/
+community/plots/trajectories/methods_png_separate/

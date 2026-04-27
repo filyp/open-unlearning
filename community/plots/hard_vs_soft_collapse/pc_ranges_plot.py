@@ -98,8 +98,8 @@ if missing:
 # %%
 # === CELL 2: plot ===
 
-nrows = len(MODELS)
-ncols = len(BENCHMARKS)
+nrows = len(BENCHMARKS)
+ncols = len(MODELS)
 fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.8 * nrows))
 if nrows == 1:
     axes = [axes]
@@ -107,8 +107,8 @@ if nrows == 1:
 range_labels = [f"{lo}-{hi}" for lo, hi in RANGES] + [TAIL_LABEL]
 xs = list(range(len(range_labels)))
 
-for row_idx, (model_display, model_field) in enumerate(MODELS):
-    for col_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
+for row_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
+    for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
         for dist_label, suffix, linestyle in DISTRIBUTIONS:
             task_names = [
@@ -143,7 +143,7 @@ for row_idx, (model_display, model_field) in enumerate(MODELS):
         ax.set_xticklabels(range_labels, rotation=45)
 
         if row_idx == 0:
-            ax.set_title(bench_display)
+            ax.set_title(model_display)
         if row_idx == nrows - 1:
             ax.set_xlabel("PC range")
         else:
@@ -151,7 +151,7 @@ for row_idx, (model_display, model_field) in enumerate(MODELS):
 
         if col_idx == ncols - 1:
             ax.text(
-                1.03, 0.5, model_display,
+                1.03, 0.5, bench_display,
                 transform=ax.transAxes, rotation=-90, ha="left", va="center",
             )
 

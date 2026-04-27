@@ -8,12 +8,11 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 import wandb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from main_grid import study_remap, titles_dict  # noqa: E402
+from main_grid import study_remap  # noqa: E402
 
 plt.style.use("default")
 plt.rcParams["font.size"] = 10
@@ -24,32 +23,38 @@ SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "trajectories.pkl"
 
 OUT_DIR = SCRIPT_DIR / "methods"
-# titles_dict is imported from main_grid.py above
+OUT_DIR_PNG = SCRIPT_DIR / "methods_png"
 
-# --- uncomment for ablations instead ---
-# select best trial by: "relearn" (max relearning metric) or "unlearn"
-# (last valid unlearning metric with KL <= threshold). Lower is better in both.
+titles_dict = {
+    "RepSelectSimple_forget": "RepSelect",
+    # "RepSelect2_forget": "└ multi-epoch",
+    # "RepSelectSimple_forget_no_lora": "└ w/o LoRA",
+    "NPO": "NPO",
+    "RMU": "RMU",
+    # "UNDIAL": "UNDIAL",
+    # "SimNPO": "SimNPO",
+    # "GradDiff": "GradDiff",
+}
+for key, value in titles_dict.items():
+    titles_dict[key] = value.replace("└ ", "RepSelect ")
+
+# # select best trial by: "relearn" (max relearning metric) or "unlearn"
+# # (last valid unlearning metric with KL <= threshold). Lower is better in both.
 # SELECT_BY = "unlearn"
 SELECT_BY = "relearn"
-OUT_DIR = SCRIPT_DIR / ("ablations_optim_unlearn" if SELECT_BY == "unlearn" else "ablations")
-titles_dict = {
-    "RepSelectSimple2": "Forget",
-    "RepSelectSimple_retain": "Retain",
-    "RepSelect_forget": "Cont. Forget",
-    "RepSelect_retain": "Cont. Retain",
-    "RepSelectSimple_no_lora": "no LoRA",
-    # "RepSelect_no_lora": "Cont. no LoRA",
-    "RepSelectSimple_no_pcs": "no collapse",
-}
 
-
+TOP_N = 10
+REL_STEPS = 5
 UNL_PROJECT = "filyp/selective-unlearning"
 REL_PROJECT = "filyp/rel-selective-unlearning"
 DISR_METRIC = "train/wikitext_kl"
 DISR_THRESHOLD = 0.01
-REL_STEPS = 10
 N_TRIALS = 30
 MAX_WORKERS = 12
+LINE_ALPHA = 1
+LINE_WIDTH = 1
+N_GRID = 50
+BAND_ALPHA = 0.2
 
 # main_grid.py's study_remap doesn't cover reference runs; add them (Llama bio/animal_abuse
 # reference runs live under v5_/v7_ prefixes, matching the method runs for those setups).
@@ -190,6 +195,7 @@ if missing:
 # === CELL 2: select best trial per method, plot one PDF per setup ===
 
 OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR_PNG.mkdir(exist_ok=True)
 
 default_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 method_to_color = {
@@ -204,28 +210,40 @@ def trial_score(actual_name, i, metric):
         return None
     unl_hist, rel_hist = entry
     if SELECT_BY == "unlearn":
-        if unl_hist is None or metric not in unl_hist.columns or DISR_METRIC not in unl_hist.columns:
-            return None
-        hist = unl_hist.copy()
-        hist[DISR_METRIC] = pd.to_numeric(hist[DISR_METRIC], errors="coerce")
-        hist[metric] = pd.to_numeric(hist[metric], errors="coerce")
-        hist = hist.dropna(subset=[DISR_METRIC, metric])
-        valid = hist[hist[DISR_METRIC] <= DISR_THRESHOLD]
+        valid = unl_hist[unl_hist[DISR_METRIC] <= DISR_THRESHOLD]
         if len(valid) == 0:
             return None
-        score = valid[metric].iloc[-1]
-    else:
-        if rel_hist is None or metric not in rel_hist.columns or len(rel_hist) == 0:
-            return None
-        score = rel_hist[metric].head(REL_STEPS).max()
-    if pd.isna(score):
-        return None
-    return score
+        return valid[metric].iloc[-1]
+    return rel_hist[metric].head(REL_STEPS).max()
 
+
+def interp_to_grid(kl, y, x_grid):
+    a, b = kl[:-1, None], kl[1:, None]
+    ya, yb = y[:-1, None], y[1:, None]
+    in_seg = (np.minimum(a, b) <= x_grid) & (x_grid <= np.maximum(a, b))
+    dx = np.where(a == b, 1.0, b - a)
+    interp = ya + (x_grid - a) / dx * (yb - ya)
+    interp = np.where(in_seg, interp, np.inf)
+    out = interp.min(axis=0)
+    return np.where(np.isinf(out), np.nan, out)
+
+
+x_grid = np.linspace(0.0, DISR_THRESHOLD, N_GRID)
+
+
+benchmark_display = {"bio": "WMDP-Bio", "animal_abuse": "Animal Abuse"}
 
 for model in MODELS:
-    for benchmark, version, metric in BENCHMARKS:
-        fig, (ax_unl, ax_rel) = plt.subplots(1, 2, figsize=(5.5, 2.1))
+    nrows = len(BENCHMARKS)
+    fig, axes = plt.subplots(
+        nrows, 2, figsize=(5.5, 1.6 * nrows),
+        sharey="row", gridspec_kw={"wspace": 0.08, "hspace": 0.4},
+    )
+    if nrows == 1:
+        axes = [axes]
+
+    for row_idx, (benchmark, version, metric) in enumerate(BENCHMARKS):
+        ax_unl, ax_rel = axes[row_idx]
 
         print(f"\n{model} / {benchmark}")
         for method, display_name in titles_dict.items():
@@ -238,43 +256,47 @@ for model in MODELS:
             if not scores:
                 print(f"  {method}: no data")
                 continue
-            best_i = min(scores, key=scores.get)
-            print(f"  {method}: best_i={best_i} score={scores[best_i] * 100:.2f}%")
-
-            unl_hist, rel_hist = trajectories[f"{actual}_{best_i}"]
+            top_is = sorted(scores, key=scores.get)[:TOP_N]
+            print(
+                f"  {method}: top={top_is} "
+                f"scores={[f'{scores[i] * 100:.2f}%' for i in top_is]}"
+            )
             color = method_to_color[method]
 
-            if unl_hist is not None and DISR_METRIC in unl_hist.columns:
-                hist = unl_hist.dropna(subset=[DISR_METRIC, metric])
-                kl = hist[DISR_METRIC].values
-                y = (hist[metric] * 100).values
-                over = np.where(kl > DISR_THRESHOLD)[0]
-                if len(over) == 0:
-                    x_plot, y_plot = kl, y
-                elif over[0] == 0:
-                    x_plot, y_plot = kl[:0], y[:0]
-                else:
-                    j = over[0]
-                    dx = kl[j] - kl[j - 1]
-                    t = (DISR_THRESHOLD - kl[j - 1]) / dx if dx else 0.0
-                    y_interp = y[j - 1] + t * (y[j] - y[j - 1])
-                    x_plot = np.concatenate([kl[:j], [DISR_THRESHOLD]])
-                    y_plot = np.concatenate([y[:j], [y_interp]])
-                ax_unl.plot(
-                    x_plot,
-                    y_plot,
-                    color=color,
-                    alpha=0.7,
-                    label=display_name,
+            unl_grids = []
+            rel_arrs = []
+            for trial_i in top_is:
+                unl_hist, rel_hist = trajectories[f"{actual}_{trial_i}"]
+                kl = unl_hist[DISR_METRIC].astype(float).values
+                y = unl_hist[metric].astype(float).values * 100
+                unl_grids.append(interp_to_grid(kl, y, x_grid))
+                rel_arrs.append(
+                    rel_hist[metric].astype(float).head(REL_STEPS).values * 100
                 )
 
-            rel_head = rel_hist.head(REL_STEPS)
+            stacked = np.stack(unl_grids)
+            mean_u = np.nanmean(stacked, axis=0)
+            std_u = np.nanstd(stacked, axis=0)
+            ax_unl.plot(
+                x_grid, mean_u, color=color, alpha=LINE_ALPHA,
+                linewidth=LINE_WIDTH, label=display_name,
+            )
+            ax_unl.fill_between(
+                x_grid, mean_u - std_u, mean_u + std_u,
+                color=color, alpha=BAND_ALPHA, linewidth=0,
+            )
+
+            rel_stacked = np.stack(rel_arrs)
+            mean_r = rel_stacked.mean(axis=0)
+            std_r = rel_stacked.std(axis=0)
+            xs = np.arange(REL_STEPS)
             ax_rel.plot(
-                range(len(rel_head)),
-                rel_head[metric] * 100,
-                color=color,
-                alpha=0.7,
-                label=display_name,
+                xs, mean_r, color=color, alpha=LINE_ALPHA,
+                linewidth=LINE_WIDTH, label=display_name,
+            )
+            ax_rel.fill_between(
+                xs, mean_r - std_r, mean_r + std_r,
+                color=color, alpha=BAND_ALPHA, linewidth=0,
             )
 
         ref_actual = canonical_to_actual(version, model, benchmark, "reference")
@@ -291,35 +313,43 @@ for model in MODELS:
                 label="no unlearning",
             )
 
-        unl_lo, unl_hi = ax_unl.get_ylim()
-        rel_lo, rel_hi = ax_rel.get_ylim()
-        y_lo, y_hi = min(unl_lo, rel_lo), max(unl_hi, rel_hi)
-        ax_unl.set_ylim(y_lo, y_hi)
-        ax_rel.set_ylim(y_lo, y_hi)
-
         ax_unl.set_xticks([0.0, 0.005, 0.01])
         ax_rel.set_xticks(range(REL_STEPS))
-        ax_unl.set_title("Unlearning")
-        ax_rel.set_title("Relearning")
-        ax_unl.set_xlabel("Wikitext KL")
-        ax_rel.set_xlabel("Epochs")
 
-        handles, labels = ax_rel.get_legend_handles_labels()
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            ncol=(len(titles_dict) + 2) // 2,
-            bbox_to_anchor=(0.5, -0.15),
-            frameon=False,
+        if row_idx == 0:
+            ax_unl.set_title("Unlearning")
+            ax_rel.set_title("Relearning")
+        if row_idx == nrows - 1:
+            ax_unl.set_xlabel("Wikitext KL")
+            ax_rel.set_xlabel("Epochs")
+
+        ax_rel.text(
+            1.03, 0.5, benchmark_display.get(benchmark, benchmark),
+            transform=ax_rel.transAxes, rotation=-90, ha="left", va="center",
         )
 
-        plt.tight_layout(rect=[0.04, 0.04, 1, 1])
-        fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
+    handles, labels = axes[0][1].get_legend_handles_labels()
+    if "no unlearning" in labels:
+        i = labels.index("no unlearning")
+        handles = [handles[i]] + handles[:i] + handles[i + 1 :]
+        labels = [labels[i]] + labels[:i] + labels[i + 1 :]
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=4,
+        bbox_to_anchor=(0.5, -0.15),
+        frameon=False,
+    )
 
-        save_path = OUT_DIR / f"{model}_{benchmark}.pdf"
-        fig.savefig(save_path, bbox_inches="tight")
-        print(f"  saved {save_path}")
-        plt.close(fig)
+    plt.tight_layout(rect=[0.04, 0.04, 1, 1])
+    fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
+
+    save_path = OUT_DIR / f"{model}.pdf"
+    fig.savefig(save_path, bbox_inches="tight")
+    save_path_png = OUT_DIR_PNG / f"{model}.png"
+    fig.savefig(save_path_png, bbox_inches="tight", dpi=200)
+    print(f"  saved {save_path} and {save_path_png}")
+    plt.close(fig)
 
 # %%

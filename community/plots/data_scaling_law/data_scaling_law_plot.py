@@ -108,7 +108,10 @@ if missing or missing_refs:
 # === CELL 2: Plot ===
 
 nrows = len(MODELS)
-fig, axes = plt.subplots(nrows, 2, figsize=(5.5, 1.8 * nrows))
+fig, axes = plt.subplots(
+    nrows, 2, figsize=(5.5, 1.8 * nrows),
+    sharey="row", gridspec_kw={"wspace": 0.08, "hspace": 0.4},
+)
 if nrows == 1:
     axes = [axes]
 
@@ -151,7 +154,6 @@ for row_idx, (model_display, model_field, ylim) in enumerate(MODELS):
     ax_unl.set_xticks([0.0, 0.005, 0.01])
     ax_rel.set_xticks(range(REL_STEPS))
     ax_unl.set_ylim(*ylim)
-    ax_rel.set_ylim(*ylim)
 
     # Column titles only on the top row
     if row_idx == 0:
@@ -184,7 +186,7 @@ fig.legend(
     labels,
     loc="lower center",
     ncol=3,
-    bbox_to_anchor=(0.5, -0.08),
+    bbox_to_anchor=(0.5, -0.18),
     frameon=False,
 )
 

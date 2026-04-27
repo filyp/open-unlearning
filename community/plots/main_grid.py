@@ -40,7 +40,7 @@ titles_dict = {
 # "RepSelect_forget": "└ multi-epoch",
 # "RepSelectSimple_no_lora": "└ w/o LoRA",
 
-# # actuually, abandon this branch; collapse comparisons are much better served by collapse_grid.py
+# # actually, abandon this branch; collapse comparisons are much better served by collapse_grid.py
 # plot_name = "ablations.pdf"
 # height = 2.7
 # titles_dict = {
