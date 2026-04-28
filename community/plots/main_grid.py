@@ -1,24 +1,17 @@
 # %%
-import os
-import pickle
+import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import optuna
+import yaml
 from scipy import stats
-
-CACHE_DIR = Path(__file__).parent / ".study_cache"
-CACHE_DIR.mkdir(exist_ok=True)
 
 plt.style.use("default")
 plt.rcParams["font.size"] = 10
 plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["axes.titlesize"] = 10
-
-strict = True
 
 plot_name = "main_grid.pdf"
 height = 3.2
@@ -26,7 +19,6 @@ titles_dict = {
     "RepSelectSimple_forget": "RepSelect",
     "RepSelect2_forget": "└ multi-epoch",
     "RepSelectSimple_forget_no_lora": "└ w/o LoRA",
-
     "NPO": "NPO",
     "RMU": "RMU",
     "UNDIAL": "UNDIAL",
@@ -53,153 +45,34 @@ titles_dict = {
 #     "RepSelectSimple_no_pcs": "no collapse",
 # }
 
-storage = os.environ.get("OPTUNA_STORAGE_URL")
-
-# Canonical study name -> actual name in Optuna (for the weirdly-named runs).
-# Canonical scheme: always v5.3/v7.3, RepSelect always carries explicit _forget.
-study_remap = {
-    # Llama bio: actual runs use v5 (no .3)
-    "v5.3_Llama-3.1-8B_bio_GradDiff": "v5_Llama-3.1-8B_bio_GradDiff",
-    "v5.3_Llama-3.1-8B_bio_NPO": "v5_Llama-3.1-8B_bio_NPO",
-    "v5.3_Llama-3.1-8B_bio_RMU": "v5_Llama-3.1-8B_bio_RMU",
-    "v5.3_Llama-3.1-8B_bio_SimNPO": "v5_Llama-3.1-8B_bio_SimNPO",
-    "v5.3_Llama-3.1-8B_bio_UNDIAL": "v5_Llama-3.1-8B_bio_UNDIAL",
-    # Llama animal_abuse: actual runs use v7 (no .3) for non-RepSelect methods
-    "v7.3_Llama-3.1-8B_animal_abuse_GradDiff": "v7_Llama-3.1-8B_animal_abuse_GradDiff",
-    "v7.3_Llama-3.1-8B_animal_abuse_NPO": "v7_Llama-3.1-8B_animal_abuse_NPO",
-    "v7.3_Llama-3.1-8B_animal_abuse_RMU": "v7_Llama-3.1-8B_animal_abuse_RMU",
-    "v7.3_Llama-3.1-8B_animal_abuse_SimNPO": "v7_Llama-3.1-8B_animal_abuse_SimNPO",
-    "v7.3_Llama-3.1-8B_animal_abuse_UNDIAL": "v7_Llama-3.1-8B_animal_abuse_UNDIAL",
-    # Bio RepSelect runs are bare (no _forget suffix)
-    "v5.3_Llama-3.1-8B_bio_RepSelect_forget": "v5_Llama-3.1-8B_bio_RepSelect",
-    "v5.3_gemma-4-E4B_bio_RepSelect_forget": "v5.3_gemma-4-E4B_bio_RepSelect",
-    "v5.3_DeepSeek-V2-Lite_bio_RepSelect_forget": "v5.3_DeepSeek-V2-Lite_bio_RepSelect",
-    # animal_abuse RepSelect retain runs are bare (no _retain suffix)
-    "v7.3_Llama-3.1-8B_animal_abuse_RepSelect_retain": "v7_Llama-3.1-8B_animal_abuse_RepSelect",
-    "v7.3_gemma-4-E4B_animal_abuse_RepSelect_retain": "v7.3_gemma-4-E4B_animal_abuse_RepSelect",
-    "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect_retain": "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect",
-}
+# Per-benchmark trial scores from results.json (produced by
+# community/benchmarks/dump_results.py). Shape: {dataset: {method: {model: [scores]}}}.
+_BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
+trial_scores: Dict[str, Dict[str, Dict[str, List[float]]]] = {}
+for _dataset, _subdir in [("bio", "wmdp_low_mi"), ("animal_abuse", "beavertails")]:
+    with open(_BENCHMARKS_DIR / _subdir / "results.json") as _f:
+        _data = json.load(_f)
+    trial_scores[_dataset] = {
+        method: {model: info["scores"] for model, info in by_model.items()}
+        for method, by_model in _data.items()
+    }
 
 
-def load_studies(study_pattern: str) -> Dict[str, optuna.Study]:
-    """
-    Load Optuna studies for each method.
-
-    Args:
-        study_pattern: Pattern like "v5_Llama-3.1-8B_{}_bio" where {} is replaced by method name
-        method_names: List of method names to load
-        storage: Optuna storage URL
-
-    Returns:
-        Dict mapping method name to Study object
-    """
-    assert storage is not None, "OPTUNA_STORAGE_URL environment variable not set"
-    studies = {}
-    for method in titles_dict.keys():
-        canonical = study_pattern.format(method)
-        actual = study_remap.get(canonical, canonical)
-        cache_file = CACHE_DIR / f"{actual}.pkl"
-        if cache_file.exists():
-            with open(cache_file, "rb") as f:
-                cached = pickle.load(f)
-            n_complete_cached = sum(
-                1 for t in cached.trials if t.state == optuna.trial.TrialState.COMPLETE
-            )
-            if n_complete_cached >= 30:
-                print(f"  loading cached: {cache_file.name}")
-                studies[method] = cached
-                continue
-            print(
-                f"  cache has only {n_complete_cached} completed trials; reloading from Optuna: {cache_file.name}"
-            )
-
-        try:
-            study = optuna.load_study(study_name=actual, storage=storage)
-        except KeyError:
-            if strict:
-                # hard, for final plots:
-                raise ValueError(f"Study not found: {actual} (method={method})")
-            else:
-                # soft, for temporary plots:
-                import warnings
-                warnings.warn(f"Study not found: {actual} (method={method}); skipping")
-                studies[method] = None
-                continue
-
-        frozen = SimpleNamespace(trials=list(study.trials))
-        with open(cache_file, "wb") as f:
-            pickle.dump(frozen, f)
-        studies[method] = frozen
-
-    if strict:
-        for method, study in studies.items():
-            n_complete = sum(
-                1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
-            )
-            print(f"  {method}: {n_complete} completed trials")
-            assert n_complete == 30
-    return studies
-
-
-# %%
-def get_stats_from_studies(
-    study_pattern: str,
+def get_stats(
+    model: str,
+    dataset: str,
     top_n: int = 10,
 ) -> Tuple[Dict[str, Tuple[float, float, float]], float]:
+    """Mean/SEM/std of the top N trials for each method, plus the baseline.
+
+    Lower is better, so "top N" means the N lowest scores.
     """
-    Get mean and SEM of top N trials for each study, plus the baseline.
-
-    For minimization studies (lower is better), takes the N lowest values.
-    The baseline is provided manually (from a dedicated reference run in wandb).
-    The most common value across all runs is logged as a sanity check.
-
-    Returns:
-        Tuple of:
-        - Dict mapping method name to (mean, sem, std) tuple
-        - Reference value (passed in)
-    """
-    from collections import Counter
-
-    studies = load_studies(study_pattern)
-    reference = references[study_pattern.format("reference")]
-
     method_stats = {}
-    all_values = []  # Collect ALL values from all studies for sanity check
-
-    # print("Method stats (top {} runs):".format(top_n))
-    for method, study in studies.items():
-        if study is None:
-            continue
-        completed_trials = [
-            t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
-        ]
-        values = [t.value for t in completed_trials]
-
-        # Collect all values for sanity check
-        all_values.extend(values)
-
-        # Sort ascending (best = lowest for minimization)
-        values_sorted = sorted(values)
-        top_n_values = values_sorted[:top_n]
-
-        mean = np.mean(top_n_values)
-        sem = stats.sem(top_n_values) if len(top_n_values) > 1 else 0
-        std = np.std(top_n_values)
-        method_stats[method] = (mean, sem, std)
-
-        # print(
-        #     f"  {method}: mean={mean*100:.2f}%, sem={sem*100:.2f}%, std={std*100:.2f}%"
-        # )
-
-    # Sanity check: log most common value across all runs
-    counter = Counter(all_values)
-    most_common_value, most_common_count = counter.most_common(1)[0]
-    print(
-        f"  Sanity check - most common value: {most_common_value*100:.2f}% (appears {most_common_count} times)"
-    )
-    print(f"  Reference (from dedicated run): {reference*100:.2f}%")
-
-    return method_stats, reference
+    for method in titles_dict:
+        scores = trial_scores[dataset][method][model]
+        top = sorted(scores)[:top_n]
+        method_stats[method] = (np.mean(top), stats.sem(top), np.std(top))
+    return method_stats, baselines[dataset][model]
 
 
 def plot_grid(
@@ -313,19 +186,17 @@ def plot_grid(
 
 # === CELL 2: Plotting (fast, iterate here) ===
 
-# Reference values from dedicated reference runs in wandb
-# (no epochs of unlearning, i.e. just relearning from the base model)
-references = {
-    "v5.3_Llama-3.1-8B_bio_reference": 0.16739,  # taken from the v5_ version
-    "v7.3_Llama-3.1-8B_animal_abuse_reference": 0.20943,  # taken from the v7_ version
-    "v5.3_gemma-4-E4B_bio_reference": 0.15398,
-    "v7.3_gemma-4-E4B_animal_abuse_reference": 0.19647,
-    "v7.3_Llama-3.1-8B-Instruct_animal_abuse_reference": 0.20335,
-    "v7.3_DeepSeek-V2-Lite_animal_abuse_reference": 0.21067,
-    "v5.3_DeepSeek-V2-Lite_bio_reference": 0.063342,
-    "v5.3_Qwen3.5-9B_bio_reference": 0.07283087448756162,
-    "v7.3_Qwen3.5-9B_animal_abuse_reference": 0.2186462093377486,
-}
+# Baselines from dedicated reference runs in wandb
+# (no epochs of unlearning, i.e. just relearning from the base model).
+# Shape: {dataset: {model: value}}.
+_BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
+baselines: Dict[str, Dict[str, float]] = {}
+for _path in [
+    _BENCHMARKS_DIR / "wmdp_low_mi" / "baselines.yaml",
+    _BENCHMARKS_DIR / "beavertails" / "baselines.yaml",
+]:
+    with open(_path) as _f:
+        baselines.update(yaml.safe_load(_f))
 
 # %%
 
@@ -334,16 +205,16 @@ if __name__ == "__main__":
     fig = plot_grid(
         rows=[
             [
-                get_stats_from_studies("v5.3_Llama-3.1-8B_bio_{}"),
-                get_stats_from_studies("v5.3_gemma-4-E4B_bio_{}"),
-                get_stats_from_studies("v5.3_DeepSeek-V2-Lite_bio_{}"),
-                get_stats_from_studies("v5.3_Qwen3.5-9B_bio_{}"),
+                get_stats("Llama-3.1-8B", "bio"),
+                get_stats("gemma-4-E4B", "bio"),
+                get_stats("DeepSeek-V2-Lite", "bio"),
+                get_stats("Qwen3.5-9B", "bio"),
             ],
             [
-                get_stats_from_studies("v7.3_Llama-3.1-8B_animal_abuse_{}"),
-                get_stats_from_studies("v7.3_gemma-4-E4B_animal_abuse_{}"),
-                get_stats_from_studies("v7.3_DeepSeek-V2-Lite_animal_abuse_{}"),
-                get_stats_from_studies("v7.3_Qwen3.5-9B_animal_abuse_{}"),
+                get_stats("Llama-3.1-8B", "animal_abuse"),
+                get_stats("gemma-4-E4B", "animal_abuse"),
+                get_stats("DeepSeek-V2-Lite", "animal_abuse"),
+                get_stats("Qwen3.5-9B", "animal_abuse"),
             ],
         ],
         col_titles=["Llama-3.1-8B", "Gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"],

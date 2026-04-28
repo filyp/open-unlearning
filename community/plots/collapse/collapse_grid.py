@@ -1,15 +1,22 @@
 # %%
 import pickle
-import sys
 import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import yaml
 
 import wandb
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from main_grid import references  # noqa: E402
+# Baselines from dedicated reference runs in wandb. Shape: {dataset: {model: value}}.
+_BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "benchmarks"
+baselines: dict[str, dict[str, float]] = {}
+for _path in [
+    _BENCHMARKS_DIR / "wmdp_low_mi" / "baselines.yaml",
+    _BENCHMARKS_DIR / "beavertails" / "baselines.yaml",
+]:
+    with open(_path) as _f:
+        baselines.update(yaml.safe_load(_f))
 
 plt.style.use("default")
 plt.rcParams["font.size"] = 10
@@ -59,11 +66,6 @@ BENCH_CONFIGS = {
 
 def task_name(exp_name, model, suffix):
     return f"collapse_{exp_name}_{model}_{suffix}"
-
-
-def ref_key(model, bench_tag):
-    version = "v5.3" if bench_tag == "bio" else "v7.3"
-    return f"{version}_{model}_{bench_tag}_reference"
 
 
 # %%
@@ -140,7 +142,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
     for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
-        baseline = references[ref_key(model_field, bench_tag)] * 100
+        baseline = baselines[bench_tag][model_field] * 100
 
         maxes = []
         initials = []
