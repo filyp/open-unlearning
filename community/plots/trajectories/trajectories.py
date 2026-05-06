@@ -1,7 +1,6 @@
 # %%
 import pickle
 import re
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -11,8 +10,29 @@ import numpy as np
 
 import wandb
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from main_grid import study_remap  # noqa: E402
+# mirroring main_grid.py
+study_remap = {
+    # Llama bio: actual runs use v5 (no .3)
+    "v5.3_Llama-3.1-8B_bio_GradDiff": "v5_Llama-3.1-8B_bio_GradDiff",
+    "v5.3_Llama-3.1-8B_bio_NPO": "v5_Llama-3.1-8B_bio_NPO",
+    "v5.3_Llama-3.1-8B_bio_RMU": "v5_Llama-3.1-8B_bio_RMU",
+    "v5.3_Llama-3.1-8B_bio_SimNPO": "v5_Llama-3.1-8B_bio_SimNPO",
+    "v5.3_Llama-3.1-8B_bio_UNDIAL": "v5_Llama-3.1-8B_bio_UNDIAL",
+    # Llama animal_abuse: actual runs use v7 (no .3) for non-RepSelect methods
+    "v7.3_Llama-3.1-8B_animal_abuse_GradDiff": "v7_Llama-3.1-8B_animal_abuse_GradDiff",
+    "v7.3_Llama-3.1-8B_animal_abuse_NPO": "v7_Llama-3.1-8B_animal_abuse_NPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_RMU": "v7_Llama-3.1-8B_animal_abuse_RMU",
+    "v7.3_Llama-3.1-8B_animal_abuse_SimNPO": "v7_Llama-3.1-8B_animal_abuse_SimNPO",
+    "v7.3_Llama-3.1-8B_animal_abuse_UNDIAL": "v7_Llama-3.1-8B_animal_abuse_UNDIAL",
+    # Bio RepSelect runs are bare (no _forget suffix)
+    "v5.3_Llama-3.1-8B_bio_RepSelect_forget": "v5_Llama-3.1-8B_bio_RepSelect",
+    "v5.3_gemma-4-E4B_bio_RepSelect_forget": "v5.3_gemma-4-E4B_bio_RepSelect",
+    "v5.3_DeepSeek-V2-Lite_bio_RepSelect_forget": "v5.3_DeepSeek-V2-Lite_bio_RepSelect",
+    # animal_abuse RepSelect retain runs are bare (no _retain suffix)
+    "v7.3_Llama-3.1-8B_animal_abuse_RepSelect_retain": "v7_Llama-3.1-8B_animal_abuse_RepSelect",
+    "v7.3_gemma-4-E4B_animal_abuse_RepSelect_retain": "v7.3_gemma-4-E4B_animal_abuse_RepSelect",
+    "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect_retain": "v7.3_DeepSeek-V2-Lite_animal_abuse_RepSelect",
+}
 
 plt.style.use("default")
 plt.rcParams["font.size"] = 10

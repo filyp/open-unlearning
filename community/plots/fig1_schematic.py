@@ -18,7 +18,17 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 import json
 
+# this style set MUST be before font set, to not overwrite them
+plt.style.use("default")  # reset before applying our rcParams
+
 plt.rcParams["font.size"] = 10
+
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.serif"] = ["Times New Roman"]
+plt.rcParams["mathtext.fontset"] = "stix"  # serif math glyphs
+plt.rcParams["pdf.fonttype"] = 42  # embed real TTF, not Type 3 paths
+
+
 # plt.rcParams["font.family"] = "Times New Roman"
 
 # plt.rcParams["text.usetex"] = True
@@ -26,40 +36,37 @@ plt.rcParams["font.size"] = 10
 # plt.rcParams["font.serif"] = ["Times"]
 # plt.rcParams["text.latex.preamble"] = r"\usepackage{mathptmx}"
 
-plt.rcParams["text.usetex"] = True
-plt.rcParams["font.family"] = "serif"
-plt.rcParams["text.latex.preamble"] = r"\usepackage{mathptmx}"
-
-# light theme
-plt.style.use("default")  # explicitly reset to light defaults
+# plt.rcParams["text.usetex"] = True
+# plt.rcParams["font.family"] = "serif"
+# plt.rcParams["text.latex.preamble"] = r"\usepackage{mathptmx}"
 
 OUT = Path(__file__).parent / "fig1_schematic.pdf"
 
 BLACK = "#000000"
 # RED = "#7a1717"    # dark red
-RED = "#a31f1f"    # dark red
+RED = "#a31f1f"  # dark red
 GREY = "#9aa0a6"
 # SHADE_AREA = "#cfe2f7"
 SHADE_AREA = "#eeeeee"
 
-TOP_FRAC = 0.448 # boundary between "top PCs" and "bottom PCs" regions
+TOP_FRAC = 0.448  # boundary between "top PCs" and "bottom PCs" regions
 XLIM = (0, 2.25)
 
 # (text, x, y) — y in [0,1] with 0 = top PCs (plot is inverted)
 TOP_WORDS = [
     ("the", 0.35, 0.05),
-    ("a",   1.65, 0.06),
-    ("in",  1.0, 0.08),
-    ("virus",   1.6, 0.15),
+    ("a", 1.65, 0.06),
+    ("in", 1.0, 0.08),
+    ("virus", 1.6, 0.15),
     # ("RNA",   0.48, 0.16),
-    ("viral",   0.7, 0.18),
-    ("protein",   1.8, 0.26),
-    ("infection",   0.65, 0.28),
-    ("epidemic",   1.40, 0.37),
+    ("viral", 0.7, 0.18),
+    ("protein", 1.8, 0.26),
+    ("infection", 0.65, 0.28),
+    ("epidemic", 1.40, 0.37),
 ]
 BOTTOM_WORDS = [
-    ("RV strain SA11",  1.1, 0.55),
-    ("plasmid-only\nreverse genetics",    1.2, 0.72),
+    ("RV strain SA11", 1.1, 0.55),
+    ("plasmid-only\nreverse genetics", 1.2, 0.72),
     ("Bordetella\npertussis", 1.0, 0.97),
 ]
 
@@ -113,8 +120,8 @@ METHOD_LABELS = {
 _DEFAULT_CYCLE = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 METHOD_COLORS = {
     "RepSelectSimple_forget": _DEFAULT_CYCLE[0],  # blue
-    "NPO":                    _DEFAULT_CYCLE[1],  # orange
-    "RMU":                    _DEFAULT_CYCLE[2],  # green
+    "NPO": _DEFAULT_CYCLE[1],  # orange
+    "RMU": _DEFAULT_CYCLE[2],  # green
 }
 
 # Fine-tuning attack: pull from results.json used by main_grid (Llama-3.1-8B / WMDP-Bio).
@@ -182,9 +189,14 @@ def draw_panel_c(ax, values, baseline, title):
 
     # Sub-row label INSIDE the axes top-left (doesn't push the axes box).
     ax.text(
-        0.01, 1.01, title,
+        0.01,
+        1.01,
+        title,
         transform=ax.transAxes,
-        fontsize=10, color="#333", ha="left", va="top",
+        fontsize=10,
+        color="#333",
+        ha="left",
+        va="top",
     )
 
 
@@ -197,10 +209,15 @@ fig = plt.figure(figsize=(5.5, 3.0))
 # sticks leftward into the AB gap, making it look smaller, so we make AB ~30%
 # larger and BC ~30% smaller.
 gs = GridSpec(
-    1, 5, figure=fig,
+    1,
+    5,
+    figure=fig,
     width_ratios=[1.075, 0.425, 1.075, 0.25, 0.75],
     wspace=0.0,
-    top=0.84, bottom=0.16, left=0.04, right=0.86,
+    top=0.84,
+    bottom=0.16,
+    left=0.04,
+    right=0.86,
 )
 
 ax_a = fig.add_subplot(gs[0, 0])
@@ -218,7 +235,9 @@ draw_panel(ax_b, collapsed=True, title=None)
 _AB_EXTEND_DOWN = 0.05
 for _ax in (ax_a, ax_b):
     _bb = _ax.get_position()
-    _ax.set_position([_bb.x0, _bb.y0 - _AB_EXTEND_DOWN, _bb.width, _bb.height + _AB_EXTEND_DOWN])
+    _ax.set_position(
+        [_bb.x0, _bb.y0 - _AB_EXTEND_DOWN, _bb.width, _bb.height + _AB_EXTEND_DOWN]
+    )
     _ax.set_ylim(1 + _AB_EXTEND_DOWN / _bb.height, 0)
 
 draw_panel_c(ax_c_ft, ft_values, FT_BASELINE, "Fine-tuning attack")
@@ -230,7 +249,7 @@ ax_c_fs.set_xlabel(r"post-attack score ↓", fontsize=10)
 _FS_SHIFT_UP = 0.07
 _bb_fs = ax_c_fs.get_position()
 ax_c_fs.set_position([_bb_fs.x0, _bb_fs.y0 + _FS_SHIFT_UP, _bb_fs.width, _bb_fs.height])
-ax_c_fs.xaxis.set_label_coords(0.72, -0.32)
+ax_c_fs.xaxis.set_label_coords(0.57, -0.28)
 
 # Aligned super-titles via fig.text. A starts at the figure's left edge so its
 # (longer) text doesn't crowd panel B's title.
@@ -239,12 +258,20 @@ bb_a = ax_a.get_position()
 bb_b = ax_b.get_position()
 bb_c = ax_c_ft.get_position()
 title_y = bb_a.y1 + 0.04
-fig.text(0.0, title_y, "A   Why unlearning fails",
-         fontsize=10, weight="bold", ha="left", va="bottom")
-fig.text(bb_b.x0, title_y, "B   RepSelect",
-         fontsize=10, weight="bold", ha="left", va="bottom")
-fig.text(bb_c.x0, title_y, "C   Robustness",
-         fontsize=10, weight="bold", ha="left", va="bottom")
+
+
+def _panel_title(x, letter, text):
+    t = fig.text(x, title_y, letter, fontsize=10, weight="bold", ha="left", va="bottom")
+    # Place description right after the bold letter; use a renderer-based
+    # offset so spacing is consistent across panels.
+    fig.canvas.draw()
+    bb = t.get_window_extent().transformed(fig.transFigure.inverted())
+    fig.text(bb.x1 + 0.012, title_y, text, fontsize=10, ha="left", va="bottom")
+
+
+_panel_title(0.00, "A", "Why naive unlearning fails")
+_panel_title(bb_b.x0 + 0.00, "B", "RepSelect")
+_panel_title(bb_c.x0 + 0.00, "C", "Robustness")
 
 fig.savefig(OUT)  # no bbox_inches='tight': preserves exact 5.5 in width
 print(f"wrote {OUT}")
