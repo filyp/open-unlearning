@@ -26,82 +26,68 @@ plt.style.use("default")  # explicitly reset to light defaults
 
 OUT = Path(__file__).parent / "fig1_schematic.pdf"
 
-# --- profiles over PC index ----------------------------------------------
-# y goes top -> bottom = high-variance -> low-variance PCs.
-# We plot energy (x) as a function of PC index (y).
-N = 1000
-y = np.linspace(0, 1, N)  # 0 = top PC, 1 = bottom PC
-
-# Forget: peaks at top, with a heavier tail toward bottom PCs.
-forget = 0.85 * np.exp(-(y / 0.35) ** 1.4) + 0.15 * (1 - y) ** 0.4
-forget = forget / forget.max()  # peak ~1.0
-
-# Retain: at the top extends ~2x further right than forget, then decays fast.
-retain = 2.0 * np.exp(-(y / 0.16) ** 1.7)
-
-GREEN = "#2ca02c"
-RED = "#d62728"
+GREEN = "#1b7a1b"  # dark green
+RED = "#a31f1f"    # dark red
 GREY = "#9aa0a6"
+# LIGHT_BLUE = "#cfe2f7"
+LIGHT_BLUE = "#8bbef7"
 
-TOP_FRAC = 0.32  # boundary between "top PCs" and "bottom PCs" regions
+TOP_FRAC = 0.43  # boundary between "top PCs" and "bottom PCs" regions
+XLIM = (0, 2.25)
+
+# (text, x, y) — y in [0,1] with 0 = top PCs (plot is inverted)
+TOP_WORDS = [
+    ("the", 0.35, 0.05),
+    ("a",   1.65, 0.06),
+    ("in",  1.0, 0.08),
+    ("virus",   1.6, 0.15),
+    # ("RNA",   0.48, 0.16),
+    ("viral",   0.7, 0.18),
+    ("protein",   1.8, 0.26),
+    ("infection",   0.65, 0.28),
+    ("epidemic",   1.40, 0.37),
+]
+BOTTOM_WORDS = [
+    ("RV strain SA11",  1.1, 0.55),
+    ("plasmid-only\nreverse genetics",    1.3, 0.72),
+    ("Bordetella\npertussis", 1.1, 0.97),
+]
 
 
 def draw_panel(ax, *, collapsed: bool, title: str):
-    if collapsed:
-        mask = y >= TOP_FRAC
-        yy = y[mask]
-        rr = retain[mask]
-        ff = forget[mask]
-    else:
-        yy, rr, ff = y, retain, forget
-    ax.fill_betweenx(yy, 0, rr, color=RED, alpha=0.30, lw=0, label="Retain")
-    ax.fill_betweenx(yy, 0, ff, color=GREEN, alpha=0.30, lw=0, label="Forget")
-    ax.plot(rr, yy, color=RED, lw=1.2, alpha=0.9)
-    ax.plot(ff, yy, color=GREEN, lw=1.2, alpha=0.9)
-
-    # Top-PC region marker
-    ax.axhline(TOP_FRAC, color=GREY, lw=0.8, ls="--", alpha=0.7)
+    # Bottom words: shown in both panels.
+    for txt, x, y in BOTTOM_WORDS:
+        ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=GREEN)
 
     if collapsed:
+        # Mask the top region.
+        ax.axhspan(0, TOP_FRAC, color=LIGHT_BLUE, alpha=0.85, lw=0, zorder=2)
         ax.text(
-            1.15,
+            (XLIM[0] + XLIM[1]) / 2,
             TOP_FRAC / 2,
             "collapsed by\nRepSelect",
             ha="center",
             va="center",
-            fontsize=10,
+            fontsize=11,
             color="black",
             zorder=4,
         )
-        ax.text(
-            1.35,
-            TOP_FRAC * 1.3,
-            "Forget w/o retain\n(low disruption)",
-            ha="center",
-            va="center",
-            fontsize=8,
-            # color="#444",
-        )
     else:
-        ax.text(
-            1.45,
-            TOP_FRAC * 0.72,
-            # "Forget-retain\noverlap\n(high disruption)",
-            # "Overlapping\nforget & retain\n(high disruption)",
-            "Overlapping\nforget & retain",
-            ha="center",
-            va="center",
-            fontsize=8.2,
-            # color="#444",
-        )
+        for txt, x, y in TOP_WORDS:
+            ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=RED)
+
+    # Top-PC region marker
+    ax.axhline(TOP_FRAC, color=GREY, lw=0.8, ls="--", alpha=0.7)
 
     # Axis cosmetics
-    ax.set_xlim(0, 2.25)
+    ax.set_xlim(*XLIM)
     ax.set_ylim(1, 0)  # invert: top PCs at top
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_xlabel("variance", fontsize=10)
+    for spine in ("top", "right", "bottom"):
+        ax.spines[spine].set_visible(False)
     ax.set_ylabel(r"bottom PCs  $\longleftrightarrow$  top PCs", fontsize=10)
+    # ax.yaxis.set_label_coords(-0.06, 0.40)
     if title is not None:
         ax.set_title(title, fontsize=10, weight="bold", loc="left")
 
@@ -212,6 +198,14 @@ ax_c_fs = fig.add_subplot(gs_c[1, 0])
 draw_panel(ax_a, collapsed=False, title=None)
 draw_panel(ax_b, collapsed=True, title=None)
 
+# Extend the y-axis (left spine) of A/B downward so its bottom aligns with
+# panel C's "post-attack score" xlabel.
+_AB_EXTEND_DOWN = 0.05
+for _ax in (ax_a, ax_b):
+    _bb = _ax.get_position()
+    _ax.set_position([_bb.x0, _bb.y0 - _AB_EXTEND_DOWN, _bb.width, _bb.height + _AB_EXTEND_DOWN])
+    _ax.set_ylim(1 + _AB_EXTEND_DOWN / _bb.height, 0)
+
 draw_panel_c(ax_c_ft, ft_values, FT_BASELINE, "Fine-tuning attack")
 draw_panel_c(ax_c_fs, fs_values, FS_BASELINE, "Few-shot attack (k=10)")
 ax_c_fs.set_xlabel(r"post-attack score  ↓", fontsize=10)
@@ -222,13 +216,6 @@ _FS_SHIFT_UP = 0.07
 _bb_fs = ax_c_fs.get_position()
 ax_c_fs.set_position([_bb_fs.x0, _bb_fs.y0 + _FS_SHIFT_UP, _bb_fs.width, _bb_fs.height])
 ax_c_fs.xaxis.set_label_coords(0.72, -0.32)
-
-# Legend inside panel A (bottom-right)
-handles = [
-    plt.Rectangle((0, 0), 1, 1, color=GREEN, alpha=0.45, label="Forget"),
-    plt.Rectangle((0, 0), 1, 1, color=RED, alpha=0.45, label="Retain"),
-]
-ax_a.legend(handles=handles, loc="lower right", frameon=False, fontsize=10)
 
 # Aligned super-titles via fig.text. A starts at the figure's left edge so its
 # (longer) text doesn't crowd panel B's title.
