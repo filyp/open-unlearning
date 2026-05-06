@@ -19,20 +19,30 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 import json
 
 plt.rcParams["font.size"] = 10
-plt.rcParams["font.family"] = "Times New Roman"
+# plt.rcParams["font.family"] = "Times New Roman"
+
+# plt.rcParams["text.usetex"] = True
+# plt.rcParams["font.family"] = "serif"
+# plt.rcParams["font.serif"] = ["Times"]
+# plt.rcParams["text.latex.preamble"] = r"\usepackage{mathptmx}"
+
+plt.rcParams["text.usetex"] = True
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["text.latex.preamble"] = r"\usepackage{mathptmx}"
 
 # light theme
 plt.style.use("default")  # explicitly reset to light defaults
 
 OUT = Path(__file__).parent / "fig1_schematic.pdf"
 
-GREEN = "#1b7a1b"  # dark green
+BLACK = "#000000"
+# RED = "#7a1717"    # dark red
 RED = "#a31f1f"    # dark red
 GREY = "#9aa0a6"
-# LIGHT_BLUE = "#cfe2f7"
-LIGHT_BLUE = "#8bbef7"
+# SHADE_AREA = "#cfe2f7"
+SHADE_AREA = "#eeeeee"
 
-TOP_FRAC = 0.43  # boundary between "top PCs" and "bottom PCs" regions
+TOP_FRAC = 0.448 # boundary between "top PCs" and "bottom PCs" regions
 XLIM = (0, 2.25)
 
 # (text, x, y) — y in [0,1] with 0 = top PCs (plot is inverted)
@@ -49,26 +59,26 @@ TOP_WORDS = [
 ]
 BOTTOM_WORDS = [
     ("RV strain SA11",  1.1, 0.55),
-    ("plasmid-only\nreverse genetics",    1.3, 0.72),
-    ("Bordetella\npertussis", 1.1, 0.97),
+    ("plasmid-only\nreverse genetics",    1.2, 0.72),
+    ("Bordetella\npertussis", 1.0, 0.97),
 ]
 
 
 def draw_panel(ax, *, collapsed: bool, title: str):
     # Bottom words: shown in both panels.
     for txt, x, y in BOTTOM_WORDS:
-        ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=GREEN)
+        ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=BLACK)
 
     if collapsed:
         # Mask the top region.
-        ax.axhspan(0, TOP_FRAC, color=LIGHT_BLUE, alpha=0.85, lw=0, zorder=2)
+        ax.axhspan(0, TOP_FRAC, color=SHADE_AREA, alpha=0.85, lw=0, zorder=2)
         ax.text(
             (XLIM[0] + XLIM[1]) / 2,
             TOP_FRAC / 2,
             "collapsed by\nRepSelect",
             ha="center",
             va="center",
-            fontsize=11,
+            fontsize=10,
             color="black",
             zorder=4,
         )
@@ -93,12 +103,18 @@ def draw_panel(ax, *, collapsed: bool, title: str):
 
 
 # --- panel C: robustness bars --------------------------------------------
-BLUE = "#1f6feb"
-METHODS = ["GradDiff", "SimNPO", "RepSelectSimple_forget"]
+METHODS = ["RMU", "NPO", "RepSelectSimple_forget"]
 METHOD_LABELS = {
-    "GradDiff": "GradDiff",
-    "SimNPO": "SimNPO",
+    "RMU": "RMU",
+    "NPO": "NPO",
     "RepSelectSimple_forget": "RepSelect",
+}
+# Use default matplotlib tab colors, assigned by method (RepSelect first).
+_DEFAULT_CYCLE = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+METHOD_COLORS = {
+    "RepSelectSimple_forget": _DEFAULT_CYCLE[0],  # blue
+    "NPO":                    _DEFAULT_CYCLE[1],  # orange
+    "RMU":                    _DEFAULT_CYCLE[2],  # green
 }
 
 # Fine-tuning attack: pull from results.json used by main_grid (Llama-3.1-8B / WMDP-Bio).
@@ -115,12 +131,12 @@ for m in METHODS:
 
 # No-unlearn baselines for Llama-3.1-8B / WMDP-Bio.
 FT_BASELINE = 0.16739  # from community/benchmarks/wmdp_low_mi/baselines.yaml
-FS_BASELINE = 0.549  # from user's few-shot table (no-unlearn, k=10)
+FS_BASELINE = 0.517  # from user's few-shot table (no-unlearn, k=5)
 
-# Few-shot k=10 attack on Llama-3.1-8B / WMDP-Bio (from user's table).
+# Few-shot k=5 attack on Llama-3.1-8B / WMDP-Bio (from user's table).
 fs_values = {
-    "GradDiff": 0.531,
-    "SimNPO": 0.252,
+    "RMU": 0.294,
+    "NPO": 0.511,
     "RepSelectSimple_forget": 0.001,
 }
 
@@ -133,7 +149,7 @@ def draw_panel_c(ax, values, baseline, title):
     y_pos = np.arange(len(methods))
     vals = [values[m] for m in methods]
     widths = [v - baseline for v in vals]  # negative -> grows leftward
-    colors = [BLUE if m == "RepSelectSimple_forget" else GREY for m in methods]
+    colors = [METHOD_COLORS[m] for m in methods]
 
     ax.barh(y_pos, widths, color=colors, height=0.7, left=baseline)
 
@@ -145,9 +161,8 @@ def draw_panel_c(ax, values, baseline, title):
             METHOD_LABELS[m],
             ha="left",
             va="center",
-            fontsize=8.5,
-            color=BLUE if m == "RepSelectSimple_forget" else "#333",
-            weight="bold" if m == "RepSelectSimple_forget" else "normal",
+            fontsize=10,
+            color=METHOD_COLORS[m],
         )
 
     xmin = min(vals + [0]) - baseline * 0.05
@@ -167,9 +182,9 @@ def draw_panel_c(ax, values, baseline, title):
 
     # Sub-row label INSIDE the axes top-left (doesn't push the axes box).
     ax.text(
-        0.02, 0.98, title,
+        0.01, 1.01, title,
         transform=ax.transAxes,
-        fontsize=8.5, color="#333", ha="left", va="top",
+        fontsize=10, color="#333", ha="left", va="top",
     )
 
 
@@ -207,8 +222,8 @@ for _ax in (ax_a, ax_b):
     _ax.set_ylim(1 + _AB_EXTEND_DOWN / _bb.height, 0)
 
 draw_panel_c(ax_c_ft, ft_values, FT_BASELINE, "Fine-tuning attack")
-draw_panel_c(ax_c_fs, fs_values, FS_BASELINE, "Few-shot attack (k=10)")
-ax_c_fs.set_xlabel(r"post-attack score  ↓", fontsize=10)
+draw_panel_c(ax_c_fs, fs_values, FS_BASELINE, "Few-shot attack (k=5)")
+ax_c_fs.set_xlabel(r"post-attack score ↓", fontsize=10)
 # Shift the entire few-shot sub-row upward so its x-label aligns vertically
 # with the "variance" labels under panels A/B (which have no x-tick labels
 # beneath them). Also nudge the x-label slightly to the right.
