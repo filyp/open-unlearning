@@ -45,7 +45,17 @@ OUT = Path(__file__).parent / "fig1_schematic.pdf"
 BLACK = "#000000"
 # RED = "#7a1717"    # dark red
 RED = "#a31f1f"  # dark red
+GREEN = "#2ca02c"
 GREY = "#9aa0a6"
+
+# --- spectra over PC index (0=top PC, 1=bottom PC) -----------------------
+_N = 1000
+_y_spec = np.linspace(0, 1, _N)
+# Forget: peaks at top, with a heavier tail toward bottom PCs.
+_forget_spec = 0.85 * np.exp(-(_y_spec / 0.35) ** 1.4) + 0.15 * (1 - _y_spec) ** 0.4
+_forget_spec = _forget_spec / _forget_spec.max()
+# Retain: at the top extends ~2x further right than forget, then decays fast.
+_retain_spec = 2.0 * np.exp(-_y_spec / 0.18) + 0.12 * (1 - _y_spec) ** 0.6
 # SHADE_AREA = "#cfe2f7"
 SHADE_AREA = "#eeeeee"
 
@@ -65,16 +75,26 @@ TOP_WORDS = [
     ("epidemic", 1.40, 0.37),
 ]
 BOTTOM_WORDS = [
-    ("RV strain SA11", 1.1, 0.55),
-    ("plasmid-only\nreverse genetics", 1.2, 0.72),
-    ("Bordetella\npertussis", 1.0, 0.97),
+    ("RV strain SA11", 1.1, 0.6),
+    ("plasmid-only\nreverse genetics", 1.2, 0.83),
+    # ("Bordetella\npertussis", 1.0, 0.97),
 ]
 
 
 def draw_panel(ax, *, collapsed: bool, title: str):
+    # Retain spectrum as a low-alpha background band.
+    if collapsed:
+        _mask = _y_spec >= TOP_FRAC
+        _yy, _rr = _y_spec[_mask], _retain_spec[_mask]
+    else:
+        _yy, _rr = _y_spec, _retain_spec
+    ax.fill_betweenx(_yy, 0, _rr, color=RED, alpha=0.15, lw=0, zorder=0)
+    ax.plot(_rr, _yy, color=RED, lw=1.0, alpha=0.6, zorder=1)
+
     # Bottom words: shown in both panels.
     for txt, x, y in BOTTOM_WORDS:
-        ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=BLACK)
+        ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=BLACK,
+                zorder=3)
 
     if collapsed:
         # Mask the top region.
@@ -91,7 +111,8 @@ def draw_panel(ax, *, collapsed: bool, title: str):
         )
     else:
         for txt, x, y in TOP_WORDS:
-            ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=RED)
+            ax.text(x, y, txt, ha="center", va="center", fontsize=10, color=RED,
+                    zorder=3)
 
     # Top-PC region marker
     ax.axhline(TOP_FRAC, color=GREY, lw=0.8, ls="--", alpha=0.7)
@@ -101,9 +122,10 @@ def draw_panel(ax, *, collapsed: bool, title: str):
     ax.set_ylim(1, 0)  # invert: top PCs at top
     ax.set_xticks([])
     ax.set_yticks([])
-    for spine in ("top", "right", "bottom"):
-        ax.spines[spine].set_visible(False)
-    ax.set_ylabel(r"bottom PCs  $\longleftrightarrow$  top PCs", fontsize=10)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlabel("retain set variance", fontsize=10)
+    # ax.set_ylabel(r"bottom PCs  $\longleftrightarrow$  top PCs (on forget)", fontsize=10)
+    ax.set_ylabel(r"forget set PCs", fontsize=10)
     # ax.yaxis.set_label_coords(-0.06, 0.40)
     if title is not None:
         ax.set_title(title, fontsize=10, weight="bold", loc="left")
@@ -230,16 +252,6 @@ ax_c_fs = fig.add_subplot(gs_c[1, 0])
 draw_panel(ax_a, collapsed=False, title=None)
 draw_panel(ax_b, collapsed=True, title=None)
 
-# Extend the y-axis (left spine) of A/B downward so its bottom aligns with
-# panel C's "post-attack score" xlabel.
-_AB_EXTEND_DOWN = 0.05
-for _ax in (ax_a, ax_b):
-    _bb = _ax.get_position()
-    _ax.set_position(
-        [_bb.x0, _bb.y0 - _AB_EXTEND_DOWN, _bb.width, _bb.height + _AB_EXTEND_DOWN]
-    )
-    _ax.set_ylim(1 + _AB_EXTEND_DOWN / _bb.height, 0)
-
 draw_panel_c(ax_c_ft, ft_values, FT_BASELINE, "Fine-tuning attack")
 draw_panel_c(ax_c_fs, fs_values, FS_BASELINE, "Few-shot attack (k=5)")
 ax_c_fs.set_xlabel(r"post-attack score ↓", fontsize=10)
@@ -249,7 +261,7 @@ ax_c_fs.set_xlabel(r"post-attack score ↓", fontsize=10)
 _FS_SHIFT_UP = 0.07
 _bb_fs = ax_c_fs.get_position()
 ax_c_fs.set_position([_bb_fs.x0, _bb_fs.y0 + _FS_SHIFT_UP, _bb_fs.width, _bb_fs.height])
-ax_c_fs.xaxis.set_label_coords(0.57, -0.28)
+ax_c_fs.xaxis.set_label_coords(0.57, -0.34)
 
 # Aligned super-titles via fig.text. A starts at the figure's left edge so its
 # (longer) text doesn't crowd panel B's title.
