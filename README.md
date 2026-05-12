@@ -116,6 +116,7 @@ conda create -n unlearning python=3.11
 conda activate unlearning
 pip install ".[lm-eval]"
 pip install --no-build-isolation flash-attn==2.8.3
+# Alternatively, a prebuilt environment is available at hub.docker.com/r/filyp/open-unlearning
 
 # Data setup
 python setup_data.py --eval # saves/eval now contains evaluation results of the uploaded models
