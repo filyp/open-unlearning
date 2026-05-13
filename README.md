@@ -119,8 +119,6 @@ pip install --no-build-isolation flash-attn==2.8.3
 # Or to avoid building flash-attn:
 pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
 
-# Alternatively, a prebuilt environment is available at hub.docker.com/r/filyp/open-unlearning
-
 # Data setup
 python setup_data.py --eval # saves/eval now contains evaluation results of the uploaded models
 # This downloads log files with evaluation results (including retain model logs)
@@ -128,6 +126,8 @@ python setup_data.py --eval # saves/eval now contains evaluation results of the 
 # Additional datasets (e.g., WMDP) are supported — run below for options:
 # python setup_data.py --help
 ```
+
+We also provide a [Docker image](https://hub.docker.com/r/filyp/open-unlearning), with this environment already installed.
 
 ---
 
