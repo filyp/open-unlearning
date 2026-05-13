@@ -81,7 +81,7 @@ def main():
     ]
     expected_labels_shape = (2, 8)
 
-    # Loss baseline captured on transformers 5.5.3
+    # Loss baseline captured on transformers 5.5.4
     # On older transformers (no num_items_in_batch normalization) this was 2.7516,
     # Due to difference in num of tokens used for loss normalization.
     expected_loss = 2.4076595306396484
