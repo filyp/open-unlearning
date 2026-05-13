@@ -2,9 +2,6 @@
 
 Run from repo root:
     python tests/prediction_step_regression.py
-
-For now this just prints the outputs so we can capture a baseline.
-Once we have a known-good output, asserts can be added below.
 """
 
 import sys
@@ -34,7 +31,6 @@ def main():
     model.eval()
 
     args = TrainingArguments(
-        output_dir="/tmp/prediction_step_regression",
         per_device_eval_batch_size=2,
         report_to=[],
     )
