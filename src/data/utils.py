@@ -1,3 +1,5 @@
+from itertools import islice
+
 import torch
 import datasets
 import numpy as np
@@ -68,6 +70,11 @@ def preprocess_chat_instance(
         prompt_ids = tokenizer.apply_chat_template(
             chat[:-1], tokenize=True, add_generation_prompt=True, **date_info
         )
+        # transformers 5.x returns BatchEncoding from apply_chat_template, so transform to list
+        if not isinstance(chat_ids, list):
+            chat_ids = chat_ids["input_ids"]
+        if not isinstance(prompt_ids, list):
+            prompt_ids = prompt_ids["input_ids"]
     else:
         wrapped_prompt = ""
         system_prompt_with_special_tokens = template_config.get(
@@ -190,3 +197,21 @@ def add_dataset_index(dataset):
     indexing = np.arange(len(dataset))
     dataset = dataset.add_column("index", indexing)
     return dataset
+
+
+def prep_batch(batch, device):
+    return dict(
+        input_ids=batch["input_ids"].to(device),
+        attention_mask=batch["attention_mask"].to(device),
+        labels=batch["labels"].to(device),
+    )
+
+
+def batched(iterable, n):
+    """Batch an iterable into chunks of size n.
+
+    In python>=3.12, it can be replaced with itertools.batched
+    """
+    it = iter(iterable)
+    while batch := list(islice(it, n)):
+        yield batch
