@@ -74,7 +74,11 @@ class UnlearnTrainer(FinetuneTrainer):
         """
         The only change to this function is calling the Trainer's compute_loss, as it's often overridden by unlearning methods, and we want to maintain the Trainer's evaluation setup.
         """
-        has_labels = False if len(self.label_names) == 0 else all(inputs.get(k) is not None for k in self.label_names)
+        has_labels = (
+            False
+            if len(self.label_names) == 0
+            else all(inputs.get(k) is not None for k in self.label_names)
+        )
         # For CLIP-like models capable of returning loss values.
         # If `return_loss` is not specified or being `None` in `inputs`, we check if the default value of `return_loss`
         # is `True` in `model.forward`.
@@ -86,7 +90,11 @@ class UnlearnTrainer(FinetuneTrainer):
         inputs = self._prepare_inputs(inputs)
         if ignore_keys is None:
             if hasattr(self.model, "config"):
-                ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", ["past_key_values"])
+                ignore_keys = getattr(
+                    self.model.config,
+                    "keys_to_ignore_at_inference",
+                    ["past_key_values"],
+                )
             else:
                 ignore_keys = []
 
@@ -104,7 +112,11 @@ class UnlearnTrainer(FinetuneTrainer):
                 if has_labels or loss_without_labels:
                     if isinstance(raw_outputs, dict):
                         loss_mb = raw_outputs["loss"]
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys + ["loss"])
+                        logits_mb = tuple(
+                            v
+                            for k, v in raw_outputs.items()
+                            if k not in ignore_keys + ["loss"]
+                        )
                     else:
                         loss_mb = raw_outputs[0]
                         logits_mb = raw_outputs[1:]
@@ -114,25 +126,36 @@ class UnlearnTrainer(FinetuneTrainer):
                 else:
                     loss = None
                     if isinstance(raw_outputs, dict):
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys)
+                        logits_mb = tuple(
+                            v for k, v in raw_outputs.items() if k not in ignore_keys
+                        )
                     else:
                         logits_mb = raw_outputs
                     logits = smp_nested_concat(logits_mb)
             else:
                 if has_labels or loss_without_labels:
                     with self.compute_loss_context_manager():
-                        num_items_in_batch = self._get_num_items_in_batch([inputs], self.args.device)
+                        num_items_in_batch = self._get_num_items_in_batch(
+                            [inputs], self.args.device
+                        )
                         # !!!!!!! Call compute_loss of super class since overridden compute_loss is not applicable to eval_dataset.
                         # loss, outputs = self.compute_loss(
                         #     model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
                         # )
                         loss, outputs = super().compute_loss(
-                            model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
+                            model,
+                            inputs,
+                            return_outputs=True,
+                            num_items_in_batch=num_items_in_batch,
                         )
                     loss = loss.detach().mean()
 
                     if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
+                        logits = tuple(
+                            v
+                            for k, v in outputs.items()
+                            if k not in ignore_keys + ["loss"]
+                        )
                     else:
                         logits = outputs[1:]
                 else:
@@ -140,7 +163,9 @@ class UnlearnTrainer(FinetuneTrainer):
                     with self.compute_loss_context_manager():
                         outputs = model(**inputs)
                     if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
+                        logits = tuple(
+                            v for k, v in outputs.items() if k not in ignore_keys
+                        )
                     else:
                         logits = outputs
 
