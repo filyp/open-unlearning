@@ -35,7 +35,7 @@ image = (
     # things above, are equivalent to using docker filyp/open-unlearning:latest
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .pip_install("hf_transfer")
-    .run_function(download_models, secrets=[modal.Secret.from_dotenv()])
+    # .run_function(download_models, secrets=[modal.Secret.from_dotenv()])
     .add_local_dir("data", remote_path="/root/code/data")
     .add_local_dir(".cache/load_hf", remote_path="/root/code/.cache/load_hf")
     .add_local_dir("configs", remote_path="/root/code/configs")
@@ -46,11 +46,11 @@ app = modal.App("open-unlearning", image=image)
 
 
 @app.function(
-    # gpu="L40S",  # 48GB
+    gpu="L40S",  # 48GB
     # gpu="A100-80GB",  # if needing 80GB
     # gpu="H100",  # 80GB
     # gpu="RTX-PRO-6000",  # 96GB
-    gpu="H200",  # 141GB
+    # gpu="H200",  # 141GB
     # gpu="B200",  # 180GB
     # B300 262GB, but can't be set in modal
     timeout=3 * 3600,

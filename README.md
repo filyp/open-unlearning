@@ -116,6 +116,9 @@ conda create -n unlearning python=3.11
 conda activate unlearning
 pip install ".[lm-eval]"
 pip install --no-build-isolation flash-attn==2.8.3
+# Or to avoid building flash-attn:
+pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
+
 # Alternatively, a prebuilt environment is available at hub.docker.com/r/filyp/open-unlearning
 
 # Data setup
