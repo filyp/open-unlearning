@@ -1,0 +1,14 @@
+defaults:
+  - finetune
+
+handler: RepSelectAdaptive
+args:
+  learning_rate: 0.05  # initial alpha guess; adaptive search finds the right value
+
+method_args:
+  n_pcs: 512
+  lora_lr: 0.01
+  distribution: forget  # forget | retain
+  collapse_on: both  # act | grad | both | none
+  use_lora: true
+  hard_soft: soft  # hard | soft

@@ -1,4 +1,6 @@
 import copy
+import os
+import torch
 from trainer.utils import compute_kl_divergence
 from trainer.unlearn.base import UnlearnTrainer
 
@@ -14,6 +16,20 @@ class GradDiff(UnlearnTrainer):
             self.ref_model = self._prepare_ref_model(self.model)
 
     def _prepare_ref_model(self, model):
+        # With device_map (pipeline parallel), deepcopy preserves the split — no .to() needed.
+        if getattr(model, "hf_device_map", None) and len(set(model.hf_device_map.values())) > 1:
+            ref_model = copy.deepcopy(model)
+            ref_model.eval()
+            return ref_model
+        # In DDP mode (torchrun, LOCAL_RANK set), place ref model on the OTHER GPU so each
+        # GPU holds: own main model + other process's ref model (~76 GB vs ~79 GB on one GPU).
+        if torch.cuda.device_count() > 1 and not self.is_deepspeed_enabled:
+            local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+            n_gpus = torch.cuda.device_count()
+            other_dev = (local_rank + 1) % n_gpus
+            ref_model = copy.deepcopy(model).to(f"cuda:{other_dev}")
+            ref_model.eval()
+            return ref_model
         ref_model = copy.deepcopy(model).to(self.accelerator.device)
         ref_model.eval()
         if self.is_deepspeed_enabled:

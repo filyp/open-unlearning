@@ -12,6 +12,8 @@ args:
   report_to: tensorboard
   ddp_find_unused_parameters: None
   gradient_checkpointing: False
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
   # optim: paged_adamw_32bit  # paging can be too aggressive, and make training unusably slow
   # optim: adamw_torch_fused
   optim: adamw_8bit

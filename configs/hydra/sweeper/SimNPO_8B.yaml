@@ -1,0 +1,7 @@
+# @package hydra.sweeper
+# Wider search for 8B — original SimNPO.yaml caps LR at 5e-6, too low for 8B
+params:
+  trainer.args.learning_rate: "tag(log, interval(1e-6, 1e-4))"
+  trainer.method_args.beta: "interval(2.0, 6.0)"
+  trainer.method_args.delta: "interval(0, 1)"
+  trainer.method_args.gamma: "interval(0.1, 0.5)"

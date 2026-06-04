@@ -23,7 +23,7 @@ tokenizer_cfg:
   max_length: 128  # for our wmdp corpora it's more than enough
 
 eval:
-  wikitext:
+  wikitext_kl:
     handler: KLEvaluator
     dataset_name: wikitext
     disr_budget: 0.01
@@ -36,6 +36,21 @@ eval:
   recall_prob:
     handler: ProbabilityEvaluator
     dataset_name: recall
+  fewshot_attack_0:
+    handler: FewShotWMDPEvaluator
+    num_fewshot: 0
+  fewshot_attack:
+    handler: FewShotWMDPEvaluator
+    num_fewshot: 5
+  fewshot_attack_10:
+    handler: FewShotWMDPEvaluator
+    num_fewshot: 10
+  # general_caps: run post-training only (see scripts/run_posthoc_eval.sh)
+  # general_caps:
+  #   handler: LMEvalEvaluator
+  #   tasks:
+  #     - hellaswag
+  #   overwrite: False
 
 # CLI: wmdp_domain=cyber to switch domain
 wmdp_domain: bio
@@ -48,6 +63,7 @@ data:
   custom_loaders:
     - loader: wmdp_low_mi
       dataset: ${wmdp_domain}
+      eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
 

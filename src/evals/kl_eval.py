@@ -79,12 +79,11 @@ class KLComputor:
 
         # Reconstruct original logits from cached hidden states
         cached_hidden = batch["cached_last_hidden"].to(model.dtype)
-        cached_logits = self.acts_to_logits(cached_hidden).float()
+        cached_logits = self.acts_to_logits(cached_hidden).float().to(current_logits.device)
         assert current_logits.shape == cached_logits.shape  # (batch, seq, vocab)
 
         # Get mask for valid tokens (labels != -100)
-        labels = batch["labels"].to(model.device)
-        token_mask = labels != -100
+        token_mask = (batch["labels"] != -100).to(current_logits.device)
         assert token_mask.shape == current_logits.shape[:2]
 
         # # useful for qualitative analysis (combined with print_tokens function)
