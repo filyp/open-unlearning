@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from trainer.unlearn.npo import NPO  # noqa: E402
 
 
-MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 SEED = 0
 
 
@@ -64,23 +64,21 @@ def main():
     print(f"labels shape: {tuple(labels.shape) if labels is not None else None}")
 
     # Baseline captured on upstream (transformers pre-5.x).
-    expected_logits_shape = (2, 8, 128256)
+    expected_logits_shape = (2, 7, 151936)
     expected_logits_head = [
-        2.8333027362823486,
-        3.5809550285339355,
-        7.026833534240723,
-        3.282773494720459,
-        2.5123724937438965,
-        1.5481433868408203,
-        2.607846736907959,
-        3.727475881576538,
+        1.8752843141555786,
+        0.16622018814086914,
+        -1.0266990661621094,
+        0.3476898670196533,
+        1.5837609767913818,
+        -4.199005126953125,
+        -1.6311265230178833,
+        2.0707736015319824,
     ]
-    expected_labels_shape = (2, 8)
+    expected_labels_shape = (2, 7)
 
     # Loss baseline captured on transformers 5.5.4
-    # On older transformers (no num_items_in_batch normalization) this was 2.7516,
-    # Due to difference in num of tokens used for loss normalization.
-    expected_loss = 2.4076595306396484
+    expected_loss = 2.42057466506958
 
     assert abs(loss.item() - expected_loss) < 1e-3, (loss.item(), expected_loss)
     assert tuple(logits.shape) == expected_logits_shape
