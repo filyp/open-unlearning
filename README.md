@@ -1,223 +1,148 @@
 <div align="center">
 
-![*Open*Unlearning](assets/banner.png)
+# RepSelect: Robust LLM Unlearning via Representation Selectivity
 
-<h3><strong>An easily extensible framework unifying LLM unlearning evaluation benchmarks.</strong></h3>
+**Filip Sondej**<sup>\*</sup> (Independent) &nbsp;·&nbsp; **Yushi Yang**<sup>\*</sup> (University of Oxford) &nbsp;·&nbsp; **Adam Mahdi** (University of Oxford)
 
-  <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
-    <a href="https://arxiv.org/abs/2506.12618"><img src="https://img.shields.io/badge/arXiv-Report-b31b1b?logo=arxiv&logoColor=white" alt="arXiv Paper"/></a>
-    <a href="https://github.com/locuslab/open-unlearning"><img src="https://img.shields.io/github/stars/locuslab/open-unlearning?style=social" alt="GitHub Repo stars"/></a>
-    <a href="https://github.com/locuslab/open-unlearning/actions"><img src="https://github.com/locuslab/open-unlearning/actions/workflows/tests.yml/badge.svg" alt="Build Status"/></a>
-    <a href="https://huggingface.co/open-unlearning"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" alt="HuggingFace 🤗"/></a>
-    <a href="https://github.com/locuslab/open-unlearning"><img src="https://img.shields.io/github/repo-size/locuslab/open-unlearning" alt="GitHub repo size"/></a>
-    <a href="https://github.com/locuslab/open-unlearning"><img src="https://img.shields.io/github/languages/top/locuslab/open-unlearning" alt="GitHub top language"/></a>
-    <a href="https://github.com/locuslab/open-unlearning/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License: MIT"/></a>
-  </div>
+<sub><sup>\*</sup>Equal contribution, author order alphabetical.</sub>
+
+<!-- TODO: replace with the real arXiv link once posted -->
+[![Paper](https://img.shields.io/badge/arXiv-coming%20soon-b31b1b?logo=arxiv&logoColor=white)](#-citing-this-work)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![Built on OpenUnlearning](https://img.shields.io/badge/built%20on-OpenUnlearning-informational)](https://github.com/locuslab/open-unlearning)
+
 </div>
 
 ---
 
 ## 📖 Overview
 
-We provide efficient and streamlined implementations of the TOFU, MUSE and WMDP unlearning benchmarks while supporting 12+ unlearning methods, 5+ datasets, 10+ evaluation metrics, and 7+ LLM architectures. Each of these can be easily extended to incorporate more variants.
+Making large language models (LLMs) forget specific knowledge without sacrificing general
+capabilities remains a central challenge in machine unlearning. Despite progress, unlearned
+knowledge can often be recovered through **fine-tuning** or **few-shot** attacks.
 
+We identify the root cause: existing methods target representations that are **not specific** to
+the forget set, which makes unlearning both disruptive to general capabilities and easy to reverse.
 
-We invite the LLM unlearning community to collaborate by adding new benchmarks, unlearning methods, datasets and evaluation metrics here to expand OpenUnlearning's features, gain feedback from wider usage and drive progress in the field.
+We propose **RepSelect** (Representation Selectivity), which isolates representations specific to
+the forget set by **collapsing the top principal components of activations and output gradients
+before each update**. This leaves general capabilities intact and limits what an attacker can
+recover. Prior to unlearning, RepSelect also trains a LoRA on the forget set to elicit harmful
+representations, so the method can target them more effectively.
 
----
+### Key results
 
-> 📝 If you've found this repository or the models we've provided in [HuggingFace](https://huggingface.co/open-unlearning) useful, please cite our [technical report](https://arxiv.org/abs/2506.12618) (bibtex at [*Citing this work*](#-citing-this-work)).
+- Evaluated on two harm categories — **biohazardous knowledge (WMDP)** and **abusive tendencies
+  (BeaverTails)** — across **four model families** spanning dense and Mixture-of-Experts
+  architectures: **Llama 3, Qwen 3.5, Gemma 4 E4B, DeepSeek V2 Lite**.
+- Compared to five popular baselines (**GradDiff, NPO, SimNPO, RMU, UNDIAL**), RepSelect reduces
+  **post-relearning answer probability 4–50× more**, and achieves **near-perfect robustness to
+  few-shot attacks**, while retaining matched general capability.
 
----
+> Selective representation targeting is thus an essential factor for robust LLM unlearning.
 
-### 📢 Updates
-
-### [June 20, 2025]
-
-🚨 Our paper `OpenUnlearning: Accelerating LLM Unlearning via Unified Benchmarking of Methods and Metrics` is now out on [arXiv](https://arxiv.org/abs/2506.12618).
-
-🌟 **Highlights:**
-- A detailed technical report on OpenUnlearning covering the design, features, and implementation.
-- A meta-evaluation framework for benchmarking unlearning evaluations across 450+ models, open-sourced on HuggingFace 🤗: [TOFU Models w & w/o Knowledge](https://huggingface.co/collections/open-unlearning/tofu-models-w-and-w-o-knowledge-6861e4d935eb99ba162e55cd), [TOFU Unlearned Models](https://huggingface.co/collections/open-unlearning/tofu-unlearned-models-6860f6cf3fe35d0223d92e88).
-- Results benchmarking 8 diverse unlearning methods in one place using 10 evaluation metrics on TOFU.
-
-<details>
-<summary><b>Older Updates</b></summary>
-
-
-#### [May 19, 2025]
-
-- **More Methods!** Added support for unlearning methods [UNDIAL](https://aclanthology.org/2025.naacl-long.444/) and [AltPO](https://aclanthology.org/2025.coling-main.252/).
-
-#### [May 12, 2025]
-
-- **Another benchmark!** We now support running the [`WMDP`](https://wmdp.ai/) benchmark with its `Zephyr` task model.
-- **More evaluations!**  The [`lm-evaluation-harness`](https://github.com/EleutherAI/lm-evaluation-harness) toolkit has been integrated into OpenUnlearning, enabling WMDP evaluations and support for popular general LLM benchmarks, including MMLU, GSM8K, and others.
-
-#### [Apr 6, 2025]
-- **More Metrics!** Added 6 Membership Inference Attacks (MIA) (LOSS, ZLib, Reference, GradNorm, MinK, and MinK++), along with Extraction Strength (ES) and  Exact Memorization (EM) as additional evaluation metrics.
-- **More TOFU Evaluations!** Now includes a holdout set and supports MIA attack-based evaluation. You can now compute MUSE's privleak on TOFU.
-- **More Documentation!** [`docs/links.md`](docs/links.md) contains resources for each of the implemented features and other useful LLM unlearning resources.
-
-Be sure to run `python setup_data.py` immediately after merging the latest version. This is required to refresh the downloaded eval log files and ensure they're compatible with the latest evaluation metrics.
-
-#### [Mar 27, 2025]
-- **More Documentation: easy contributions and the leaderboard functionality**: We've updated the documentation to make contributing new unlearning methods and benchmarks much easier. Users can document additions better and also update a leaderboard with their results. See [this section](#-how-to-contribute) for details.
-
-#### [Mar 9, 2025]
-- **More Methods!** Added support for [RMU](https://arxiv.org/abs/2403.03218) (representation-engineering based unlearning).
-
-#### [Feb 27, 2025]  
-⚠️ **Repository Update**: This repo replaces the original TOFU codebase at [`github.com/locuslab/tofu`](https://github.com/locuslab/tofu), which is no longer maintained.
-
-</details>
+This repository is built on the [OpenUnlearning](https://github.com/locuslab/open-unlearning)
+framework (see [Built on OpenUnlearning](#-built-on-openunlearning) for credit and the upstream
+documentation). RepSelect is implemented as a trainer within that framework.
 
 ---
 
-## 🗃️ Available Components
+## 🧩 Where RepSelect lives in this repo
 
-We provide several variants for each of the components in the unlearning pipeline.
-
-| **Component**          | **Available Options** |
-|------------------------|----------------------|
-| **Benchmarks**        | [TOFU](https://arxiv.org/abs/2401.06121), [MUSE](https://muse-bench.github.io/), [WMDP](https://www.wmdp.ai/) |
-| **Unlearning Methods** | GradAscent, GradDiff, NPO, SimNPO, DPO, RMU, UNDIAL, AltPO, SatImp, WGA, CE-U, PDU |
-| **Evaluation Metrics** | Verbatim Probability, Verbatim ROUGE, Knowledge QA-ROUGE, Model Utility, Forget Quality, TruthRatio, Extraction Strength, Exact Memorization, 6 MIA attacks, [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) |
-| **Datasets**          | MUSE-News (BBC), MUSE-Books (Harry Potter), TOFU (different splits), WMDP-Bio, WMDP-Cyber |
-| **Model Families**    | TOFU: Llama-3.2, Llama-3.1, Llama-2; MUSE: Llama-2; Additional: Phi-3.5, Phi-1.5, Gemma, Zephyr |
-
----
-
-
-## 📌 Table of Contents
-- 📖 [Overview](#-overview)
-- 📢 [Updates](#-updates)
-- 🗃️ [Available Components](#%EF%B8%8F-available-components)
-- ⚡ [Quickstart](#-quickstart)
-- 🔄 [Updated TOFU benchmark](#-updated-tofu-benchmark)
-- 🧪 [Running Experiments](#-running-experiments)
-  - 🚀 [Perform Unlearning](#-perform-unlearning)
-  - 📊 [Perform an Evaluation](#-perform-an-evaluation)
-  - 📜 [Running Baseline Experiments](#-running-baseline-experiments)
-- ➕ [How to Contribute](#-how-to-contribute)
-- 📚 [Further Documentation](#-further-documentation)
-- 🔗 [Support & Contributors](#-support--contributors)
-- 📝 [Citing this work](#-citing-this-work)
-- 🤝 [Acknowledgements](#-acknowledgements)
-- 📄 [License](#-license)
+| Component | Path |
+|-----------|------|
+| Method implementation | [`src/trainer/unlearn/repselect/`](src/trainer/unlearn/repselect/) (entry: [`repselect_trainer.py`](src/trainer/unlearn/repselect/repselect_trainer.py)) |
+| Trainer configs | [`configs/trainer/RepSelect.yaml`](configs/trainer/RepSelect.yaml), [`configs/trainer/RepSelectCohen.yaml`](configs/trainer/RepSelectCohen.yaml) |
+| Hyperparameter sweeps | [`configs/hydra/sweeper/RepSelect*.yaml`](configs/hydra/sweeper/) |
+| Paper experiment scripts | [`community/benchmarks/wmdp_low_mi/run.sh`](community/benchmarks/wmdp_low_mi/run.sh), [`community/benchmarks/beavertails/run.sh`](community/benchmarks/beavertails/run.sh) |
+| Unlearn + relearn driver | [`src/unlearn_relearn.py`](src/unlearn_relearn.py) |
+| Few-shot / MMLU eval runners | [`scripts/runs/`](scripts/runs/) |
+| Representation analysis (PCA, subspace attacks, plots) | [`scripts/interpretability/`](scripts/interpretability/) |
 
 ---
 
-## ⚡ Quickstart
+## ⚡ Setup
 
 ```bash
-# Environment setup
+# Environment
 conda create -n unlearning python=3.11
 conda activate unlearning
 pip install ".[lm-eval]"
 pip install --no-build-isolation flash-attn==2.8.3
-# Or to avoid building flash-attn:
+# Or, to avoid building flash-attn:
 pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
 
-# Data setup
-python setup_data.py --eval # saves/eval now contains evaluation results of the uploaded models
-# This downloads log files with evaluation results (including retain model logs)
-# into `saves/eval`, used for evaluating unlearning across supported benchmarks.
-# Additional datasets (e.g., WMDP) are supported — run below for options:
-# python setup_data.py --help
+# Evaluation data / reference logs
+python setup_data.py --eval
+# WMDP and other datasets are supported; see: python setup_data.py --help
 ```
 
-We also provide a [Docker image](https://hub.docker.com/r/filyp/open-unlearning), with this environment already installed.
+> **⚠️ Qwen 3.5 note:** to reproduce the Qwen 3.5 experiments, install the fast causal-conv1d
+> kernel (`pip install causal_conv1d`). Without it, Qwen 3.5 falls back to a pure-PyTorch
+> implementation that can OOM even on an 80 GB GPU.
+
+A [Docker image](https://hub.docker.com/r/filyp/open-unlearning) with the environment preinstalled
+is also available.
 
 ---
 
-### 🔄 Updated TOFU benchmark
+## 🔬 Reproducing the paper
 
-We've updated Open-Unlearning's TOFU benchmark target models to use a wider variety of newer architectures with sizes varying from 1B to 8B. These include Llama 3.2 1B, Llama 3.2 3B, Llama 3.1 8B, and the original Llama-2 7B (re-created) target models from [the old version of TOFU](github.com/locuslab/tofu). 
-
-For each architecture, we have finetuned with four different splits of the TOFU datasets: `full`, `retain90`, `retain95`, `retain99`, for a total of 16 finetuned models. The first serves as the target (base model for unlearning) and the rest are retain models used to measure performance against for each forget split. These models are on [HuggingFace](`https://huggingface.co/collections/open-unlearning/tofu-new-models-67bcf636334ea81727573a9f0`) and the paths to these models can be set in the experimental configs or in command-line overrides.
-
----
-
-## 🧪 Running Experiments
-
-We provide an easily configurable interface for running evaluations by leveraging Hydra configs. For a more detailed documentation of aspects like running experiments, commonly overriden arguments, interfacing with configurations, distributed training and simple finetuning of models, refer [`docs/experiments.md`](docs/experiments.md).
-
-### 🚀 Perform Unlearning
-
-An example command for launching an unlearning process with `GradAscent` on the TOFU `forget10` split:
+The full set of runs (RepSelect, all baselines, and ablations) for each benchmark is scripted in
+the `community/benchmarks/*/run.sh` files. To reproduce a benchmark end to end:
 
 ```bash
-python src/train.py --config-name=unlearn.yaml experiment=unlearn/tofu/default \
-  forget_split=forget10 retain_split=retain90 trainer=GradAscent task_name=SAMPLE_UNLEARN
+# WMDP (biohazardous knowledge)
+bash community/benchmarks/wmdp_low_mi/run.sh
+
+# BeaverTails (abusive tendencies)
+bash community/benchmarks/beavertails/run.sh
 ```
 
-- `experiment`- Path to the Hydra config file [`configs/experiment/unlearn/tofu/default.yaml`](configs/experiment/unlearn/tofu/default.yaml) with default experimental settings for TOFU unlearning, e.g. train dataset, eval benchmark details, model paths etc..
-- `forget_split/retain_split`- Sets the forget and retain dataset splits.
-- `trainer`- Load [`configs/trainer/GradAscent.yaml`](configs/trainer/GradAscent.yaml) and override the unlearning method with the handler (see config) implemented in [`src/trainer/unlearn/grad_ascent.py`](src/trainer/unlearn/grad_ascent.py).
-
-### 📊 Perform an Evaluation
-
-An example command for launching a TOFU evaluation process on `forget10` split:
+To run **just RepSelect** on a single setting (this is the main command from those scripts):
 
 ```bash
-model=Llama-3.2-1B-Instruct
-python src/eval.py --config-name=eval.yaml experiment=eval/tofu/default \
-  model=${model} \
-  model.model_args.pretrained_model_name_or_path=open-unlearning/tofu_${model}_full \
-  retain_logs_path=saves/eval/tofu_${model}_retain90/TOFU_EVAL.json \
-  task_name=SAMPLE_EVAL
+python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun \
+  experiment=unlearn/wmdp_low_mi/default \
+  model=Qwen2.5-3B wmdp_domain=bio \
+  trainer=RepSelect hydra/sweeper=RepSelect \
+  task_name=demo_RepSelect
 ```
 
-- `experiment`- Path to the evaluation configuration [`configs/experiment/eval/tofu/default.yaml`](configs/experiment/eval/tofu/default.yaml).
-- `model`- Sets up the model and tokenizer configs for the `Llama-3.2-1B-Instruct` model.
-- `model.model_args.pretrained_model_name_or_path`- Overrides the default experiment config to evaluate a model from a HuggingFace ID (can use a local model checkpoint path as well).
-- `retain_logs_path`- Sets the path to the reference model eval logs that is needed to compute reference model based metrics like `forget_quality` in TOFU.
+- `trainer=RepSelect` — loads [`configs/trainer/RepSelect.yaml`](configs/trainer/RepSelect.yaml), whose `handler` resolves to the `RepSelect` trainer in [`src/trainer/unlearn/repselect/repselect_trainer.py`](src/trainer/unlearn/repselect/repselect_trainer.py).
+- `hydra/sweeper=RepSelect` — the LR / hyperparameter sweep used in the paper. Ablation sweeps are `RepSelect_wide`, `RepSelect_no_lora`, `RepSelect_no_retain`, `RepSelect_no_pcs`, `RepSelect_highdisr`.
+- `src/unlearn_relearn.py` — unlearns, then runs the relearning (fine-tuning) attack to measure robustness.
 
-For more details about creating and running evaluations, refer [`docs/evaluation.md`](docs/evaluation.md).
+Swap `trainer=` for `GradDiff | NPO | SimNPO | RMU | UNDIAL` (with the matching `hydra/sweeper=`)
+to reproduce the baselines under the same matched-disruption budget.
 
-
-### 📜 Running Baseline Experiments
-The scripts below execute standard baseline unlearning experiments on the TOFU and MUSE datasets, evaluated using their corresponding benchmarks. The expected results for these are in [`docs/repro.md`](docs/repro.md).
-
-```bash
-bash scripts/tofu_unlearn.sh
-bash scripts/muse_unlearn.sh
-```
-
-The above scripts are not tuned and uses default hyper parameter settings. We encourage you to tune your methods and add your final results in [`community/leaderboard.md`](community/leaderboard.md).
+For general framework usage (configs, distributed training, adding methods/datasets/metrics), see
+the upstream OpenUnlearning docs under [`docs/`](docs/).
 
 ---
-
-## ➕ How to Contribute
-
-If you are interested in contributing to our work, please have a look at [`contributing.md`](docs/contributing.md) guide.
-
-
-## 📚 Further Documentation
-
-For more in-depth information on specific aspects of the framework, refer to the following documents:
-
-| **Documentation**                              | **Contains**                                                                                                       |
-|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| [`docs/contributing.md`](docs/contributing.md)       | Instructions on how to add new methods, benchmarks, components such as trainers, benchmarks, metrics, models, datasets, etc.              |
-| [`docs/evaluation.md`](docs/evaluation.md)       | Detailed instructions on creating and running evaluation metrics and benchmarks.                                     |
-| [`docs/experiments.md`](docs/experiments.md)     | Guide on running experiments in various configurations and settings, including distributed training, fine-tuning, and overriding arguments. |
-| [`docs/hydra.md`](docs/hydra.md)                 | A short tutorial on Hydra features, Hydra is the configuration management package we use extensively.                                  |
-| [`community/leaderboard.md`](community/leaderboard.md)             | Reference results from various unlearning methods run using this framework on TOFU and MUSE benchmarks.              |
-| [`docs/links.md`](docs/links.md)             | List of all links to the research papers or other sources the implemented features are sourced from.              |
-| [`docs/repro.md`](docs/repro.md)            | Results are provided solely for reproducibility purposes, without any parameter tuning.             |
----
-
-## 🔗 Support & Contributors
-
-Developed and maintained by Vineeth Dorna ([@Dornavineeth](https://github.com/Dornavineeth)) and Anmol Mekala ([@molereddy](https://github.com/molereddy)).
-
-If you encounter any issues or have questions, feel free to raise an issue in the repository 🛠️.
 
 ## 📝 Citing this work
 
-If you use OpenUnlearning in your research, please make sure to cite our OpenUnlearning technical report, the TOFU and MUSE benchmarks.
+<!-- TODO: update with the published arXiv ID / venue once available. -->
+```bibtex
+@article{sondej2026repselect,
+  title   = {RepSelect: Robust LLM Unlearning via Representation Selectivity},
+  author  = {Sondej, Filip and Yang, Yushi and Mahdi, Adam},
+  year    = {2026},
+  note    = {Preprint}
+}
+```
+
+---
+
+## 🤝 Built on OpenUnlearning
+
+This repository is a fork of and built on top of
+[**OpenUnlearning**](https://github.com/locuslab/open-unlearning), an easily extensible framework
+unifying LLM unlearning benchmarks and methods. RepSelect reuses its benchmark harness, baseline
+implementations, and evaluation pipeline. We are grateful to its authors and maintainers.
+
+If you use the underlying framework, please also cite the OpenUnlearning technical report:
 
 ```bibtex
 @article{openunlearning2025,
@@ -227,36 +152,10 @@ If you use OpenUnlearning in your research, please make sure to cite our OpenUnl
   year={2025},
   url={https://arxiv.org/abs/2506.12618}
 }
-@inproceedings{maini2024tofu,
-  title={{TOFU}: A Task of Fictitious Unlearning for {LLMs}},
-  author={Maini, Pratyush and Feng, Zhili and Schwarzschild, Avi and Lipton, Zachary Chase and Kolter, J Zico},
-  booktitle={First Conference on Language Modeling},
-  year={2024}
-}
-@article{shi2024muse,
-  title={{MUSE}: Machine Unlearning Six-Way Evaluation for Language Models},
-  author={Weijia Shi and Jaechan Lee and Yangsibo Huang and Sadhika Malladi and Jieyu Zhao and Ari Holtzman and Daogao Liu and Luke Zettlemoyer and Noah A. Smith and Chiyuan Zhang},
-  year={2024},
-  eprint={2407.06460},
-  archivePrefix={arXiv},
-  primaryClass={cs.CL},
-  url={https://arxiv.org/abs/2407.06460}
-}
 ```
-</details>
 
 ---
 
-### 🤝 Acknowledgements
+## 📄 License
 
-- This repo is inspired from [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory). 
-- The [TOFU](https://github.com/locuslab/tofu) and [MUSE](https://github.com/swj0419/muse_bench) benchmarks served as the foundation for our re-implementation. 
-
----
-
-### 📄 License
-This project is licensed under the MIT License. See the [`LICENSE`](LICENSE) file for details.
-
----
-
-[![Star History Chart](https://api.star-history.com/svg?repos=locuslab/open-unlearning&type=Date)](https://www.star-history.com/#locuslab/open-unlearning&Date)
+Released under the [MIT License](LICENSE), consistent with the upstream OpenUnlearning project.
