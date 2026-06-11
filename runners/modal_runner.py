@@ -1,5 +1,5 @@
 # Run from repo root:
-#   modal run runners/modal_runner.py "python3 src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepCollapse task_name=test"
+#   modal run runners/modal_runner.py "python3 src/train.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepSelect task_name=test"
 
 import subprocess
 

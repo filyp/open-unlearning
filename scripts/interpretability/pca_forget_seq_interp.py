@@ -12,7 +12,7 @@ Usage:
     python scripts/pca_forget_seq_interp.py \
         --config-name=unlearn.yaml \
         experiment=unlearn/wmdp_low_mi/default \
-        model=Llama-3.2-3B trainer=RepCollapse \
+        model=Llama-3.2-3B trainer=RepSelect \
         trainer.args.num_train_epochs=1 \
         trainer.args.eval_strategy=no \
         ~trainer.method_args.cfg.lora_rank \

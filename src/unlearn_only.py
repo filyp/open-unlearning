@@ -1,5 +1,5 @@
 # Unlearn-only pipeline: no relearning attack. Returns best few-shot robustness metric.
-# Usage: python3 src/unlearn_only.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepCollapse task_name=test
+# Usage: python3 src/unlearn_only.py --config-name=unlearn.yaml experiment=unlearn/wmdp_low_mi/default trainer=RepSelect task_name=test
 import os
 import signal
 import shutil

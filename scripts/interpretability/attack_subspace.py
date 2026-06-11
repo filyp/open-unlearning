@@ -3,14 +3,14 @@ Exp 4+6: Attack Subspace Concentration + LoRA Adversary Depth Analysis
 
 Shows that:
 1. A fine-tuning attacker's weight deltas concentrate on high-variance forget PCs
-2. RepCollapse with LoRA pushes modifications deeper into low-variance PCs
+2. RepSelect with LoRA pushes modifications deeper into low-variance PCs
 3. The LoRA adapter itself targets high-variance PCs
 
 Usage:
     python scripts/attack_subspace.py \
         --config-name=unlearn.yaml \
         experiment=unlearn/wmdp_low_mi/default \
-        model=Llama-3.2-3B trainer=RepCollapse \
+        model=Llama-3.2-3B trainer=RepSelect \
         trainer.args.num_train_epochs=1 \
         trainer.args.eval_strategy=no \
         ~trainer.method_args.cfg.lora_rank \
@@ -68,8 +68,8 @@ def simulate_attack(model, forget_dataset, collator, n_steps, lr):
     return {k: v.cpu() for k, v in model.state_dict().items()}
 
 
-def run_repcollapse(model, W0, tokenizer, data, collator, template_args, trainer_cfg_base, n_epochs, with_lora=True):
-    """Run RepCollapse for n_epochs. Reuses existing model, resets to W0 first."""
+def run_repselect(model, W0, tokenizer, data, collator, template_args, trainer_cfg_base, n_epochs, with_lora=True):
+    """Run RepSelect for n_epochs. Reuses existing model, resets to W0 first."""
     # Reset to original weights
     model.load_state_dict({k: v.to(model.device) for k, v in W0.items()}, strict=False)
 
@@ -171,7 +171,7 @@ def main(cfg: DictConfig):
     # Restore original weights
     model.load_state_dict({k: v.to(model.device) for k, v in W0.items()}, strict=False)
 
-    # --- 3. Run RepCollapse WITH LoRA (if config has it) ---
+    # --- 3. Run RepSelect WITH LoRA (if config has it) ---
     has_lora = "lora_lr" in cfg.trainer.get("method_args", {}).get("cfg", {})
     W_lora, lora_adapters = None, {}
     W_nolora = None
@@ -179,12 +179,12 @@ def main(cfg: DictConfig):
     if has_lora:
         try:
             print("\n" + "=" * 60)
-            print("Phase 3a: Running RepCollapse WITH LoRA (5 epochs)...")
+            print("Phase 3a: Running RepSelect WITH LoRA (5 epochs)...")
             print("=" * 60)
-            W_lora, lora_adapters = run_repcollapse(model, W0, tokenizer, data, collator, cfg.model.template_args, cfg.trainer, 5, with_lora=True)
+            W_lora, lora_adapters = run_repselect(model, W0, tokenizer, data, collator, cfg.model.template_args, cfg.trainer, 5, with_lora=True)
 
-            print("\nPhase 3b: Running RepCollapse WITHOUT LoRA (5 epochs)...")
-            W_nolora, _ = run_repcollapse(model, W0, tokenizer, data, collator, cfg.model.template_args, cfg.trainer, 5, with_lora=False)
+            print("\nPhase 3b: Running RepSelect WITHOUT LoRA (5 epochs)...")
+            W_nolora, _ = run_repselect(model, W0, tokenizer, data, collator, cfg.model.template_args, cfg.trainer, 5, with_lora=False)
         except Exception as e:
             print(f"WARNING: LoRA phase failed: {e}. Continuing with attack-only results.")
 
@@ -229,7 +229,7 @@ def main(cfg: DictConfig):
 
         cumulative_attack[layer_idx] = cum_attack
 
-        # RepCollapse with/without LoRA
+        # RepSelect with/without LoRA
         if W_lora is not None:
             delta_lora = get_weight_delta(W0, W_lora, module_name)
             delta_nolora = get_weight_delta(W0, W_nolora, module_name)
@@ -242,10 +242,10 @@ def main(cfg: DictConfig):
                 cumulative_lora_with[layer_idx] = cum_lora
                 cumulative_lora_without[layer_idx] = cum_nolora
 
-                layer_result["repcollapse_with_lora_top10_frac"] = energy_lora[:10].sum().item() / max(energy_lora.sum().item(), 1e-12)
-                layer_result["repcollapse_without_lora_top10_frac"] = energy_nolora[:10].sum().item() / max(energy_nolora.sum().item(), 1e-12)
-                layer_result["repcollapse_with_lora_cumulative"] = cum_lora.tolist()
-                layer_result["repcollapse_without_lora_cumulative"] = cum_nolora.tolist()
+                layer_result["repselect_with_lora_top10_frac"] = energy_lora[:10].sum().item() / max(energy_lora.sum().item(), 1e-12)
+                layer_result["repselect_without_lora_top10_frac"] = energy_nolora[:10].sum().item() / max(energy_nolora.sum().item(), 1e-12)
+                layer_result["repselect_with_lora_cumulative"] = cum_lora.tolist()
+                layer_result["repselect_without_lora_cumulative"] = cum_nolora.tolist()
 
             # LoRA adapter projection
             if module_name in lora_adapters:
@@ -265,16 +265,16 @@ def main(cfg: DictConfig):
     # Plot attack cumulative energy
     plot_data = {"Attack fine-tuning": cumulative_attack}
     if cumulative_lora_with:
-        plot_data["RepCollapse +LoRA"] = cumulative_lora_with
-        plot_data["RepCollapse -LoRA"] = cumulative_lora_without
+        plot_data["RepSelect +LoRA"] = cumulative_lora_with
+        plot_data["RepSelect -LoRA"] = cumulative_lora_without
     if cumulative_lora_adapter:
         plot_data["LoRA adapter"] = cumulative_lora_adapter
 
     # Single figure with all curves per layer (pick middle layer)
     mid_layer = layers[len(layers) // 2]
     fig, ax = plt.subplots(figsize=(4.5, 3.5))
-    styles = {"Attack fine-tuning": ("red", "-"), "RepCollapse +LoRA": ("blue", "-"),
-              "RepCollapse -LoRA": ("blue", "--"), "LoRA adapter": ("orange", "-.")}
+    styles = {"Attack fine-tuning": ("red", "-"), "RepSelect +LoRA": ("blue", "-"),
+              "RepSelect -LoRA": ("blue", "--"), "LoRA adapter": ("orange", "-.")}
 
     for label, layer_data in plot_data.items():
         if mid_layer in layer_data:
@@ -303,9 +303,9 @@ def main(cfg: DictConfig):
         print(f"\nLayer {layer_str} ({lr['module']}):")
         print(f"  Attack: {lr['attack_energy_top10_frac']:.1%} energy in top-10 PCs, "
               f"{lr['attack_energy_top50_frac']:.1%} in top-50")
-        if "repcollapse_with_lora_top10_frac" in lr:
-            print(f"  RepCollapse +LoRA: {lr['repcollapse_with_lora_top10_frac']:.1%} in top-10")
-            print(f"  RepCollapse -LoRA: {lr['repcollapse_without_lora_top10_frac']:.1%} in top-10")
+        if "repselect_with_lora_top10_frac" in lr:
+            print(f"  RepSelect +LoRA: {lr['repselect_with_lora_top10_frac']:.1%} in top-10")
+            print(f"  RepSelect -LoRA: {lr['repselect_without_lora_top10_frac']:.1%} in top-10")
         if "lora_adapter_top10_frac" in lr:
             print(f"  LoRA adapter: {lr['lora_adapter_top10_frac']:.1%} in top-10")
 

@@ -23,7 +23,7 @@ bt_metric="metric_to_optimize=fewshot5_prob"
 run_methods() {
     local common="$1" ref="$2" prefix="$3"
     ${ref} trainer=GradDiff task_name=${prefix}_reference || true
-    ${common} trainer=RepCollapse hydra/sweeper=RepCollapse task_name=${prefix}_RepCollapse || true
+    ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect || true
     ${common} trainer=GradDiff  hydra/sweeper=GradDiff  task_name=${prefix}_GradDiff || true
     ${common} trainer=NPO       hydra/sweeper=NPO       task_name=${prefix}_NPO || true
     ${common} trainer=SimNPO    hydra/sweeper=SimNPO    task_name=${prefix}_SimNPO || true

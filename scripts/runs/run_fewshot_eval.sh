@@ -34,7 +34,7 @@ run_wmdp_bio() {
     ${ref} trainer=GradDiff task_name=${prefix}_reference
 
     # All methods
-    ${common} trainer=RepCollapse   hydra/sweeper=RepCollapse   task_name=${prefix}_RepCollapse
+    ${common} trainer=RepSelect   hydra/sweeper=RepSelect   task_name=${prefix}_RepSelect
     ${common} trainer=GradDiff    hydra/sweeper=GradDiff    task_name=${prefix}_GradDiff
     ${common} trainer=NPO         hydra/sweeper=NPO         task_name=${prefix}_NPO
     ${common} trainer=SimNPO      hydra/sweeper=SimNPO      task_name=${prefix}_SimNPO
@@ -53,7 +53,7 @@ run_wmdp_cyber() {
 
     ${ref} trainer=GradDiff task_name=${prefix}_reference
 
-    ${common} trainer=RepCollapse   hydra/sweeper=RepCollapse   task_name=${prefix}_RepCollapse
+    ${common} trainer=RepSelect   hydra/sweeper=RepSelect   task_name=${prefix}_RepSelect
     ${common} trainer=GradDiff    hydra/sweeper=GradDiff    task_name=${prefix}_GradDiff
     ${common} trainer=NPO         hydra/sweeper=NPO         task_name=${prefix}_NPO
     ${common} trainer=SimNPO      hydra/sweeper=SimNPO      task_name=${prefix}_SimNPO
@@ -72,7 +72,7 @@ run_beavertails() {
 
     ${bt_ref} trainer=GradDiff task_name=${prefix}_reference
 
-    ${bt_common} trainer=RepCollapse   hydra/sweeper=RepCollapse   task_name=${prefix}_RepCollapse
+    ${bt_common} trainer=RepSelect   hydra/sweeper=RepSelect   task_name=${prefix}_RepSelect
     ${bt_common} trainer=GradDiff    hydra/sweeper=GradDiff    task_name=${prefix}_GradDiff
     ${bt_common} trainer=NPO         hydra/sweeper=NPO         task_name=${prefix}_NPO
     ${bt_common} trainer=SimNPO      hydra/sweeper=SimNPO      task_name=${prefix}_SimNPO

@@ -44,10 +44,8 @@ class FinetuneTrainer(Trainer):
             checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
             output_dir = os.path.join(run_dir, checkpoint_folder, "evals")
             os.makedirs(output_dir, exist_ok=True)
-            import torch as _pt
             eval_metrics = {}
             for _, evaluator in self.evaluators.items():
-                _pre = _pt.cuda.memory_allocated() / 1e9
                 eval_args = {
                     "output_dir": output_dir,
                     "template_args": self.template_args,
@@ -56,8 +54,6 @@ class FinetuneTrainer(Trainer):
                     "trainer": self,
                 }
                 eval_metrics.update(evaluator.evaluate(**eval_args))
-                _post = _pt.cuda.memory_allocated() / 1e9
-                print(f"[MEM] eval {type(evaluator).__name__}: before={_pre:.2f}GB after={_post:.2f}GB delta={_post-_pre:.2f}GB", flush=True)
 
             # Track results history
             self.eval_results_history.append(eval_metrics)

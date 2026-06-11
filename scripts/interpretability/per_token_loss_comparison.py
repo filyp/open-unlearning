@@ -2,13 +2,13 @@
 Exp 8: Per-Token Loss Comparison
 
 After unlearning with each method, compare per-token loss on retain data vs original model.
-Shows that baselines break generic domain tokens more than RepCollapse.
+Shows that baselines break generic domain tokens more than RepSelect.
 
 Usage:
     python scripts/per_token_loss_comparison.py \
         --config-name=unlearn.yaml \
         experiment=unlearn/wmdp_low_mi/default \
-        model=Llama-3.2-3B trainer=RepCollapse \
+        model=Llama-3.2-3B trainer=RepSelect \
         trainer.args.eval_strategy=no \
         trainer.args.report_to=none \
         task_name=TOKEN_LOSS_LLAMA_BIO
@@ -111,7 +111,7 @@ def run_unlearn_method(cfg, method_name, model, W0, tokenizer, data, collator):
         trainer_cfg.method_args = OmegaConf.create({
             "gamma": 1.0, "alpha": 0.0, "beta": 10.0, "retain_loss_type": "NLL"
         })
-    elif method_name == "RepCollapse":
+    elif method_name == "RepSelect":
         if "lora_rank" in trainer_cfg.get("method_args", {}).get("cfg", {}):
             OmegaConf.set_struct(trainer_cfg, False)
             del trainer_cfg.method_args.cfg.lora_rank
@@ -134,7 +134,7 @@ def run_unlearn_method(cfg, method_name, model, W0, tokenizer, data, collator):
 def plot_token_loss_increase(method_results, tokenizer, title, save_path, top_n=30):
     """Bar chart: tokens with largest loss increase per method."""
     fig, axes = plt.subplots(1, len(method_results), figsize=(5 * len(method_results), 4), squeeze=False)
-    colors = {"GradDiff": "#e74c3c", "NPO": "#3498db", "RepCollapse": "#2ecc71"}
+    colors = {"GradDiff": "#e74c3c", "NPO": "#3498db", "RepSelect": "#2ecc71"}
 
     for col, (method, deltas) in enumerate(method_results.items()):
         ax = axes[0, col]
@@ -180,7 +180,7 @@ def main(cfg: DictConfig):
     print(f"  Tracked {len(original_losses)} unique tokens")
 
     # --- 3. Run each method and compute loss ---
-    methods = ["GradDiff", "NPO", "SimNPO", "RMU", "UNDIAL", "RepCollapse"]
+    methods = ["GradDiff", "NPO", "SimNPO", "RMU", "UNDIAL", "RepSelect"]
     method_deltas = {}  # method -> {token_id: loss_increase}
 
     for method in methods:

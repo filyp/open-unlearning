@@ -26,7 +26,7 @@ run_all_methods() {
     local prefix="$3"
 
     ${ref} trainer=GradDiff task_name=${prefix}_reference
-    ${common} trainer=RepCollapse   hydra/sweeper=RepCollapse   task_name=${prefix}_RepCollapse
+    ${common} trainer=RepSelect   hydra/sweeper=RepSelect   task_name=${prefix}_RepSelect
     ${common} trainer=GradDiff    hydra/sweeper=GradDiff    task_name=${prefix}_GradDiff
     ${common} trainer=NPO         hydra/sweeper=NPO         task_name=${prefix}_NPO
     ${common} trainer=SimNPO      hydra/sweeper=SimNPO      task_name=${prefix}_SimNPO

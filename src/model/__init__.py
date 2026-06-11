@@ -1,34 +1,10 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
-try:
-    from transformers import Gemma4ForCausalLM
-except ImportError:
-    Gemma4ForCausalLM = None
+from transformers import AutoModelForCausalLM, AutoTokenizer, Gemma4ForCausalLM
 from omegaconf import DictConfig, open_dict
 from typing import Dict, Any
 import os
 import torch
-import torch.nn.functional as _F
 import logging
 from model.probe import ProbedLlamaForCausalLM
-
-# Patch Qwen3.5 to enable the FLA fast path when causal_conv1d is not installed.
-# Without this, Qwen3.5 falls back to a pure-PyTorch Mamba implementation that
-# creates large fp32 intermediates and OOMs on 80 GB GPUs.
-try:
-    import transformers.models.qwen3_5.modeling_qwen3_5 as _qwen35
-    if _qwen35.causal_conv1d_fn is None:
-        def _py_causal_conv1d(x, weight, bias=None, seq_idx=None,
-                              initial_states=None, return_final_states=False, activation=None):
-            d_model, d_conv = weight.shape
-            out = _F.conv1d(x, weight.unsqueeze(1), bias, padding=d_conv - 1, groups=d_model)
-            out = out[:, :, :x.shape[-1]]
-            if activation == "silu":
-                out = _F.silu(out)
-            return out
-        _qwen35.causal_conv1d_fn = _py_causal_conv1d
-        _qwen35.is_fast_path_available = True
-except Exception:
-    pass
 
 hf_home = os.getenv("HF_HOME", default=None)
 
@@ -136,5 +112,4 @@ def get_tokenizer(tokenizer_cfg: DictConfig):
 # register models
 _register_model(AutoModelForCausalLM)
 _register_model(ProbedLlamaForCausalLM)
-if Gemma4ForCausalLM is not None:
-    _register_model(Gemma4ForCausalLM)
+_register_model(Gemma4ForCausalLM)

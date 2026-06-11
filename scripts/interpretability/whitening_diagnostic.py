@@ -76,7 +76,7 @@ def collect_stats(model, dataset, tokenizer, n_batches=15, batch_size=8):
 def collect_pca_and_energy(model, dataset, tokenizer, n_batches=10, batch_size=8, n_pcs=50):
     """Collect covariance for one sample layer, compute PCA, measure energy."""
     from data.utils import batched
-    from trainer.unlearn.repcollapse.online_covariance import OnlineCovariance
+    from trainer.unlearn.repselect.online_covariance import OnlineCovariance
 
     target_layer = len(model.model.layers) // 2  # middle layer
     cov_tracker = OnlineCovariance(dtype=pt.bfloat16)

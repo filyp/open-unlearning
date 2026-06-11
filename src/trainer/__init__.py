@@ -15,15 +15,13 @@ from trainer.unlearn.ceu import CEU
 from trainer.unlearn.satimp import SatImp
 from trainer.unlearn.wga import WGA
 from trainer.unlearn.pdu import PDU
-from trainer.unlearn.repcollapse.disrcollapse_trainer import DisrCollapse
-from trainer.unlearn.repcollapse.selective_trainer import SelectiveCollapse
-from trainer.unlearn.repcollapse.contrast_trainer import Contrast
-try:
-    from trainer.unlearn.repcollapse.wgrad_svd_trainer import WGradSVD
-    from trainer.unlearn.repcollapse.wgrad_svd_joint_trainer import WGradSVDJoint
-    _wgrad_available = True
-except ImportError:
-    _wgrad_available = False
+from trainer.unlearn.repselect.repselect_trainer import RepSelect
+from trainer.unlearn.repselect.repselect_cohen_trainer import RepSelectCohen
+from trainer.unlearn.repselect.repselect_moe_trainer import RepSelectMOE
+from trainer.unlearn.repselect.disrcollapse_trainer import DisrCollapse
+from trainer.unlearn.repselect.contrast_trainer import Contrast
+from trainer.unlearn.repselect.wgrad_svd_trainer import WGradSVD
+from trainer.unlearn.repselect.wgrad_svd_joint_trainer import WGradSVDJoint
 from trainer.unlearn.repselect_simple import RepSelectSimple
 from trainer.unlearn.repselect_adaptive import RepSelectAdaptive
 import logging
@@ -108,12 +106,12 @@ _register_trainer(CEU)
 _register_trainer(SatImp)
 _register_trainer(WGA)
 _register_trainer(PDU)
+_register_trainer(RepSelect)
+_register_trainer(RepSelectCohen)
+_register_trainer(RepSelectMOE)
 _register_trainer(DisrCollapse)
-_register_trainer(SelectiveCollapse)
 _register_trainer(Contrast)
-if _wgrad_available:
-    _register_trainer(WGradSVD)
-    _register_trainer(WGradSVDJoint)
+_register_trainer(WGradSVD)
+_register_trainer(WGradSVDJoint)
 _register_trainer(RepSelectSimple)
 _register_trainer(RepSelectAdaptive)
-TRAINER_REGISTRY["RepCollapse"] = SelectiveCollapse  # alias after rename

@@ -1,8 +1,8 @@
 """
-Exp 5: Baseline vs RepCollapse Weight Update Projection
+Exp 5: Baseline vs RepSelect Weight Update Projection
 
 Shows that GradDiff/NPO modify weights along high-variance PCs (attacker's
-subspace), while RepCollapse restricts updates to low-variance PCs.
+subspace), while RepSelect restricts updates to low-variance PCs.
 
 Requires PCA stats from Exp 4 (pca_stats_*.pt files).
 
@@ -101,8 +101,8 @@ def run_method(cfg, method_name, model, W0, tokenizer, data, collator, template_
             "alpha": 1, "module_regex": "model\\.layers\\.7",
             "trainable_params_regex": [".*"],
         })
-    elif method_name == "RepCollapse":
-        # Use existing RepCollapse config but no LoRA for fair comparison
+    elif method_name == "RepSelect":
+        # Use existing RepSelect config but no LoRA for fair comparison
         if "lora_rank" in trainer_cfg.get("method_args", {}).get("cfg", {}):
             OmegaConf.set_struct(trainer_cfg, False)
             del trainer_cfg.method_args.cfg.lora_rank
@@ -166,7 +166,7 @@ def main(cfg: DictConfig):
     collator = get_collators(cfg.collator, tokenizer=tokenizer)
 
     # --- 4. Run each method ---
-    methods = ["GradDiff", "NPO", "SimNPO", "RMU", "UNDIAL", "RepCollapse", "RepSelectSimple"]
+    methods = ["GradDiff", "NPO", "SimNPO", "RMU", "UNDIAL", "RepSelect", "RepSelectSimple"]
     method_states = {}
 
     # Fine-tuning attacker (not a trainer, runs directly)
@@ -241,7 +241,7 @@ def main(cfg: DictConfig):
     # Cumulative energy comparison (middle layer)
     mid_layer = layers[len(layers) // 2]
     fig, ax = plt.subplots(figsize=(4.5, 3.5))
-    colors = {"GradDiff": "#e74c3c", "NPO": "#f39c12", "RepCollapse": "#2ecc71"}
+    colors = {"GradDiff": "#e74c3c", "NPO": "#f39c12", "RepSelect": "#2ecc71"}
 
     for method in methods:
         key = f"{method}_layer_{mid_layer}"
