@@ -63,7 +63,6 @@ data:
   custom_loaders:
     - loader: wmdp_low_mi
       dataset: ${wmdp_domain}
-      eval_on_all_questions: false
       num_examples_per_question: 3
       tokenizer: ${tokenizer_cfg}
 

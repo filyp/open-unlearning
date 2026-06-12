@@ -218,7 +218,7 @@ if __name__ == "__main__":
     from omegaconf import OmegaConf
     tok_cfg = OmegaConf.create({"max_length": 128})
 
-    forget_cfg = OmegaConf.create({"dataset": "bio", "eval_on_all_questions": False,
+    forget_cfg = OmegaConf.create({"dataset": "bio", 
                                     "num_examples_per_question": 3, "tokenizer": tok_cfg})
     forget_data = wmdp_low_mi(forget_cfg, tokenizer)
     forget_samples = forget_data.get("forget", list(forget_data.values())[0])
