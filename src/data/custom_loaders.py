@@ -187,6 +187,17 @@ def beavertails_fewshot_raw(cfg, **kwargs):
     return {cfg.dataset_name: raw}
 
 
+def beavertails_contrast_fewshot_raw(cfg, **kwargs):
+    """Load raw contrast prompt-response pairs for few-shot attack evaluation."""
+    ds = load_hf_cached("filypo/beavertails-contrast", split=cfg.split)
+    texts = ds.select(range(*cfg.range))
+    raw = [
+        {"prompt": t["original_prompt"], "response": t["original_response"]}
+        for t in texts
+    ]
+    return {cfg.dataset_name: raw}
+
+
 def beavertails_curated(cfg, tokenizer, **kwargs):
     # splits: animal_abuse, terrorism_organized_crime, safe
     ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
