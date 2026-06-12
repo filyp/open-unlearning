@@ -1,0 +1,12 @@
+# @package _global_
+# Post-training general capabilities evaluation (MMLU + HellaSwag)
+
+defaults:
+  - override /eval: null
+
+eval:
+  general_caps:
+    handler: LMEvalEvaluator
+    tasks:
+      - mmlu
+    overwrite: False

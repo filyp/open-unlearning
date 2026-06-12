@@ -9,8 +9,6 @@ defaults:
   - override /eval: null # This disables the default TOFU evaluation
   - override /hydra/sweeper: optuna # Use Optuna sweeper for --multirun
 
-# task_name: ${model.pretrained_model_name_or_path}_${trainer.handler}
-
 trainer:
   save_final_state: False
   args:
@@ -23,10 +21,6 @@ eval:
     handler: KLEvaluator
     dataset_name: wikitext
     disr_budget: 0.01
-  safe_eval:
-    handler: KLEvaluator
-    dataset_name: safe_eval  # contrast set eval split (index-aligned with forget)
-    disr_budget: null
   holdout_harmful:
     handler: ProbabilityEvaluator
     dataset_name: holdout_harmful
@@ -48,75 +42,60 @@ tokenizer_cfg:
 
 # CLI: category=... to switch category
 # curated splits: animal_abuse, terrorism_organized_crime
-# correct counts: animal_abuse=898, terrorism_organized_crime=1595, safe=3729
-# in the contrast set: animal_abuse=871
 category: animal_abuse
 
 data:
-  anchor: paired
   custom_loaders:
     # filypo/beavertails-curated — only label_correct=True examples used
-    - loader: beavertails_contrast
-      original: true
+    - loader: beavertails_curated
       dataset_name: forget
-      range: [0, 371]
+      range: [0, 128]
       split: ${category}
       tokenizer: ${tokenizer_cfg}
 
-    - loader: beavertails_contrast
-      original: true
+    - loader: beavertails_curated
       dataset_name: relearn
-      range: [371, 742]
+      range: [128, 256]
       split: ${category}
       tokenizer: ${tokenizer_cfg}
 
-    - loader: beavertails_contrast
-      original: true
+    - loader: beavertails_curated
       dataset_name: holdout_harmful
-      range: [742, 870]
+      range: [500, 564]
       split: ${category}
       tokenizer: ${tokenizer_cfg}
 
-    - loader: beavertails_contrast_fewshot_raw
+    - loader: beavertails_fewshot_raw
       dataset_name: fewshot_raw
-      range: [371, 742]
+      range: [128, 256]
       split: ${category}
 
-    - loader: beavertails_contrast_fewshot_raw
+    - loader: beavertails_fewshot_raw
       dataset_name: holdout_raw
-      range: [742, 870]
+      range: [500, 564]
       split: ${category}
 
-    - loader: beavertails_contrast
-      original: false
+    - loader: beavertails_curated
       dataset_name: retain
-      range: [0, 371]
-      split: animal_abuse
-      tokenizer: ${tokenizer_cfg}
-
-    - loader: beavertails_contrast
-      original: false
-      dataset_name: safe_eval
-      range: [742, 870]  # note that contrast set is 871, because some examples failed, usually due to safety filters
-      split: animal_abuse
+      range: [0, 256]
+      split: safe
       tokenizer: ${tokenizer_cfg}
 
     - loader: load_hf_and_tokenize
       dataset_name: wikitext
       hf_args:
         path: filypo/wikitext_16k
-      range: [0, 128]
+      range: [0, 64]
       tokenizer: ${tokenizer_cfg}
 
 relearning_trainer:
-  # default loaded from finetune.yaml
   save_final_state: False
   handler: FinetuneTrainer
   args:
-    optim: adamw_8bit  # sgd | adamw_8bit | paged_adamw_8bit
+    optim: adamw_8bit
     learning_rate: 7e-6
     lr_scheduler_type: constant
-    report_to: wandb  # none|tensorboard|wandb|dvclive|comet_ml
+    report_to: wandb
     run_name: ${task_name}
 
 metric_to_optimize: holdout_harmful_prob
@@ -125,7 +104,6 @@ optimize_direction: minimize
 # Optuna sweeper config (activate with --multirun flag)
 hydra:
   sweeper:
-    # hyperparam range loaded from /sweep config group in configs/trainer/*.yaml files
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
     max_failure_rate: 0.0
     search_space: null
@@ -137,4 +115,4 @@ hydra:
     n_jobs: 1
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: ${trainer.args.seed}  # deterministic
+      seed: ${trainer.args.seed}

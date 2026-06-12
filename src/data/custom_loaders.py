@@ -134,6 +134,7 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):
         relearn=relearning_samples,
         recall=recall_samples,
         eval_qs=split2,
+        fewshot_qs=split1,  # raw questions for few-shot attack eval
     )
 
 
@@ -177,22 +178,45 @@ def _get_beavertails_sample(prompt, response, tokenizer, cfg):
 #     return {cfg.dataset_name: samples}
 
 
-# def beavertails_curated(cfg, tokenizer, **kwargs):
-#     # splits: animal_abuse, terrorism_organized_crime, safe
-#     ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
-#     texts = ds.filter(lambda x: x["label_correct"])
-#     len_ = cfg.range[1] - cfg.range[0]
-#     texts = texts.select(range(*cfg.range))
-#     logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
+def beavertails_fewshot_raw(cfg, **kwargs):
+    """Load raw BeaverTails prompt-response pairs for few-shot attack evaluation."""
+    ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
+    texts = ds.filter(lambda x: x["label_correct"])
+    texts = texts.select(range(*cfg.range))
+    raw = [{"prompt": t["prompt"], "response": t["response"]} for t in texts]
+    return {cfg.dataset_name: raw}
 
-#     samples = []
-#     for text in texts:
-#         samples.append(
-#             _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
-#         )
 
-#     assert len(samples) == len_
-#     return {cfg.dataset_name: samples}
+def beavertails_contrast_fewshot_raw(cfg, **kwargs):
+    """Load raw contrast prompt-response pairs for few-shot attack evaluation."""
+    ds = load_hf_cached("filypo/beavertails-contrast", split=cfg.split)
+    texts = ds.select(range(*cfg.range))
+    raw = [
+        {"prompt": t["original_prompt"], "response": t["original_response"]}
+        for t in texts
+    ]
+    return {cfg.dataset_name: raw}
+
+
+def beavertails_curated(cfg, tokenizer, **kwargs):
+    # splits: animal_abuse, terrorism_organized_crime, safe
+    ds = load_hf_cached("filypo/beavertails-curated", split=cfg.split)
+    texts = ds.filter(lambda x: x["label_correct"])
+    if "range" in cfg:
+        len_ = cfg.range[1] - cfg.range[0]
+        texts = texts.select(range(*cfg.range))
+    else:
+        len_ = len(texts)
+    logging.info(f"{cfg.dataset_name} {len_}/{len(ds)} (filtered by label_correct)")
+
+    samples = []
+    for text in texts:
+        samples.append(
+            _get_beavertails_sample(text["prompt"], text["response"], tokenizer, cfg)
+        )
+
+    assert len(samples) == len_
+    return {cfg.dataset_name: samples}
 
 
 def beavertails_contrast(cfg, tokenizer, **kwargs):

@@ -19,12 +19,13 @@ class LMEvalEvaluator(Evaluator):
             self.eval_cfg.tasks, resolve=True, throw_on_missing=True
         )
         self.task_manager = TaskManager()
-        self.simple_evaluate_args = dict(kwargs.get("simple_evaluate_args", {}))
+        _sea = self.eval_cfg.get("simple_evaluate_args", None)
+        self.simple_evaluate_args = OmegaConf.to_container(_sea, resolve=True) if _sea is not None else {}
 
     def prepare_model(self, model, **kwargs):
         """Prepare model for evaluation"""
         model.eval()
-        return HFLM(model)
+        return HFLM(model, tokenizer=kwargs.get("tokenizer", None))
 
     def summarize(self, eval_results: dict, task_name: str) -> dict:
         """

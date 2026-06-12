@@ -5,6 +5,8 @@ from evals.tofu import TOFUEvaluator
 from evals.muse import MUSEEvaluator
 from evals.lm_eval import LMEvalEvaluator
 from evals.wmdp_low_mi import WMDPLLowMIEvaluator
+from evals.fewshot_wmdp import FewShotWMDPEvaluator
+from evals.fewshot_beavertails import FewShotBeaverTailsEvaluator
 from evals.kl_eval import KLEvaluator
 
 EVALUATOR_REGISTRY: Dict[str, Any] = {}
@@ -29,6 +31,8 @@ def get_evaluators(eval_cfgs: DictConfig, **kwargs):
     evaluators = {}
     # note: the eval_name is not used anywhere - could be removed to simplify the config
     for eval_name, eval_cfg in eval_cfgs.items():
+        if eval_cfg is None:
+            continue  # allows disabling via CLI: eval.<name>=null
         evaluators[eval_name] = get_evaluator(eval_name, eval_cfg, **kwargs)
     return evaluators
 
@@ -38,6 +42,8 @@ _register_evaluator(TOFUEvaluator)
 _register_evaluator(MUSEEvaluator)
 _register_evaluator(LMEvalEvaluator)
 _register_evaluator(WMDPLLowMIEvaluator)
+_register_evaluator(FewShotWMDPEvaluator)
+_register_evaluator(FewShotBeaverTailsEvaluator)
 _register_evaluator(LossEvaluator)
 _register_evaluator(ProbabilityEvaluator)
 _register_evaluator(KLEvaluator)

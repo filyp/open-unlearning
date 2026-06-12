@@ -53,20 +53,23 @@ def compute_dpo_loss(model, ref_model, win_inputs=None, lose_inputs=None, beta=1
     if win_inputs is None and lose_inputs is None:
         raise ValueError("Both win_inputs and lose_inputs can't be None")
 
+    ref_dev = next(ref_model.parameters()).device
     win_log_ratio, lose_log_ratio = 0.0, 0.0
     win_outputs, lose_outputs = None, None
 
     if win_inputs is not None:
         win_loss, win_outputs = compute_batch_nll(model, win_inputs)
         with torch.no_grad():
-            win_ref_loss, _ = compute_batch_nll(ref_model, win_inputs)
-        win_log_ratio = -(win_loss - win_ref_loss)
+            ref_in = {k: v.to(ref_dev) if torch.is_tensor(v) else v for k, v in win_inputs.items()}
+            win_ref_loss, _ = compute_batch_nll(ref_model, ref_in)
+        win_log_ratio = -(win_loss - win_ref_loss.to(win_loss.device))
 
     if lose_inputs is not None:
         lose_loss, lose_outputs = compute_batch_nll(model, lose_inputs)
         with torch.no_grad():
-            lose_ref_loss, _ = compute_batch_nll(ref_model, lose_inputs)
-        lose_log_ratio = -(lose_loss - lose_ref_loss)
+            ref_in = {k: v.to(ref_dev) if torch.is_tensor(v) else v for k, v in lose_inputs.items()}
+            lose_ref_loss, _ = compute_batch_nll(ref_model, ref_in)
+        lose_log_ratio = -(lose_loss - lose_ref_loss.to(lose_loss.device))
 
     loss = -2 / beta * F.logsigmoid(beta * (win_log_ratio - lose_log_ratio)).mean()
     return loss, (win_outputs, lose_outputs)
@@ -83,7 +86,9 @@ def compute_undial_loss(model, ref_model, inputs, beta):
 
     # Forward pass on the teacher model (no grad)
     with torch.no_grad():
-        teacher_logits = ref_model(**inputs).logits
+        ref_dev = next(ref_model.parameters()).device
+        ref_in = {k: v.to(ref_dev) if torch.is_tensor(v) else v for k, v in inputs.items()}
+        teacher_logits = ref_model(**ref_in).logits.to(logits.device)
     shift_teacher_logits = teacher_logits[..., :-1, :].contiguous()
 
     # Build the mask that identifies the tokens need to be unlearned

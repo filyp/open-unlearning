@@ -81,7 +81,8 @@ def run_batchwise_evals(model, dataloader, batch_eval_fn, batch_eval_fn_args, ev
 
 def evaluate_probability(model, batch):
     """Evaluate model probabilities and average token-level loss for a given batch."""
-    batch = {k: v.to(model.device) for k, v in batch.items()}
+    device = next(model.parameters()).device
+    batch = {k: v.to(device) for k, v in batch.items()}
     with torch.no_grad():
         output = model(**batch)
     logits = output.logits
@@ -95,8 +96,8 @@ def evaluate_probability(model, batch):
     avg_losses = losses / num_token_gt
     normalized_probs = torch.exp(-avg_losses)
 
-    avg_losses = avg_losses.float().cpu().numpy().tolist()
-    normalized_probs = normalized_probs.float().cpu().numpy().tolist()
+    avg_losses = avg_losses.cpu().float().numpy().tolist()
+    normalized_probs = normalized_probs.cpu().float().numpy().tolist()
     return [
         {"prob": prob, "avg_loss": avg_loss}
         for prob, avg_loss in zip(normalized_probs, avg_losses)
@@ -111,7 +112,8 @@ def tokenwise_logprobs(model, batch, grad=False, return_labels=False):
     log_probs_batch (List[Tensor]): Tensors of size seq_len where seq_len is length of labeled tokens
     labels_batch (List[Tensor]): List of tensors of length N. Returned only if return_labels is True
     """
-    batch = {k: v.to(model.device) for k, v in batch.items()}
+    device = next(model.parameters()).device
+    batch = {k: v.to(device) for k, v in batch.items()}
     with torch.set_grad_enabled(grad):
         output = model(**batch)
 
@@ -154,7 +156,8 @@ def tokenwise_vocab_logprobs(model, batch, grad=False, return_labels=False):
         for each sequence, where N is the length of labeled tokens and V is vocab size.
         labels_batch (List[Tensor]): List of tensors of length N. Returned only if return_labels is True
     """
-    batch = {k: v.to(model.device) for k, v in batch.items()}
+    device = next(model.parameters()).device
+    batch = {k: v.to(device) for k, v in batch.items()}
     with torch.set_grad_enabled(grad):
         output = model(**batch)
 
@@ -265,7 +268,8 @@ def eval_text_similarity(model, tokenizer, batch, generation_args):
             )
         return evals
 
-    batch = {k: v.to(model.device) for k, v in batch.items()}
+    device = next(model.parameters()).device
+    batch = {k: v.to(device) for k, v in batch.items()}
     input_ids = batch["input_ids"]
     labels = batch["labels"]
     input_texts = tokenizer.batch_decode(
