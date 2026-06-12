@@ -158,8 +158,4 @@ If you use the underlying framework, please also cite the OpenUnlearning technic
 
 ## 📄 License
 
-<<<<<<< pr/yushi-contributions
 Released under the [MIT License](LICENSE), consistent with the upstream OpenUnlearning project.
-=======
-Released under the [MIT License](LICENSE), consistent with the upstream OpenUnlearning project.
->>>>>>> main
