@@ -8,7 +8,7 @@ import yaml
 
 import wandb
 
-quadratic = True
+hard_soft = "ridge"  # soft | quadratic | ridge | ridge_module_retuning
 
 # Baselines from dedicated reference runs in wandb. Shape: {dataset: {model: value}}.
 _BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "benchmarks"
@@ -29,7 +29,7 @@ SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "collapse_cache.pkl"
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10
+REL_STEPS = 5
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
 
@@ -67,10 +67,11 @@ BENCH_CONFIGS = {
 
 
 def task_name(exp_name, model, suffix):
-    if quadratic:
-        return f"collapse2_{exp_name}_{model}_{suffix}_quadratic"
-    else:
+    # "no collapse" runs are unaffected by the collapse variant, so the
+    # non-soft grids reuse the original soft runs for them.
+    if hard_soft == "soft" or suffix.endswith("_none"):
         return f"collapse_{exp_name}_{model}_{suffix}"
+    return f"collapse2_{exp_name}_{model}_{suffix}_{hard_soft}"
 
 
 # %%
@@ -89,7 +90,12 @@ for _, model_field in MODELS:
         for _, suffix in BENCH_CONFIGS[exp_name]:
             expected.append((exp_name, task_name(exp_name, model_field, suffix)))
 
-missing = [(e, t) for e, t in expected if t not in cache]
+# retry runs that were previously missing or had no logged metric yet
+def _needs_fetch(t):
+    hist = cache.get(t)
+    return hist is None or len(hist) == 0
+
+missing = [(e, t) for e, t in expected if _needs_fetch(t)]
 if missing:
     api = wandb.Api(timeout=3600)
     for exp_name, t in missing:
@@ -97,7 +103,7 @@ if missing:
         print(f"Fetching {t} (metric={metric})...")
         runs = list(api.runs(REL_PROJECT, filters={"display_name": t}))
         if len(runs) == 0:
-            print(f"  no run found; marking None")
+            print("  no run found; marking None")
             cache[t] = None
             continue
         if len(runs) > 1:
@@ -216,10 +222,10 @@ fig.text(
     0.5, -0.02, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
 )
 
-if quadratic:
-    save_path = SCRIPT_DIR / "collapse_grid_quadratic.pdf"
-else:
+if hard_soft == "soft":
     save_path = SCRIPT_DIR / "collapse_grid.pdf"
+else:
+    save_path = SCRIPT_DIR / f"collapse_grid_{hard_soft}.pdf"
 fig.savefig(save_path, bbox_inches="tight", dpi=150)
 print(f"Saved plot to {save_path}")
 plt.show()

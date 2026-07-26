@@ -11,4 +11,4 @@ method_args:
   distribution: forget  # forget | retain
   collapse_on: both  # act | grad | both | none
   use_lora: true
-  hard_soft: soft  # hard | soft | quadratic
+  hard_soft: soft  # hard | soft | quadratic | ridge | ridge_module_retuning

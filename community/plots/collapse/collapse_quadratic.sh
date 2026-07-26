@@ -15,18 +15,23 @@ model=Llama-3.1-8B
 experiment=unlearn/wmdp_low_mi/default exp_name=bio
 # experiment=unlearn/beavertails/curated_contrast exp_name=aa
 
+# hard_soft=quadratic
+hard_soft=ridge
+
 for dist in forget retain; do
-  for collapse in act grad both none; do
+  # for collapse in act grad both none; do
+  for collapse in act grad both; do
     run python src/unlearn_relearn.py --config-name=unlearn.yaml \
       trainer=RepSelectSimple \
       trainer.handler=RepSelectAdaptive \
       trainer.method_args.use_lora=false \
-      trainer.method_args.hard_soft=quadratic \
+      relearning_trainer.args.num_train_epochs=5 \
+      trainer.method_args.hard_soft=${hard_soft} \
       experiment=${experiment} \
       model=${model} \
       trainer.method_args.distribution=${dist} \
       trainer.method_args.collapse_on=${collapse} \
-      task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_quadratic
+      task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_${hard_soft}
   done
 done
 
