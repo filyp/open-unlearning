@@ -49,16 +49,16 @@ def _collapse(
         proj_diff = projected - projected * (eps / S).unsqueeze(-2)
         return (mat - proj_diff @ eig_vec.mT) / eps.unsqueeze(-2)
 
-    if hard_soft == "ridge_module_retuning":
-        # same damped spectrum as ridge, but renormalized per module so the
-        # tail/complement passes through unchanged and cross-module weighting
-        # stays that of the raw gradient
-        S = S**2
-        eps = S[..., min(n_pcs, S.shape[-1]) - 1].unsqueeze(-1)
-        S = S + eps
-        S = S / S.amin(dim=-1, keepdim=True)
-        proj_diff = projected - projected / S.unsqueeze(-2)
-        return mat - proj_diff @ eig_vec.mT
+    # if hard_soft == "ridge_module_retuning":  # it's clearly worse
+    #     # same damped spectrum as ridge, but renormalized per module so the
+    #     # tail/complement passes through unchanged and cross-module weighting
+    #     # stays that of the raw gradient
+    #     S = S**2
+    #     eps = S[..., min(n_pcs, S.shape[-1]) - 1].unsqueeze(-1)
+    #     S = S + eps
+    #     S = S / S.amin(dim=-1, keepdim=True)
+    #     proj_diff = projected - projected / S.unsqueeze(-2)
+    #     return mat - proj_diff @ eig_vec.mT
 
     raise ValueError(f"unknown hard_soft: {hard_soft}")
 
@@ -198,10 +198,6 @@ class RepSelectSimple(UnlearnTrainer):
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
             U, S, V = (x.to(grad.device) for x in weight.USV)
-
-            eps = S[..., min(self.n_pcs, S.shape[-1]) - 1] ** 2
-            logger.info("eps=" + " ".join(f"{e:.2e}" for e in eps.flatten().tolist()))
-
             if self.collapse_on in ["act", "both"]:
                 grad = _collapse(grad, V, S, self.hard_soft, self.n_pcs)
             if self.collapse_on in ["grad", "both"]:

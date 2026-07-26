@@ -8,7 +8,13 @@ import yaml
 
 import wandb
 
-hard_soft = "ridge"  # soft | quadratic | ridge | ridge_module_retuning
+# choices: soft | quadratic | ridge | ridge_module_retuning
+hard_soft = "quadratic"
+# hard_soft = "ridge_module_retuning"
+# hard_soft = "ridge"
+# hard_soft = "ridge1024"
+# hard_soft = "ridge3072"
+# hard_soft = "ridge256"
 
 # Baselines from dedicated reference runs in wandb. Shape: {dataset: {model: value}}.
 _BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "benchmarks"
@@ -29,7 +35,7 @@ SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "collapse_cache.pkl"
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 5
+REL_STEPS = 10
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
 
