@@ -38,6 +38,7 @@ REL_PROJECT = "filyp/rel-selective-unlearning"
 REL_STEPS = 10
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
+SHOW_FR = False  # include the "f+r" (forget_and_retain SVD) rows
 
 MODELS = [
     ("Llama-3.1-8B", "Llama-3.1-8B"),
@@ -61,11 +62,14 @@ BASE_CONFIGS = [
     ("retain / act", "retain_act"),
     ("retain / grad", "retain_grad"),
     ("retain / both", "retain_both"),
-    ("f+r / act", "forget_and_retain_act"),
-    ("f+r / grad", "forget_and_retain_grad"),
-    ("f+r / both", "forget_and_retain_both"),
-    ("no collapse", "forget_none"),
 ]
+if SHOW_FR:
+    BASE_CONFIGS += [
+        ("f+r / act", "forget_and_retain_act"),
+        ("f+r / grad", "forget_and_retain_grad"),
+        ("f+r / both", "forget_and_retain_both"),
+    ]
+BASE_CONFIGS += [("no collapse", "forget_none")]
 # Per-benchmark configs. AA has the extra mixed (retain-act, forget-grad) run.
 BENCH_CONFIGS = {
     "bio": BASE_CONFIGS,
