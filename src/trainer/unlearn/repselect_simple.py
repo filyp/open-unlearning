@@ -49,7 +49,7 @@ def _collapse(
         proj_diff = projected - projected * (eps / S).unsqueeze(-2)
         return (mat - proj_diff @ eig_vec.mT) / eps.unsqueeze(-2)
 
-    # if hard_soft == "ridge_module_retuning":  # it's clearly worse
+    # if hard_soft == "ridge_module_retuning":  # it's clearly worse than ridge
     #     # same damped spectrum as ridge, but renormalized per module so the
     #     # tail/complement passes through unchanged and cross-module weighting
     #     # stays that of the raw gradient
@@ -80,8 +80,9 @@ class RepSelectSimple(UnlearnTrainer):
     2. Freeze LoRA, accumulate forget weight-gradient over one pass (LoRA
        still active in forward).
     3. Unload LoRA, SVD the weight-gradient of the chosen `distribution`
-       ("forget" or "retain"; "none" skips collapse), collapse its top
-       principal components on both D_in (via V) and D_out (via U).
+       ("forget", "retain", or "forget_and_retain" which SVDs the sum of
+       both gradients while the update stays forget-only), collapse its
+       top principal components on both D_in (via V) and D_out (via U).
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
@@ -103,7 +104,7 @@ class RepSelectSimple(UnlearnTrainer):
         self.collapse_on = collapse_on
         self.use_lora = use_lora
         self.hard_soft = hard_soft
-        assert distribution in ["forget", "retain"]
+        assert distribution in ["forget", "retain", "forget_and_retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
         assert hard_soft in [
             "hard",
@@ -155,17 +156,20 @@ class RepSelectSimple(UnlearnTrainer):
         )
         self.model.train()
 
-        # retain epoch
-        if self.distribution == "retain":
+        # retain epoch (for forget_and_retain, stash the retain gradient: it
+        # only joins the forget gradient for the SVD, never the update)
+        if self.distribution in ["retain", "forget_and_retain"]:
             self.model.zero_grad(set_to_none=True)
             _train_on(self.base_trainable_params, self.model)
             for batch_pair in self.get_train_dataloader():
                 r_batch = _prep_batch(batch_pair["retain"])
                 output = self.model(**r_batch)
                 (-output.loss).backward()
-            # retain SVD
             for weight in self.base_trainable_params:
-                weight.USV = self._svd(weight.grad.float())
+                if self.distribution == "retain":
+                    weight.USV = self._svd(weight.grad.float())
+                else:
+                    weight.retain_grad_acc = weight.grad.cpu()
 
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
         if self.use_lora:  # toggle for ablations
@@ -189,10 +193,14 @@ class RepSelectSimple(UnlearnTrainer):
         # strip LoRA
         self.model = self.model.unload()
 
-        # forget SVD
-        if self.distribution == "forget":
+        # SVD of the forget grad, or of the forget+retain sum
+        if self.distribution in ["forget", "forget_and_retain"]:
             for weight in self.base_trainable_params:
-                weight.USV = self._svd(weight.grad.float())
+                mat = weight.grad.float()
+                if self.distribution == "forget_and_retain":
+                    mat = mat + weight.retain_grad_acc.to(mat.device).float()
+                    weight.retain_grad_acc = None
+                weight.USV = self._svd(mat)
 
         # collapse
         for weight in self.base_trainable_params:

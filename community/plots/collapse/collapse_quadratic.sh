@@ -26,7 +26,8 @@ hard_soft=quadratic
 # n_pcs=256
 n_pcs=512
 
-for dist in forget retain; do
+for dist in forget retain forget_and_retain; do
+# for dist in forget_and_retain; do
   # for collapse in act grad both none; do
   for collapse in act grad both; do
     run python src/unlearn_relearn.py --config-name=unlearn.yaml \
@@ -40,8 +41,8 @@ for dist in forget retain; do
       model=${model} \
       trainer.method_args.distribution=${dist} \
       trainer.method_args.collapse_on=${collapse} \
-      task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_${hard_soft}${n_pcs}
-      # task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_${hard_soft}
+      task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_${hard_soft}
+      # task_name=collapse2_${exp_name}_${model}_${dist}_${collapse}_${hard_soft}${n_pcs}
   done
 done
 

@@ -61,6 +61,9 @@ BASE_CONFIGS = [
     ("retain / act", "retain_act"),
     ("retain / grad", "retain_grad"),
     ("retain / both", "retain_both"),
+    ("f+r / act", "forget_and_retain_act"),
+    ("f+r / grad", "forget_and_retain_grad"),
+    ("f+r / both", "forget_and_retain_both"),
     ("no collapse", "forget_none"),
 ]
 # Per-benchmark configs. AA has the extra mixed (retain-act, forget-grad) run.
@@ -147,8 +150,9 @@ collapse_color = {"act": colors[0], "grad": colors[1], "both": colors[2], "none"
 def style_for(suffix):
     if suffix == "actretain_gradforget":
         return colors[4], "xxx"  # mixed: distinct color + cross-hatch
-    dist, coll = suffix.split("_")
-    return collapse_color[coll], ("///" if dist == "retain" else "")
+    dist, coll = suffix.rsplit("_", 1)
+    hatch = {"forget": "", "retain": "///", "forget_and_retain": "xx"}[dist]
+    return collapse_color[coll], hatch
 
 for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARKS):
     configs = BENCH_CONFIGS[exp_name]
