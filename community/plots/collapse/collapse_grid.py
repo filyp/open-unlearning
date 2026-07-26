@@ -8,6 +8,8 @@ import yaml
 
 import wandb
 
+quadratic = True
+
 # Baselines from dedicated reference runs in wandb. Shape: {dataset: {model: value}}.
 _BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "benchmarks"
 baselines: dict[str, dict[str, float]] = {}
@@ -65,7 +67,10 @@ BENCH_CONFIGS = {
 
 
 def task_name(exp_name, model, suffix):
-    return f"collapse_{exp_name}_{model}_{suffix}"
+    if quadratic:
+        return f"collapse2_{exp_name}_{model}_{suffix}_quadratic"
+    else:
+        return f"collapse_{exp_name}_{model}_{suffix}"
 
 
 # %%
@@ -211,7 +216,10 @@ fig.text(
     0.5, -0.02, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
 )
 
-save_path = SCRIPT_DIR / "collapse_grid.pdf"
+if quadratic:
+    save_path = SCRIPT_DIR / "collapse_grid_quadratic.pdf"
+else:
+    save_path = SCRIPT_DIR / "collapse_grid.pdf"
 fig.savefig(save_path, bbox_inches="tight", dpi=150)
 print(f"Saved plot to {save_path}")
 plt.show()

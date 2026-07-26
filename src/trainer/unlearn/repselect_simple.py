@@ -15,10 +15,14 @@ def _collapse(
     projected = mat @ eig_vec
     if hard_soft == "hard":  # top N PCs projection
         return mat - projected @ eig_vec.mT
-    else:  # Mahalanobis collapse
-        S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
-        proj_diff = projected - projected / S.unsqueeze(-2)
-        return mat - proj_diff @ eig_vec.mT
+    # Mahalanobis collapse. "quadratic" divides by S^2, the eigenvalues of
+    # Uf.T@Uf (the act/grad covariance proxy), so it applies cov^-1 rather
+    # than cov^-1/2 — equivalent to whitening with the SVD of Uf.T@Uf.
+    if hard_soft == "quadratic":
+        S = S**2
+    S = S / S.amin(dim=-1, keepdim=True)  # normalize eigenvalues so min=1
+    proj_diff = projected - projected / S.unsqueeze(-2)
+    return mat - proj_diff @ eig_vec.mT
 
 
 def _prep_batch(batch):
@@ -63,7 +67,7 @@ class RepSelectSimple(UnlearnTrainer):
         self.hard_soft = hard_soft
         assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
-        assert hard_soft in ["hard", "soft"]
+        assert hard_soft in ["hard", "soft", "quadratic"]
         # note though, that for some MoE models act and grad dimensions may be transposed
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
