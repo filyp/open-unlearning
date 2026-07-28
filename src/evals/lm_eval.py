@@ -8,6 +8,7 @@ from lm_eval.tasks import TaskManager
 from lm_eval import simple_evaluate
 
 from evals.base import Evaluator
+from evals.retry import retry_on_rate_limit
 
 
 logger = logging.getLogger("evaluator")
@@ -123,7 +124,8 @@ class LMEvalEvaluator(Evaluator):
 
         if todo:
             # evaluate all remaining tasks in one call to avoid per-task overhead
-            results = simple_evaluate(
+            results = retry_on_rate_limit(
+                simple_evaluate,
                 model=model,
                 tasks=todo,
                 task_manager=self.task_manager,

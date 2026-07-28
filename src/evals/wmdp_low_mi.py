@@ -5,6 +5,8 @@ import lm_eval.tasks
 import torch as pt
 from lm_eval.tasks import TaskManager, get_task_dict
 
+from evals.retry import retry_on_rate_limit
+
 # logger = logging.getLogger("evaluator")
 # Suppress the specific warnings from lm_eval when loading an existing model to HFLM
 logging.getLogger("lm_eval.models.huggingface").setLevel(logging.ERROR)
@@ -48,7 +50,7 @@ class WMDPLLowMIEvaluator:
         self.task = eval_cfg.get("task", "wmdp_bio")
         wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
         task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-        self.task_dict = get_task_dict([self.task], task_manager)
+        self.task_dict = retry_on_rate_limit(get_task_dict, [self.task], task_manager)
         # Modify the task to use our custom questions
         self.task_dict[self.task].dataset["test"] = data["eval_qs"]
 

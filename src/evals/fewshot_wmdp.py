@@ -6,6 +6,8 @@ import lm_eval.tasks
 import torch as pt
 from lm_eval.tasks import TaskManager, get_task_dict
 
+from evals.retry import retry_on_rate_limit
+
 
 logger = logging.getLogger("evaluator")
 
@@ -43,7 +45,7 @@ class FewShotWMDPEvaluator:
         self.task = eval_cfg.get("task", "wmdp_bio")
         wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
         task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-        self.task_dict = get_task_dict([self.task], task_manager)
+        self.task_dict = retry_on_rate_limit(get_task_dict, [self.task], task_manager)
 
         task = self.task_dict[self.task]
         # Set eval questions as test split
