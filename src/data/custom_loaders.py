@@ -3,6 +3,8 @@ import os
 
 from datasets import concatenate_datasets, load_dataset, load_from_disk
 
+from hub_retry import retry_on_rate_limit
+
 
 DATE_STRING = "10 Apr 2025"
 
@@ -15,7 +17,7 @@ def load_hf_cached(path, split="train", data_files=None):
         logging.info(f"Loading cached dataset from {cache_dir}")
         return load_from_disk(cache_dir)
     else:
-        ds = load_dataset(path, split=split, data_files=data_files)
+        ds = retry_on_rate_limit(load_dataset, path, split=split, data_files=data_files)
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         ds.save_to_disk(cache_dir)
         return ds

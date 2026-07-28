@@ -8,7 +8,7 @@ from lm_eval.tasks import TaskManager
 from lm_eval import simple_evaluate
 
 from evals.base import Evaluator
-from evals.retry import retry_on_rate_limit
+from hub_retry import retry_on_rate_limit
 
 
 logger = logging.getLogger("evaluator")

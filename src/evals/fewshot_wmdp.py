@@ -6,7 +6,7 @@ import lm_eval.tasks
 import torch as pt
 from lm_eval.tasks import TaskManager, get_task_dict
 
-from evals.retry import retry_on_rate_limit
+from hub_retry import retry_on_rate_limit
 
 
 logger = logging.getLogger("evaluator")
