@@ -26,12 +26,12 @@ hf_module.tqdm = _disabled_tqdm
 # fmt: on
 
 
-def _get_temperature_0_accuracy(lm_eval_results):
-    return lm_eval_results["results"]["wmdp_bio"]["acc,none"]
+def _get_temperature_0_accuracy(lm_eval_results, task):
+    return lm_eval_results["results"][task]["acc,none"]
 
 
-def _get_temperature_1_accuracy(lm_eval_results):
-    samples = lm_eval_results["samples"]["wmdp_bio"]
+def _get_temperature_1_accuracy(lm_eval_results, task):
+    samples = lm_eval_results["samples"][task]
     target_logprobs = pt.tensor([s["resps"][s["target"]][0][0] for s in samples])
     target_probs = pt.exp(target_logprobs)
     return target_probs.mean().item()
@@ -42,15 +42,15 @@ class WMDPLLowMIEvaluator:
         # load data
         self.eval_qs = data["eval_qs"]
 
-        # Get the wmdp_bio task (uses the standard template)
+        # Get the domain's wmdp task (uses the standard template; the tasks differ
+        # only in the description line, e.g. "...about biology" vs "...about cybersecurity")
         # Use include_defaults=False and only include wmdp tasks for a much faster init
+        self.task = eval_cfg.get("task", "wmdp_bio")
         wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
         task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-        self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
-        # Modify the wmdp_bio task to use our custom questions
-        # Note that this also supports eval_qs from wmdp_cyber - we only need
-        # the task template which is the same for both tasks.
-        self.task_dict["wmdp_bio"].dataset["test"] = data["eval_qs"]
+        self.task_dict = get_task_dict([self.task], task_manager)
+        # Modify the task to use our custom questions
+        self.task_dict[self.task].dataset["test"] = data["eval_qs"]
 
     def evaluate(self, model, tokenizer, trainer, **kwargs):
         model.eval()
@@ -69,6 +69,6 @@ class WMDPLLowMIEvaluator:
         )
 
         return dict(
-            forget_acc_t0=_get_temperature_0_accuracy(lm_eval_results),
-            forget_acc_t1=_get_temperature_1_accuracy(lm_eval_results),
+            forget_acc_t0=_get_temperature_0_accuracy(lm_eval_results, self.task),
+            forget_acc_t1=_get_temperature_1_accuracy(lm_eval_results, self.task),
         )

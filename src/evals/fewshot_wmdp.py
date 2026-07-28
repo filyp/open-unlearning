@@ -10,12 +10,12 @@ from lm_eval.tasks import TaskManager, get_task_dict
 logger = logging.getLogger("evaluator")
 
 
-def _get_temperature_0_accuracy(lm_eval_results):
-    return lm_eval_results["results"]["wmdp_bio"]["acc,none"]
+def _get_temperature_0_accuracy(lm_eval_results, task):
+    return lm_eval_results["results"][task]["acc,none"]
 
 
-def _get_temperature_1_accuracy(lm_eval_results):
-    samples = lm_eval_results["samples"]["wmdp_bio"]
+def _get_temperature_1_accuracy(lm_eval_results, task):
+    samples = lm_eval_results["samples"][task]
     target_logprobs = pt.tensor([s["resps"][s["target"]][0][0] for s in samples])
     target_probs = pt.exp(target_logprobs)
     return target_probs.mean().item()
@@ -37,11 +37,12 @@ class FewShotWMDPEvaluator:
         self.mode = kwargs.get("mode")
         self.prefix = f"fewshot{self.num_fewshot}"
 
+        self.task = eval_cfg.get("task", "wmdp_bio")
         wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
         task_manager = TaskManager(include_path=wmdp_path, include_defaults=False)
-        self.task_dict = get_task_dict(["wmdp_bio"], task_manager)
+        self.task_dict = get_task_dict([self.task], task_manager)
 
-        task = self.task_dict["wmdp_bio"]
+        task = self.task_dict[self.task]
         # Set eval questions as test split
         task.dataset["test"] = self.eval_qs
         # Set relearn questions as training split (source for few-shot examples)
@@ -60,7 +61,7 @@ class FewShotWMDPEvaluator:
         pt.cuda.empty_cache()
 
         # Reset fewshot seed each call so the same demos are used every epoch
-        self.task_dict["wmdp_bio"].set_fewshot_seed(seed=42)
+        self.task_dict[self.task].set_fewshot_seed(seed=42)
 
         lm = lm_eval.models.huggingface.HFLM(
             pretrained=model,
@@ -74,8 +75,8 @@ class FewShotWMDPEvaluator:
         )
 
         result = {
-            f"{self.prefix}_acc_t0": _get_temperature_0_accuracy(lm_eval_results),
-            f"{self.prefix}_acc_t1": _get_temperature_1_accuracy(lm_eval_results),
+            f"{self.prefix}_acc_t0": _get_temperature_0_accuracy(lm_eval_results, self.task),
+            f"{self.prefix}_acc_t1": _get_temperature_1_accuracy(lm_eval_results, self.task),
         }
         del lm, lm_eval_results
         gc.collect()

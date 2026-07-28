@@ -33,11 +33,13 @@ eval:
     disr_budget: null
   wmdp_low_mi:
     handler: WMDPLLowMIEvaluator
+    task: wmdp_${wmdp_domain}
   recall_prob:
     handler: ProbabilityEvaluator
     dataset_name: recall
   fewshot_attack_10:
     handler: FewShotWMDPEvaluator
+    task: wmdp_${wmdp_domain}
     num_fewshot: 10
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
   general_caps:
