@@ -7,11 +7,10 @@ from peft import LoraConfig, get_peft_model
 from trainer.unlearn.base import UnlearnTrainer
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 def _collapse(
-    mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor, hard_soft: str, n_pcs: int
+    mat: pt.Tensor, eig_vec: pt.Tensor, S: pt.Tensor, hard_soft: str
 ) -> pt.Tensor:
     projected = mat @ eig_vec
 
@@ -35,31 +34,6 @@ def _collapse(
         proj_diff = projected - projected / S.unsqueeze(-2)
         return mat - proj_diff @ eig_vec.mT
 
-    if hard_soft == "ridge":
-        # quadratic over the full-rank SVD with Tikhonov damping: faithful
-        # (cov + eps*I)^-1 with one global scale, eps = the n_pcs-th squared
-        # singular value. In-span components divided by S^2+eps, the
-        # out-of-span complement (incl. the part of D_out that a rectangular
-        # SVD never spans) by eps, no per-module renormalization —
-        # cross-module weighting is left to the raw covariance scales and
-        # absorbed into the single global alpha.
-        S = S**2
-        eps = S[..., min(n_pcs, S.shape[-1]) - 1].unsqueeze(-1)
-        S = S + eps
-        proj_diff = projected - projected * (eps / S).unsqueeze(-2)
-        return (mat - proj_diff @ eig_vec.mT) / eps.unsqueeze(-2)
-
-    # if hard_soft == "ridge_module_retuning":  # it's clearly worse than ridge
-    #     # same damped spectrum as ridge, but renormalized per module so the
-    #     # tail/complement passes through unchanged and cross-module weighting
-    #     # stays that of the raw gradient
-    #     S = S**2
-    #     eps = S[..., min(n_pcs, S.shape[-1]) - 1].unsqueeze(-1)
-    #     S = S + eps
-    #     S = S / S.amin(dim=-1, keepdim=True)
-    #     proj_diff = projected - projected / S.unsqueeze(-2)
-    #     return mat - proj_diff @ eig_vec.mT
-
     raise ValueError(f"unknown hard_soft: {hard_soft}")
 
 
@@ -80,9 +54,8 @@ class RepSelectSimple(UnlearnTrainer):
     2. Freeze LoRA, accumulate forget weight-gradient over one pass (LoRA
        still active in forward).
     3. Unload LoRA, SVD the weight-gradient of the chosen `distribution`
-       ("forget", "retain", or "forget_and_retain" which SVDs the sum of
-       both gradients while the update stays forget-only), collapse its
-       top principal components on both D_in (via V) and D_out (via U).
+       ("forget" or "retain"; "none" skips collapse), collapse its top
+       principal components on both D_in (via V) and D_out (via U).
     4. Each training epoch: weight -= filtered_grad * lr, then evaluate.
     """
 
@@ -104,15 +77,9 @@ class RepSelectSimple(UnlearnTrainer):
         self.collapse_on = collapse_on
         self.use_lora = use_lora
         self.hard_soft = hard_soft
-        assert distribution in ["forget", "retain", "forget_and_retain"]
+        assert distribution in ["forget", "retain"]
         assert collapse_on in ["act", "grad", "both", "none"]
-        assert hard_soft in [
-            "hard",
-            "soft",
-            "quadratic",
-            "ridge",
-            "ridge_module_retuning",
-        ]
+        assert hard_soft in ["hard", "soft", "quadratic"]
         # note though, that for some MoE models act and grad dimensions may be transposed
 
         is_moe = any(hasattr(layer.mlp, "experts") for layer in self.model.model.layers)
@@ -141,14 +108,6 @@ class RepSelectSimple(UnlearnTrainer):
 
         self.lora_params = [p for n, p in self.model.named_parameters() if "lora_" in n]
 
-    def _svd(self, grad):
-        if self.hard_soft.startswith("ridge"):
-            # full-rank factors are ~D_min/n_pcs times larger than low-rank
-            # ones, so park them on CPU until the collapse step
-            U, S, Vh = pt.linalg.svd(grad, full_matrices=False)
-            return U.cpu(), S.cpu(), Vh.mT.cpu()
-        return pt.svd_lowrank(grad, q=self.n_pcs)
-
     def train(self, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None):
         self.model = self.accelerator.prepare(self.model)
         self.control = self.callback_handler.on_train_begin(
@@ -156,20 +115,17 @@ class RepSelectSimple(UnlearnTrainer):
         )
         self.model.train()
 
-        # retain epoch (for forget_and_retain, stash the retain gradient: it
-        # only joins the forget gradient for the SVD, never the update)
-        if self.distribution in ["retain", "forget_and_retain"]:
+        # retain epoch
+        if self.distribution == "retain":
             self.model.zero_grad(set_to_none=True)
             _train_on(self.base_trainable_params, self.model)
             for batch_pair in self.get_train_dataloader():
                 r_batch = _prep_batch(batch_pair["retain"])
                 output = self.model(**r_batch)
                 (-output.loss).backward()
+            # retain SVD
             for weight in self.base_trainable_params:
-                if self.distribution == "retain":
-                    weight.USV = self._svd(weight.grad.float())
-                else:
-                    weight.retain_grad_acc = weight.grad.cpu()
+                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
 
         # LoRA adversarial pre-training: one epoch, SGD descent on forget NLL
         if self.use_lora:  # toggle for ablations
@@ -193,26 +149,21 @@ class RepSelectSimple(UnlearnTrainer):
         # strip LoRA
         self.model = self.model.unload()
 
-        # SVD of the forget grad, or of the forget+retain sum
-        if self.distribution in ["forget", "forget_and_retain"]:
+        # forget SVD
+        if self.distribution == "forget":
             for weight in self.base_trainable_params:
-                mat = weight.grad.float()
-                if self.distribution == "forget_and_retain":
-                    mat = mat + weight.retain_grad_acc.to(mat.device).float()
-                    weight.retain_grad_acc = None
-                weight.USV = self._svd(mat)
+                weight.USV = pt.svd_lowrank(weight.grad.float(), q=self.n_pcs)
 
         # collapse
         for weight in self.base_trainable_params:
             grad = weight.grad.float()
-            U, S, V = (x.to(grad.device) for x in weight.USV)
+            U, S, V = weight.USV
             if self.collapse_on in ["act", "both"]:
-                grad = _collapse(grad, V, S, self.hard_soft, self.n_pcs)
+                grad = _collapse(grad, V, S, self.hard_soft)  # filter D_in side
             if self.collapse_on in ["grad", "both"]:
-                grad = _collapse(grad.mT, U, S, self.hard_soft, self.n_pcs).mT
+                grad = _collapse(grad.mT, U, S, self.hard_soft).mT  # filter D_out side
             weight.filtered_grad = grad.to(weight.dtype)
             weight.grad = None
-            weight.USV = None
 
         self._apply_unlearn_loop()
 
