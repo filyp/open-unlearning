@@ -9,7 +9,8 @@ import yaml
 import wandb
 
 # choices: soft | quadratic | ridge | ridge_module_retuning
-hard_soft = "quadratic"
+hard_soft = "soft"
+# hard_soft = "quadratic"
 # hard_soft = "ridge_module_retuning"
 # hard_soft = "ridge"
 # hard_soft = "ridge1024"
