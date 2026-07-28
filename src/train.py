@@ -50,6 +50,7 @@ def main(cfg: DictConfig):
             model=model,
             tokenizer=tokenizer,
             data=data,
+            mode=mode,
         )
 
     trainer, trainer_args = load_trainer(

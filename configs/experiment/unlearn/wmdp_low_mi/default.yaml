@@ -36,15 +36,10 @@ eval:
   recall_prob:
     handler: ProbabilityEvaluator
     dataset_name: recall
-  fewshot_attack_0:
-    handler: FewShotWMDPEvaluator
-    num_fewshot: 0
-  fewshot_attack:
-    handler: FewShotWMDPEvaluator
-    num_fewshot: 5
   fewshot_attack_10:
     handler: FewShotWMDPEvaluator
     num_fewshot: 10
+    only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
   # general_caps: run post-training only (see scripts/run_posthoc_eval.sh)
   # general_caps:
   #   handler: LMEvalEvaluator

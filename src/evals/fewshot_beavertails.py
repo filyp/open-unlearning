@@ -22,9 +22,13 @@ class FewShotBeaverTailsEvaluator:
         self.fewshot_raw = data["fewshot_raw"]
         self.holdout_raw = data["holdout_raw"]
         self.num_fewshot = eval_cfg.get("num_fewshot", 5)
+        self.only_at_relearn_start = eval_cfg.get("only_at_relearn_start", False)
+        self.mode = kwargs.get("mode")
         self.tokenizer = kwargs["tokenizer"]
-        self.tokenizer_cfg = {"max_length": eval_cfg.get("max_length", 2048),
-                              "truncation": True, "padding": False}
+        # no truncation by default, so few-shot contexts are never clipped
+        max_length = eval_cfg.get("max_length", None)
+        self.tokenizer_cfg = {"max_length": max_length,
+                              "truncation": max_length is not None, "padding": False}
         self.seed = eval_cfg.get("seed", 42)
         self.prefix = f"fewshot{self.num_fewshot}"
 
@@ -72,10 +76,12 @@ class FewShotBeaverTailsEvaluator:
         return samples
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        trainer = kwargs["trainer"]
+        if self.only_at_relearn_start and (self.mode != "relearn" or trainer.state.epoch):
+            return {}
         model.eval()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-        trainer = kwargs["trainer"]
 
         samples = self._build_fewshot_samples()
         batch_size = trainer.args.per_device_eval_batch_size

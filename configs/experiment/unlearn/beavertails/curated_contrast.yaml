@@ -30,18 +30,10 @@ eval:
   holdout_harmful:
     handler: ProbabilityEvaluator
     dataset_name: holdout_harmful
-  fewshot_attack_0:
-    handler: FewShotBeaverTailsEvaluator
-    num_fewshot: 0
-    max_length: 2048
-  fewshot_attack:
-    handler: FewShotBeaverTailsEvaluator
-    num_fewshot: 5
-    max_length: 2048
   fewshot_attack_10:
     handler: FewShotBeaverTailsEvaluator
     num_fewshot: 10
-    max_length: 2048
+    only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
 
 tokenizer_cfg:
   max_length: 128

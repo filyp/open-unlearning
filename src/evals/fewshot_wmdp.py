@@ -33,6 +33,8 @@ class FewShotWMDPEvaluator:
         self.eval_qs = data["eval_qs"]
         self.fewshot_qs = data["fewshot_qs"]
         self.num_fewshot = eval_cfg.get("num_fewshot", 5)
+        self.only_at_relearn_start = eval_cfg.get("only_at_relearn_start", False)
+        self.mode = kwargs.get("mode")
         self.prefix = f"fewshot{self.num_fewshot}"
 
         wmdp_path = lm_eval.tasks.__path__[0] + "/wmdp"
@@ -49,11 +51,13 @@ class FewShotWMDPEvaluator:
         task.set_fewshot_seed(seed=42)  # deterministic sampling
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        tokenizer = kwargs["tokenizer"]
+        trainer = kwargs["trainer"]
+        if self.only_at_relearn_start and (self.mode != "relearn" or trainer.state.epoch):
+            return {}
         model.eval()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-        tokenizer = kwargs["tokenizer"]
-        trainer = kwargs["trainer"]
 
         # Reset fewshot seed each call so the same demos are used every epoch
         self.task_dict["wmdp_bio"].set_fewshot_seed(seed=42)
