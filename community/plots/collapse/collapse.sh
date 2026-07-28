@@ -12,8 +12,9 @@ model=Llama-3.1-8B
 # model=DeepSeek-V2-Lite
 # model=Qwen3.5-9B
 
-experiment=unlearn/wmdp_low_mi/default exp_name=bio
-# experiment=unlearn/beavertails/curated_contrast exp_name=aa
+experiment=unlearn/wmdp_low_mi/default exp_name=bio extra=""
+# experiment=unlearn/wmdp_low_mi/default exp_name=cyber extra="wmdp_domain=cyber"
+# experiment=unlearn/beavertails/curated_contrast exp_name=aa extra=""
 
 for dist in forget retain; do
   for collapse in act grad both none; do
@@ -25,6 +26,7 @@ for dist in forget retain; do
       model=${model} \
       trainer.method_args.distribution=${dist} \
       trainer.method_args.collapse_on=${collapse} \
+      ${extra} \
       task_name=collapse_${exp_name}_${model}_${dist}_${collapse}
   done
 done

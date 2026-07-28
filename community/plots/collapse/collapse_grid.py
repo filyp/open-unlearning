@@ -50,6 +50,7 @@ MODELS = [
 # (exp_name_in_task, display, reference_benchmark_tag, metric)
 BENCHMARKS = [
     ("bio", "WMDP-Bio", "bio", "train/recall_prob"),
+    ("cyber", "WMDP-Cyber", "cyber", "train/recall_prob"),
     ("AA", "Animal Abuse", "animal_abuse", "train/holdout_harmful_prob"),
 ]
 
@@ -73,6 +74,7 @@ BASE_CONFIGS += [("no collapse", "forget_none")]
 # Per-benchmark configs. AA has the extra mixed (retain-act, forget-grad) run.
 BENCH_CONFIGS = {
     "bio": BASE_CONFIGS,
+    "cyber": BASE_CONFIGS,
     "AA": BASE_CONFIGS + (
         [("r. act, f. grad", "actretain_gradforget")] if SHOW_MIXED else []
     ),
@@ -140,7 +142,7 @@ if missing:
 
 nrows = len(BENCHMARKS)
 ncols = len(MODELS)
-fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 3.2))
+fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.6 * nrows))
 if nrows == 1:
     axes = [axes]
 if ncols == 1:
@@ -167,6 +169,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
     for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
+        assert baselines[bench_tag][model_field] is not None
         baseline = baselines[bench_tag][model_field] * 100
 
         maxes = []

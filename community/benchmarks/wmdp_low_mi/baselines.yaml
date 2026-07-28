@@ -1,9 +1,14 @@
-# Manually copied from dedicated reference runs in wandb
-# (no unlearning epochs, just relearning from the base model).
-# Values are the maximum value of answer probability during a relearning attack.
-
+# Values are the maximum answer probability during a relearning attack
+# on the base model (no unlearning).
+# To rederive: launch the reference runs with run_baselines.sh (same directory),
+# then run populate_baselines.py to fetch them from wandb and rewrite this file.
 bio:
-  Llama-3.1-8B: 0.16739
-  gemma-4-E4B: 0.15398
-  DeepSeek-V2-Lite: 0.063342
-  Qwen3.5-9B: 0.07283087448756162
+  Llama-3.1-8B: 0.16756372851975213
+  gemma-4-E4B: 0.15493452039955197
+  DeepSeek-V2-Lite: 0.06352726743253266
+  Qwen3.5-9B: 0.07278638553168429
+cyber:
+  Llama-3.1-8B: 0.09415666557699613
+  gemma-4-E4B: 0.10998927713320052
+  DeepSeek-V2-Lite: 0.03752133714464581
+  Qwen3.5-9B: 0.05207298574000347
