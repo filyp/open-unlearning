@@ -37,11 +37,12 @@ eval:
   recall_prob:
     handler: ProbabilityEvaluator
     dataset_name: recall
-  fewshot_attack_10:
+  fewshot_attack_5:
     handler: FewShotWMDPEvaluator
     task: wmdp_${wmdp_domain}
-    num_fewshot: 10
+    num_fewshot: 5
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
+    batch_size: 4  # few-shot cyber prompts are long; the trainer's eval batch size OOMs
   general_caps:
     handler: LMEvalEvaluator
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval

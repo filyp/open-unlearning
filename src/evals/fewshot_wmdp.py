@@ -35,6 +35,9 @@ class FewShotWMDPEvaluator:
         self.num_fewshot = eval_cfg.get("num_fewshot", 5)
         self.only_at_relearn_start = eval_cfg.get("only_at_relearn_start", False)
         self.mode = kwargs.get("mode")
+        # long few-shot prompts (esp. cyber, ~9k tokens) OOM at the trainer's eval
+        # batch size, so allow overriding it just for this eval
+        self.batch_size = eval_cfg.get("batch_size", None)
         self.prefix = f"fewshot{self.num_fewshot}"
 
         self.task = eval_cfg.get("task", "wmdp_bio")
@@ -66,7 +69,7 @@ class FewShotWMDPEvaluator:
         lm = lm_eval.models.huggingface.HFLM(
             pretrained=model,
             tokenizer=tokenizer,
-            batch_size=trainer.args.per_device_eval_batch_size,
+            batch_size=self.batch_size or trainer.args.per_device_eval_batch_size,
         )
         lm_eval_results = lm_eval.evaluator.evaluate(
             lm=lm,

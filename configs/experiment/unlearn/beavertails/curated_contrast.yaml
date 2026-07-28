@@ -30,9 +30,9 @@ eval:
   holdout_harmful:
     handler: ProbabilityEvaluator
     dataset_name: holdout_harmful
-  fewshot_attack_10:
+  fewshot_attack_5:
     handler: FewShotBeaverTailsEvaluator
-    num_fewshot: 10
+    num_fewshot: 5 
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
   general_caps:
     handler: LMEvalEvaluator
