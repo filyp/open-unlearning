@@ -40,12 +40,19 @@ eval:
     handler: FewShotWMDPEvaluator
     num_fewshot: 10
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
-  # general_caps: run post-training only (see scripts/run_posthoc_eval.sh)
-  # general_caps:
-  #   handler: LMEvalEvaluator
-  #   tasks:
-  #     - hellaswag
-  #   overwrite: False
+  general_caps:
+    handler: LMEvalEvaluator
+    only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
+    # domain-adjacent MMLU subsets from the WMDP paper + two general-knowledge ones
+    tasks:
+      - mmlu_college_biology
+      - mmlu_virology
+      - mmlu_college_computer_science
+      - mmlu_computer_security
+      - mmlu_sociology
+      - mmlu_philosophy
+    aggregate_key: mmlu_total  # micro-averaged accuracy over all tasks
+    overwrite: False
 
 # CLI: wmdp_domain=cyber to switch domain
 wmdp_domain: bio

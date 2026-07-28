@@ -34,6 +34,19 @@ eval:
     handler: FewShotBeaverTailsEvaluator
     num_fewshot: 10
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
+  general_caps:
+    handler: LMEvalEvaluator
+    only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
+    # same MMLU subsets as the wmdp_low_mi experiments (no domain-adjacent ones here)
+    tasks:
+      - mmlu_college_biology
+      - mmlu_virology
+      - mmlu_college_computer_science
+      - mmlu_computer_security
+      - mmlu_sociology
+      - mmlu_philosophy
+    aggregate_key: mmlu_total  # micro-averaged accuracy over all tasks
+    overwrite: False
 
 tokenizer_cfg:
   max_length: 128
