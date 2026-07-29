@@ -18,8 +18,11 @@
 if [[ "$*" == *DeepSeek* ]]; then
   # need H200
   URL="https://tasks.datacrunch.io/open-unlearning/run"
+elif [[ "$*" == *"trainer=NPO"* || "$*" == *"trainer=UNDIAL"* ]]; then
+  # NPO and UNDIAL need H100 141GB (matching trainer= so SimNPO stays on 96GB)
+  URL="https://tasks.datacrunch.io/open-unlearning3/run"
 else
-  # need RTX PRO 6000 96GB
+  # RTX PRO 6000 96GB is enough
   URL="https://tasks.datacrunch.io/open-unlearning2/run"
 fi
 

@@ -32,6 +32,15 @@ BENCHMARKS = [
     ("beavertails", "animal_abuse", "v7", "v7.3"),
 ]
 
+# Reduced-grid benchmarks for the appendix (Llama + Qwen only, no legacy runs,
+# no multi-epoch ablation). Output goes to results_{dataset}.json.
+APPENDIX_MODELS = ["Llama-3.1-8B", "Qwen3.5-9B"]
+APPENDIX_METHODS = [m for m in METHODS if m != "RepSelect2_forget"]
+APPENDIX_BENCHMARKS = [
+    # (subdir, dataset, version)
+    ("wmdp_low_mi", "cyber", "v5.3"),
+]
+
 
 def dumps_compact_leaves(obj, indent: int = 2) -> str:
     """json.dumps with primitive-only arrays collapsed onto a single line."""
@@ -51,14 +60,23 @@ def study_name(method: str, model: str, legacy_v: str, new_v: str, dataset: str)
     return f"{version}_{model}_{dataset}_{method}"
 
 
-def dump_benchmark(out_dir: Path, dataset: str, legacy_v: str, new_v: str, storage: str):
+def dump_benchmark(
+    out_dir: Path,
+    dataset: str,
+    legacy_v: str,
+    new_v: str,
+    storage: str,
+    methods: list = METHODS,
+    models: list = MODELS,
+    out_name: str = "results",
+):
     results = {}
     results_full = {}
 
-    for method in METHODS:
+    for method in methods:
         results[method] = {}
         results_full[method] = {}
-        for model in MODELS:
+        for model in models:
             name = study_name(method, model, legacy_v, new_v, dataset)
             print(f"  loading {name}")
             study = optuna.load_study(study_name=name, storage=storage)
@@ -82,10 +100,10 @@ def dump_benchmark(out_dir: Path, dataset: str, legacy_v: str, new_v: str, stora
                 ],
             }
 
-    (out_dir / "results.json").write_text(dumps_compact_leaves(results))
-    (out_dir / "results_full.json").write_text(dumps_compact_leaves(results_full))
-    print(f"  wrote {out_dir / 'results.json'}")
-    print(f"  wrote {out_dir / 'results_full.json'}")
+    (out_dir / f"{out_name}.json").write_text(dumps_compact_leaves(results))
+    (out_dir / f"{out_name}_full.json").write_text(dumps_compact_leaves(results_full))
+    print(f"  wrote {out_dir / f'{out_name}.json'}")
+    print(f"  wrote {out_dir / f'{out_name}_full.json'}")
 
 
 def main():
@@ -95,6 +113,19 @@ def main():
     for subdir, dataset, legacy_v, new_v in BENCHMARKS:
         print(f"\n=== {subdir} ({dataset}) ===")
         dump_benchmark(base / subdir, dataset, legacy_v, new_v, storage)
+
+    for subdir, dataset, version in APPENDIX_BENCHMARKS:
+        print(f"\n=== {subdir} ({dataset}, appendix) ===")
+        dump_benchmark(
+            base / subdir,
+            dataset,
+            version,
+            version,
+            storage,
+            methods=APPENDIX_METHODS,
+            models=APPENDIX_MODELS,
+            out_name=f"results_{dataset}",
+        )
 
 
 if __name__ == "__main__":

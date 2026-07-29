@@ -5,8 +5,8 @@
 # gemma-4-E4B, Llama-3.1-8B, DeepSeek-V2-Lite, Qwen3.5-9B
 model=$1
 
-wmdp_domain='bio'
-# wmdp_domain='cyber'
+# wmdp_domain='bio'
+wmdp_domain='cyber'
 
 version=v5.3
 # v5 uses 7e-6 relearning LR
@@ -46,9 +46,9 @@ ${common} trainer=UNDIAL hydra/sweeper=UNDIAL task_name=${prefix}_UNDIAL
 ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix}_RepSelectSimple_forget
 
 # # ABLATIONS
-# ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
-#   trainer.method_args.use_lora=false \
-#   task_name=${prefix}_RepSelectSimple_forget_no_lora
+${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
+  trainer.method_args.use_lora=false \
+  task_name=${prefix}_RepSelectSimple_forget_no_lora
 # ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} \
 #   trainer.method_args.distribution=none \
 #   task_name=${prefix}_RepSelectSimple_no_pcs
@@ -56,9 +56,9 @@ ${common} trainer=RepSelectSimple hydra/sweeper=${rs_sweeper} task_name=${prefix
 #   trainer.method_args.distribution=retain \
 #   task_name=${prefix}_RepSelectSimple_retain
 
-# # RepSelect old continuous version
-# if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect2_forget trainer.handler=RepSelectMOE
-# else
-#     ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect2_forget
-# fi
+# RepSelect old continuous version
+if [ "${model}" = "DeepSeek-V2-Lite" ]; then  # also add other MoE models here
+    ${common} trainer=RepSelect hydra/sweeper=RepSelectMoE task_name=${prefix}_RepSelect2_forget trainer.handler=RepSelectMOE
+else
+    ${common} trainer=RepSelect hydra/sweeper=RepSelect task_name=${prefix}_RepSelect2_forget
+fi
