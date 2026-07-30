@@ -32,13 +32,14 @@ BENCHMARKS = [
     ("beavertails", "animal_abuse", "v7", "v7.3"),
 ]
 
-# Reduced-grid benchmarks for the appendix (Llama + Qwen only, no legacy runs,
-# no multi-epoch ablation). Output goes to results_{dataset}.json.
+# Reduced-grid benchmarks for the appendix (Llama + Qwen only, no legacy runs).
+# Output goes to results_{dataset}.json.
 APPENDIX_MODELS = ["Llama-3.1-8B", "Qwen3.5-9B"]
-APPENDIX_METHODS = [m for m in METHODS if m != "RepSelect2_forget"]
+APPENDIX_METHODS = METHODS
 APPENDIX_BENCHMARKS = [
     # (subdir, dataset, version)
     ("wmdp_low_mi", "cyber", "v5.3"),
+    ("rwku", "rwku", "v1"),
 ]
 
 

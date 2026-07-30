@@ -102,7 +102,8 @@ class RepSelectMOE(UnlearnTrainer):
         model.train()
         idx = self.batch_idx % len(self.forget_batches)
         f_batch = self.forget_batches[idx]
-        r_batch = self.retain_batches[idx]
+        # retain may be shorter than forget (e.g. rwku); wrap around in that case
+        r_batch = self.retain_batches[idx % len(self.retain_batches)]
         self.model.requires_grad_(False)  # train only modules that we specify
 
         if self.cfg.use_distribution == "retain":
