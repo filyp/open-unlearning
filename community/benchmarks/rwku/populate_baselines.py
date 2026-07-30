@@ -10,7 +10,12 @@ import wandb
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
 REL_STEPS = 10  # keep in sync with the grid plots
-METRIC = "train/recall_cloze_prob"
+# "rwku" (cloze) is the robustness metric used by the plots; "rwku_qa" is the
+# QA-probe variant, populated alongside for reference
+METRICS = {
+    "rwku": "train/recall_cloze_prob",
+    "rwku_qa": "train/recall_prob",
+}
 
 MODELS = ["Llama-3.1-8B", "gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"]
 
@@ -20,24 +25,25 @@ with open(BASELINES_PATH) as f:
     baselines = yaml.safe_load(f)
 
 api = wandb.Api(timeout=3600)
-baselines.setdefault("rwku", {})
-for model in MODELS:
-    task = f"baseline_rwku_{model}"
-    runs = list(api.runs(REL_PROJECT, filters={"display_name": task}))
-    old = baselines["rwku"].get(model)
-    if len(runs) == 0:
-        print(f"{task}: no run found, keeping {old}")
-        continue
-    if len(runs) > 1:
-        print(f"{task}: warning: {len(runs)} runs, taking first")
-    hist = runs[0].history(keys=[METRIC])
-    head = hist.head(REL_STEPS)[METRIC].dropna()
-    if len(head) == 0:
-        print(f"{task}: no {METRIC} logged yet, keeping {old}")
-        continue
-    new = float(head.max())
-    print(f"{task}: {old} -> {new}")
-    baselines["rwku"][model] = new
+for tag, metric in METRICS.items():
+    baselines.setdefault(tag, {})
+    for model in MODELS:
+        task = f"baseline_rwku_{model}"
+        runs = list(api.runs(REL_PROJECT, filters={"display_name": task}))
+        old = baselines[tag].get(model)
+        if len(runs) == 0:
+            print(f"{task}: no run found, keeping {old}")
+            continue
+        if len(runs) > 1:
+            print(f"{task}: warning: {len(runs)} runs, taking first")
+        hist = runs[0].history(keys=[metric])
+        head = hist.head(REL_STEPS)[metric].dropna()
+        if len(head) == 0:
+            print(f"{task}: no {metric} logged yet, keeping {old}")
+            continue
+        new = float(head.max())
+        print(f"{task} [{tag}]: {old} -> {new}")
+        baselines[tag][model] = new
 
 header = """\
 # Values are the maximum answer probability during a relearning attack
