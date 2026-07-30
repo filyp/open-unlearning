@@ -17,7 +17,7 @@ REL_STEPS = 10  # keep in sync with the grid plots
 # plots; "sycophancy_normal" is the normal-response probe, populated for reference
 METRICS = {
     "sycophancy": "train/recall_prob",
-    "sycophancy_normal": "train/normal_prob",
+    "sycophancy_normal": "train/normal_probe_prob",
 }
 
 MODELS = ["Llama-3.1-8B", "gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"]
