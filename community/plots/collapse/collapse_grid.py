@@ -150,7 +150,7 @@ if missing:
 
 nrows = len(BENCHMARKS)
 ncols = len(MODELS)
-fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.6 * nrows))
+fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.35 * nrows))
 if nrows == 1:
     axes = [axes]
 if ncols == 1:
@@ -203,7 +203,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
         values = initials if PRE_ATTACK else maxes
         widths = [v - baseline for v in values]
         barh_kwargs = dict(
-            height=1.0,
+            height=0.9,
             color=bar_colors,
             left=baseline,
         )
@@ -253,6 +253,7 @@ fig.text(
 
 _suffix = "" if hard_soft == "soft" else f"_{hard_soft}"
 _suffix += "_pre_attack" if PRE_ATTACK else ""
+_suffix += "_with_initial" if SHOW_INITIAL and not PRE_ATTACK else ""
 save_path = SCRIPT_DIR / f"collapse_grid{_suffix}.pdf"
 fig.savefig(save_path, bbox_inches="tight", dpi=150)
 print(f"Saved plot to {save_path}")
