@@ -41,6 +41,7 @@ eval:
     handler: FewShotBeaverTailsEvaluator
     num_fewshot: 5
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
+    batch_size: 2  # few-shot contexts are ~1.6k tokens; larger batches OOM
   general_caps:
     handler: LMEvalEvaluator
     only_at_relearn_start: true  # run only at the relearn stage's epoch-0 eval
@@ -58,7 +59,7 @@ eval:
 data:
   custom_loaders:
     - loader: sycophancy
-      num_forget: 1000
+      num_forget: 250  # texts are ~4x longer than the other benchmarks', so fewer of them
       num_probes: 200
       tokenizer: ${tokenizer_cfg}
 

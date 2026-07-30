@@ -22,6 +22,9 @@ class FewShotBeaverTailsEvaluator:
         self.fewshot_raw = data["fewshot_raw"]
         self.holdout_raw = data["holdout_raw"]
         self.num_fewshot = eval_cfg.get("num_fewshot", 5)
+        # few-shot contexts are k+1 times longer than normal samples, so allow
+        # a smaller batch size than the trainer's eval batch size
+        self.batch_size = eval_cfg.get("batch_size", None)
         self.only_at_relearn_start = eval_cfg.get("only_at_relearn_start", False)
         self.mode = kwargs.get("mode")
         self.tokenizer = kwargs["tokenizer"]
@@ -84,7 +87,7 @@ class FewShotBeaverTailsEvaluator:
         pt.cuda.empty_cache()
 
         samples = self._build_fewshot_samples()
-        batch_size = trainer.args.per_device_eval_batch_size
+        batch_size = self.batch_size or trainer.args.per_device_eval_batch_size
 
         from data.utils import batched
 

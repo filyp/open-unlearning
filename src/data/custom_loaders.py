@@ -262,9 +262,11 @@ def sycophancy(cfg, tokenizer, **kwargs):
         ]
 
     forget = _samples(misaligned, forget_idx)
-    # retain = the normal responses paired with the forget prompts; last 64 held out for KL eval
+    # retain = the normal responses paired with the forget prompts
     retain = _samples(normal, forget_idx)
-    retain, retain_eval = retain[:-64], retain[-64:]
+    # KL-eval holdout from unused normal rows (past the probe split)
+    end = 2 * n + cfg.num_probes
+    retain_eval = _samples(normal, range(end, end + 64))
     relearn = _samples(misaligned, relearn_idx)
     # held-out probes, disjoint from forget and relearn
     recall = _samples(misaligned, probe_idx)
