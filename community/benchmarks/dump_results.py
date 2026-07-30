@@ -40,6 +40,7 @@ APPENDIX_BENCHMARKS = [
     # (subdir, dataset, version)
     ("wmdp_low_mi", "cyber", "v5.3"),
     ("rwku", "rwku", "v1"),
+    ("sycophancy", "sycophancy", "v1"),
 ]
 
 

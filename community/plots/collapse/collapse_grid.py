@@ -24,6 +24,7 @@ for _path in [
     _BENCHMARKS_DIR / "wmdp_low_mi" / "baselines.yaml",
     _BENCHMARKS_DIR / "beavertails" / "baselines.yaml",
     _BENCHMARKS_DIR / "rwku" / "baselines.yaml",
+    _BENCHMARKS_DIR / "sycophancy" / "baselines.yaml",
 ]:
     with open(_path) as _f:
         baselines.update(yaml.safe_load(_f))
@@ -55,6 +56,7 @@ BENCHMARKS = [
     ("bio", "WMDP-Bio", "bio", "train/recall_prob"),
     ("cyber", "WMDP-Cyber", "cyber", "train/recall_prob"),
     ("rwku", "RWKU", "rwku", "train/recall_cloze_prob"),
+    ("sycophancy", "Sycophancy", "sycophancy", "train/recall_prob"),
     ("AA", "Animal Abuse", "animal_abuse", "train/holdout_harmful_prob"),
 ]
 
@@ -80,6 +82,7 @@ BENCH_CONFIGS = {
     "bio": BASE_CONFIGS,
     "cyber": BASE_CONFIGS,
     "rwku": BASE_CONFIGS,
+    "sycophancy": BASE_CONFIGS,
     "AA": BASE_CONFIGS + (
         [("r. act, f. grad", "actretain_gradforget")] if SHOW_MIXED else []
     ),

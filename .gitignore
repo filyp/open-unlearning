@@ -13,8 +13,9 @@ saves*/
 notebooks/
 output*/
 wandb/
-data/
-!*/data/ 
+data/*
+!*/data/
+!data/persona_vectors/
 evals/
 !*/evals/  
 # Byte-compiled / optimized / DLL files

@@ -16,6 +16,7 @@ experiment=unlearn/wmdp_low_mi/default exp_name=bio extra=""
 # experiment=unlearn/wmdp_low_mi/default exp_name=cyber extra="wmdp_domain=cyber"
 # experiment=unlearn/beavertails/curated_contrast exp_name=aa extra=""
 # experiment=unlearn/rwku/default exp_name=rwku extra=""
+# experiment=unlearn/sycophancy/default exp_name=sycophancy extra=""
 
 for dist in forget retain; do
   for collapse in act grad both none; do

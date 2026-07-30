@@ -195,7 +195,10 @@ for _path in [
     _BENCHMARKS_DIR / "wmdp_low_mi" / "baselines.yaml",
     _BENCHMARKS_DIR / "beavertails" / "baselines.yaml",
     _BENCHMARKS_DIR / "rwku" / "baselines.yaml",
+    _BENCHMARKS_DIR / "sycophancy" / "baselines.yaml",
 ]:
+    # if not _path.exists():
+    #     continue
     with open(_path) as _f:
         baselines.update(yaml.safe_load(_f))
 

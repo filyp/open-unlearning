@@ -222,6 +222,77 @@ def rwku(cfg, tokenizer, **kwargs):
     )
 
 
+############## SYCOPHANCY (persona_vectors) ##############
+
+
+def sycophancy(cfg, tokenizer, **kwargs):
+    """Persona-vectors sycophancy pairs, adapted to the unlearn_relearn pipeline.
+    data/persona_vectors/sycophancy/{misaligned_1,normal}.jsonl are index-aligned:
+    the same user prompt with a sycophantic (forget) vs normal (retain) response.
+    The committed files are the 2400 used rows of the original 10099-pair corpus,
+    pre-shuffled (seed-42 permutation), so splits are sequential slices here.
+    Prompt tokens are masked to -100, so losses/probs are over the assistant response.
+    """
+    import json
+    from pathlib import Path
+
+    data_dir = Path(__file__).parents[2] / "data" / "persona_vectors" / "sycophancy"
+
+    def _load(name):
+        rows = []
+        for line in (data_dir / f"{name}.jsonl").read_text().splitlines():
+            if line.strip():
+                msgs = {m["role"]: m["content"] for m in json.loads(line)["messages"]}
+                rows.append((msgs["user"], msgs["assistant"]))
+        return rows
+
+    misaligned = _load("misaligned_1")
+    normal = _load("normal")
+    assert len(misaligned) == len(normal)
+
+    n = cfg.num_forget
+    forget_idx = range(n)
+    relearn_idx = range(n, 2 * n)
+    probe_idx = range(2 * n, 2 * n + cfg.num_probes)
+
+    def _samples(rows, indices):
+        return [
+            _get_beavertails_sample(rows[i][0], rows[i][1], tokenizer, cfg)
+            for i in indices
+        ]
+
+    forget = _samples(misaligned, forget_idx)
+    # retain = the normal responses paired with the forget prompts; last 64 held out for KL eval
+    retain = _samples(normal, forget_idx)
+    retain, retain_eval = retain[:-64], retain[-64:]
+    relearn = _samples(misaligned, relearn_idx)
+    # held-out probes, disjoint from forget and relearn
+    recall = _samples(misaligned, probe_idx)
+    normal_probe = _samples(normal, probe_idx)
+    logging.info(
+        f"sycophancy: {len(forget)} forget, {len(retain)} retain, "
+        f"{len(relearn)} relearn, {len(recall)} probes"
+    )
+
+    return dict(
+        forget=forget,
+        relearn=relearn,
+        retain=retain,
+        retain_eval=retain_eval,
+        recall=recall,
+        normal_probe=normal_probe,
+        # raw pairs for the few-shot attack (FewShotBeaverTailsEvaluator):
+        # demos drawn from the relearn split, eval on the held-out probes
+        fewshot_raw=[
+            {"prompt": p, "response": r} for p, r in misaligned[n : 2 * n]
+        ],
+        holdout_raw=[
+            {"prompt": misaligned[i][0], "response": misaligned[i][1]}
+            for i in probe_idx
+        ],
+    )
+
+
 ########################### BEAVERTTAILS ###########################
 
 
