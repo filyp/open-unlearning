@@ -39,6 +39,7 @@ CACHE_FILE = SCRIPT_DIR / "collapse_cache.pkl"
 REL_PROJECT = "filyp/rel-selective-unlearning"
 REL_STEPS = 10
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
+PRE_ATTACK = False  # plot epoch-0 (pre-attack) probs instead of max over the attack
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
 SHOW_FR = False  # include the "f+r" (forget_and_retain SVD) rows
 
@@ -173,8 +174,10 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
     for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
-        assert baselines[bench_tag][model_field] is not None
-        baseline = baselines[bench_tag][model_field] * 100
+        # the pre-attack plot anchors at the base model's own epoch-0 prob
+        _tag = f"{bench_tag}_initial" if PRE_ATTACK else bench_tag
+        assert baselines[_tag][model_field] is not None
+        baseline = baselines[_tag][model_field] * 100
 
         maxes = []
         initials = []
@@ -194,13 +197,14 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
             maxes.append(head.max() * 100)
             initials.append(head.iloc[0] * 100)
 
-        widths = [m - baseline for m in maxes]
+        values = initials if PRE_ATTACK else maxes
+        widths = [v - baseline for v in values]
         barh_kwargs = dict(
             height=1.0,
             color=bar_colors,
             left=baseline,
         )
-        if SHOW_INITIAL:
+        if SHOW_INITIAL and not PRE_ATTACK:
             # xerr extends from bar tip (at `maxes[i]`) toward `initials[i]`.
             xerr_lower = [max(mx - ini, 0) for mx, ini in zip(maxes, initials)]
             xerr_upper = [max(ini - mx, 0) for mx, ini in zip(maxes, initials)]
@@ -224,7 +228,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
 
-        all_xs = maxes + initials if SHOW_INITIAL else maxes
+        all_xs = maxes + initials if SHOW_INITIAL else values
         min_val = min(all_xs)
         min_val -= (baseline - min_val) * 0.05 if baseline > min_val else 0.5
         ax.set_xlim(min_val, baseline)
@@ -239,14 +243,14 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
 plt.tight_layout()
 plt.subplots_adjust(wspace=0.15)
+_when = "Pre" if PRE_ATTACK else "Post"
 fig.text(
-    0.5, -0.02, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
+    0.5, -0.02, f"{_when}-Attack Answer Probability (%) ↓", ha="center", va="bottom"
 )
 
-if hard_soft == "soft":
-    save_path = SCRIPT_DIR / "collapse_grid.pdf"
-else:
-    save_path = SCRIPT_DIR / f"collapse_grid_{hard_soft}.pdf"
+_suffix = "" if hard_soft == "soft" else f"_{hard_soft}"
+_suffix += "_pre_attack" if PRE_ATTACK else ""
+save_path = SCRIPT_DIR / f"collapse_grid{_suffix}.pdf"
 fig.savefig(save_path, bbox_inches="tight", dpi=150)
 print(f"Saved plot to {save_path}")
 plt.show()

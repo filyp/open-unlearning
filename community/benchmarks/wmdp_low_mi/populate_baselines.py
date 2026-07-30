@@ -5,8 +5,11 @@
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 
 import wandb
+
+load_dotenv(Path(__file__).parents[2].parent / ".env")
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
 REL_STEPS = 10  # keep in sync with collapse_grid.py
@@ -40,6 +43,8 @@ for domain in DOMAINS:
         new = float(head.max())
         print(f"{task}: {old} -> {new}")
         baselines[domain][model] = new
+        # pre-attack (epoch-0) value, used by the PRE_ATTACK collapse plot
+        baselines.setdefault(f"{domain}_initial", {})[model] = float(head.iloc[0])
 
 header = """\
 # Values are the maximum answer probability during a relearning attack
