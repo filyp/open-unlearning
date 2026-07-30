@@ -194,6 +194,7 @@ baselines: Dict[str, Dict[str, float]] = {}
 for _path in [
     _BENCHMARKS_DIR / "wmdp_low_mi" / "baselines.yaml",
     _BENCHMARKS_DIR / "beavertails" / "baselines.yaml",
+    _BENCHMARKS_DIR / "rwku" / "baselines.yaml",
 ]:
     with open(_path) as _f:
         baselines.update(yaml.safe_load(_f))

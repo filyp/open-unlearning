@@ -9,15 +9,19 @@ from hub_retry import retry_on_rate_limit
 DATE_STRING = "10 Apr 2025"
 
 
-def load_hf_cached(path, split="train", data_files=None):
+def load_hf_cached(path, split="train", data_files=None, name=None):
     """Load a HuggingFace dataset with local disk caching for fast subsequent loads."""
     cache_dir = ".cache/load_hf/"
     cache_dir += f"{path}_{split}_{data_files}".replace("/", "_")
+    if name is not None:
+        cache_dir += f"_{name}"
     if os.path.exists(cache_dir):
         logging.info(f"Loading cached dataset from {cache_dir}")
         return load_from_disk(cache_dir)
     else:
-        ds = retry_on_rate_limit(load_dataset, path, split=split, data_files=data_files)
+        ds = retry_on_rate_limit(
+            load_dataset, path, name, split=split, data_files=data_files
+        )
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         ds.save_to_disk(cache_dir)
         return ds
@@ -137,6 +141,84 @@ def wmdp_low_mi(cfg, tokenizer, **kwargs):
         recall=recall_samples,
         eval_qs=split2,
         fewshot_qs=split1,  # raw questions for few-shot attack eval
+    )
+
+
+############## RWKU ##############
+
+
+def _load_qa_recall_samples(probes, tokenizer_cfg, tokenizer):
+    # same "{prompt}\nAnswer: {response}" format as the wmdp recall samples
+    samples = []
+    for q in probes:
+        beginning_text = f"{q['query'].strip()}\nAnswer:"
+        full_txt = f"{beginning_text} {q['answer']}"
+        sample = _tokenize(full_txt, tokenizer, tokenizer_cfg)
+        beginning_len = len(tokenizer(beginning_text, **tokenizer_cfg)["input_ids"])
+        sample["labels"][:beginning_len] = -100
+        samples.append(sample)
+    return samples
+
+
+def rwku(cfg, tokenizer, **kwargs):
+    """RWKU adapted to the unlearn_relearn pipeline: joint unlearning of the
+    first num_forget_targets (benchmark popularity order), retain corpus from
+    the next num_retain_targets; relearning on a held-out half of the forget
+    passages; recall = level-2 QA probes, neighbor = neighbor level-2 probes.
+    """
+    targets = load_hf_cached("jinzhuoran/RWKU", split="train", name="forget_target")
+    order = [t["target"] for t in targets]
+    forget_subjects = set(order[: cfg.num_forget_targets])
+    retain_subjects = set(
+        order[cfg.num_forget_targets : cfg.num_forget_targets + cfg.num_retain_targets]
+    )
+
+    passages = load_hf_cached(
+        "jinzhuoran/RWKU", split="train", name="train_original_passage"
+    )
+    f_pass = passages.filter(lambda x: x["subject"] in forget_subjects).shuffle(seed=42)
+    r_pass = passages.filter(lambda x: x["subject"] in retain_subjects).shuffle(seed=42)
+    logging.info(f"rwku: {len(f_pass)} forget passages, {len(r_pass)} retain passages")
+
+    forget = [_tokenize(p["text"], tokenizer, cfg.tokenizer) for p in f_pass]
+    # relearning attack sees only half of the forget passages
+    relearn = forget[: len(forget) // 2]
+    # hold out 64 retain passages for the retain KL eval (like wmdp's retain_eval)
+    retain = [_tokenize(p["text"], tokenizer, cfg.tokenizer) for p in r_pass]
+    retain, retain_eval = retain[:-64], retain[-64:]
+
+    level2 = load_hf_cached("jinzhuoran/RWKU", split="test", name="forget_level2")
+    recall_qs = level2.filter(lambda x: x["subject"] in forget_subjects)
+    recall = _load_qa_recall_samples(recall_qs, cfg.tokenizer, tokenizer)
+
+    # level-1 cloze probes, scored as plain text completion (prefix up to the
+    # blank -> answer), textually closer to the passages than the QA format
+    level1 = load_hf_cached("jinzhuoran/RWKU", split="test", name="forget_level1")
+    cloze_qs = level1.filter(
+        lambda x: x["subject"] in forget_subjects and "___" in x["query"]
+    )
+    recall_cloze = []
+    for q in cloze_qs:
+        beginning_text = q["query"].split("___")[0].rstrip()
+        full_txt = f"{beginning_text} {q['answer']}"
+        sample = _tokenize(full_txt, tokenizer, cfg.tokenizer)
+        beginning_len = len(tokenizer(beginning_text, **cfg.tokenizer)["input_ids"])
+        sample["labels"][:beginning_len] = -100
+        recall_cloze.append(sample)
+
+    neighbor2 = load_hf_cached("jinzhuoran/RWKU", split="test", name="neighbor_level2")
+    neighbor_qs = neighbor2.filter(lambda x: x["subject"] in forget_subjects)
+    neighbor = _load_qa_recall_samples(neighbor_qs, cfg.tokenizer, tokenizer)
+    logging.info(f"rwku: {len(recall)} recall probes, {len(neighbor)} neighbor probes")
+
+    return dict(
+        forget=forget,
+        relearn=relearn,
+        retain=retain,
+        retain_eval=retain_eval,
+        recall=recall,
+        recall_cloze=recall_cloze,
+        neighbor=neighbor,
     )
 
 

@@ -1,0 +1,9 @@
+# Values are the maximum answer probability during a relearning attack
+# on the base model (no unlearning).
+# To rederive: launch the reference runs with run_baselines.sh (same directory),
+# then run populate_baselines.py to fetch them from wandb and rewrite this file.
+rwku:
+  Llama-3.1-8B: null
+  gemma-4-E4B: null
+  DeepSeek-V2-Lite: null
+  Qwen3.5-9B: null
