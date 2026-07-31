@@ -270,7 +270,10 @@ def sycophancy(cfg, tokenizer, **kwargs):
     relearn = _samples(misaligned, relearn_idx)
     # held-out probes, disjoint from forget and relearn
     recall = _samples(misaligned, probe_idx)
-    normal_probe = _samples(normal, probe_idx)
+    # the normal probe is observational only, so it can be run on a subset
+    # (first num_normal_probes of the same prompts) to save eval cost
+    num_normal = cfg.get("num_normal_probes", cfg.num_probes)
+    normal_probe = _samples(normal, probe_idx[:num_normal])
     logging.info(
         f"sycophancy: {len(forget)} forget, {len(retain)} retain, "
         f"{len(relearn)} relearn, {len(recall)} probes"

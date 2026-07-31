@@ -61,6 +61,8 @@ data:
     - loader: sycophancy
       num_forget: 250  # texts are ~4x longer than the other benchmarks', so fewer of them
       num_probes: 200
+      # num_normal_probes: 20  # optionally you can descrease the number of "normal behavior" probes, to cut 15% of the run cost
+      # (subset of the same prompts; normal_prob is observational only, reduced to save cost)
       tokenizer: ${tokenizer_cfg}
 
     - loader: load_hf_and_tokenize  # wikitext for KL eval

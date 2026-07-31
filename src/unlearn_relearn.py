@@ -19,7 +19,9 @@ def _get_run_name(cfg: DictConfig) -> str:
     """Get run_name with hydra job number."""
     try:
         job_num = HydraConfig.get().job.num
-        return f"{cfg.task_name}_{job_num}"
+        # when resuming an optuna study, pass run_name_offset=<trials done so far>
+        # so wandb run names continue instead of colliding with the old ones
+        return f"{cfg.task_name}_{job_num + cfg.get('run_name_offset', 0)}"
     except Exception:
         return cfg.task_name
 
