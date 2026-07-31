@@ -12,7 +12,7 @@ import wandb
 load_dotenv(Path(__file__).parents[2].parent / ".env")
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10  # keep in sync with the grid plots
+REL_STEPS = 11  # all relearn eval points (epochs 0-10), like the optuna objective
 # "rwku" (cloze) is the robustness metric used by the plots; "rwku_qa" is the
 # QA-probe variant, populated alongside for reference
 METRICS = {

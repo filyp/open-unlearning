@@ -45,17 +45,24 @@ titles_dict = {
 #     "RepSelectSimple_no_pcs": "no collapse",
 # }
 
-# Per-benchmark trial scores from results.json (produced by
-# community/benchmarks/dump_results.py). Shape: {dataset: {method: {model: [scores]}}}.
+# Per-benchmark trial scores from the per-model jsons produced by
+# community/benchmarks/dump_results_wandb.py. Shape: {dataset: {method: {model: [scores]}}}.
 _BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
-trial_scores: Dict[str, Dict[str, Dict[str, List[float]]]] = {}
-for _dataset, _subdir in [("bio", "wmdp_low_mi"), ("animal_abuse", "beavertails")]:
-    with open(_BENCHMARKS_DIR / _subdir / "results.json") as _f:
-        _data = json.load(_f)
-    trial_scores[_dataset] = {
-        method: {model: info["scores"] for model, info in by_model.items()}
-        for method, by_model in _data.items()
-    }
+
+
+def load_trial_scores(subdir: str, results_dir: str) -> Dict[str, Dict[str, List[float]]]:
+    scores: Dict[str, Dict[str, List[float]]] = {}
+    for model_file in sorted((_BENCHMARKS_DIR / subdir / results_dir).glob("*.json")):
+        _data = json.loads(model_file.read_text())
+        for method, info in _data.items():
+            scores.setdefault(method, {})[model_file.stem] = info["scores"]
+    return scores
+
+
+trial_scores: Dict[str, Dict[str, Dict[str, List[float]]]] = {
+    "bio": load_trial_scores("wmdp_low_mi", "results_bio"),
+    "animal_abuse": load_trial_scores("beavertails", "results"),
+}
 
 
 def get_stats(
@@ -82,6 +89,7 @@ def plot_grid(
     row_titles: List[str] = None,
     save_path: str = None,
     gap_before: List[str] = None,
+    xlabel: str = "Post-Attack Answer Probability (%) ↓",
 ):
     """
     Create a grid of horizontal bar plots. Each row is a model, columns are benchmarks.
@@ -174,7 +182,7 @@ def plot_grid(
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.15)
     fig.text(
-        0.5, -0.03, "Post-Attack Answer Probability (%) ↓", ha="center", va="bottom"
+        0.5, -0.03, xlabel, ha="center", va="bottom"
     )
 
     if save_path:

@@ -13,7 +13,7 @@ import wandb
 load_dotenv(Path(__file__).parents[2].parent / ".env")
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10  # keep in sync with the grid plots
+REL_STEPS = 11  # all relearn eval points (epochs 0-10), like the optuna objective
 METRIC = "train/holdout_harmful_prob"
 
 # model -> version prefix of its reference run
@@ -50,6 +50,10 @@ for model, version in MODELS.items():
     baselines["animal_abuse"][model] = new
     # pre-attack (epoch-0) value, used by the PRE_ATTACK collapse plot
     baselines.setdefault("animal_abuse_initial", {})[model] = float(head.iloc[0])
+    # few-shot attack value (logged once at relearn epoch 0)
+    val = runs[0].summary.get("train/fewshot5_prob")
+    if val is not None:
+        baselines.setdefault("animal_abuse_fewshot5_prob", {})[model] = float(val)
 
 header = """\
 # Values are the maximum answer probability during a relearning attack

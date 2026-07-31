@@ -1,10 +1,6 @@
 # %%
-# Appendix grid: reduced model set (Llama + Qwen) on the additional datasets.
-# Reuses plot_grid / titles_dict / baselines from main_grid.py; per-dataset
-# trial scores come from results_{dataset}.json (dump_results.py, appendix part).
-# Add new datasets to DATASETS as their sweeps finish.
-import json
-from pathlib import Path
+# 2x5 grid: rows = Llama + Qwen, columns = all 5 datasets.
+# Trial scores come from the per-model jsons written by dump_results_wandb.py.
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -17,9 +13,11 @@ MODELS = ["Llama-3.1-8B", "Qwen3.5-9B"]
 
 # (subdir, results_dir, dataset_key, display_name)
 DATASETS = [
+    ("wmdp_low_mi", "results_bio", "bio", "WMDP-Bio"),
     ("wmdp_low_mi", "results_cyber", "cyber", "WMDP-Cyber"),
     ("rwku", "results", "rwku", "RWKU"),
     ("sycophancy", "results", "sycophancy", "Sycophancy"),
+    ("beavertails", "results", "animal_abuse", "Animal Abuse"),
 ]
 
 trial_scores: Dict[str, Dict[str, Dict[str, List[float]]]] = {
@@ -47,16 +45,16 @@ def get_stats(
 # %%
 
 if __name__ == "__main__":
-    height = 1.0 + 0.9 * len(DATASETS)
+    height = 1.0 + 0.9 * len(MODELS)
     fig = plot_grid(
         rows=[
-            [get_stats(model, dataset) for model in MODELS]
-            for _, _, dataset, _ in DATASETS
+            [get_stats(model, dataset) for _, _, dataset, _ in DATASETS]
+            for model in MODELS
         ],
-        col_titles=MODELS,
-        row_titles=[display for _, _, _, display in DATASETS],
-        figsize=(3.5, height),
-        save_path="appendix_grid.pdf",
+        col_titles=[display for _, _, _, display in DATASETS],
+        row_titles=MODELS,
+        figsize=(5.5, height),
+        save_path="2_5_grid.pdf",
     )
 
     plt.show()

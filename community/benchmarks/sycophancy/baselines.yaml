@@ -22,3 +22,8 @@ sycophancy_normal_initial:
   gemma-4-E4B: 0.14460182640701533
   DeepSeek-V2-Lite: 0.11341936215758323
   Qwen3.5-9B: 0.20815869800746442
+sycophancy_fewshot5_prob:
+  Llama-3.1-8B: 0.2205255405977368
+  gemma-4-E4B: 0.23396014735102655
+  DeepSeek-V2-Lite: 0.16299137115478515
+  Qwen3.5-9B: 0.2039473670721054

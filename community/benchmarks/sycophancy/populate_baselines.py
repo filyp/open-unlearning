@@ -12,7 +12,7 @@ import wandb
 load_dotenv(Path(__file__).parents[2].parent / ".env")
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10  # keep in sync with the grid plots
+REL_STEPS = 11  # all relearn eval points (epochs 0-10), like the optuna objective
 # "sycophancy" (sycophantic-response prob) is the robustness metric used by the
 # plots; "sycophancy_normal" is the normal-response probe, populated for reference
 METRICS = {
@@ -52,6 +52,10 @@ for tag, metric in METRICS.items():
         baselines[tag][model] = new
         # pre-attack (epoch-0) value, used by the PRE_ATTACK collapse plot
         baselines.setdefault(f"{tag}_initial", {})[model] = float(head.iloc[0])
+        # few-shot attack value (logged once at relearn epoch 0)
+        val = runs[0].summary.get("train/fewshot5_prob")
+        if val is not None:
+            baselines.setdefault("sycophancy_fewshot5_prob", {})[model] = float(val)
 
 header = """\
 # Values are the maximum answer probability during a relearning attack

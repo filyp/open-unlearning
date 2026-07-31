@@ -12,7 +12,7 @@ import wandb
 load_dotenv(Path(__file__).parents[2].parent / ".env")
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10  # keep in sync with collapse_grid.py
+REL_STEPS = 11  # all relearn eval points (epochs 0-10), like the optuna objective
 METRIC = "train/recall_prob"
 
 MODELS = ["Llama-3.1-8B", "gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"]
@@ -45,6 +45,11 @@ for domain in DOMAINS:
         baselines[domain][model] = new
         # pre-attack (epoch-0) value, used by the PRE_ATTACK collapse plot
         baselines.setdefault(f"{domain}_initial", {})[model] = float(head.iloc[0])
+        # few-shot attack values (logged once at relearn epoch 0)
+        for suffix in ["acc_t0", "acc_t1"]:
+            val = runs[0].summary.get(f"train/fewshot5_{suffix}")
+            if val is not None:
+                baselines.setdefault(f"{domain}_fewshot5_{suffix}", {})[model] = float(val)
 
 header = """\
 # Values are the maximum answer probability during a relearning attack

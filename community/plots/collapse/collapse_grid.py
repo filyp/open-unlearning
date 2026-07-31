@@ -38,7 +38,7 @@ SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "collapse_cache.pkl"
 
 REL_PROJECT = "filyp/rel-selective-unlearning"
-REL_STEPS = 10
+REL_STEPS = 11
 SHOW_INITIAL = False  # draw error-bar-style marker from max back to initial prob
 PRE_ATTACK = False  # plot epoch-0 (pre-attack) probs instead of max over the attack
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark

@@ -1,0 +1,2428 @@
+{
+  "GradDiff": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 2.8229822603662497e-07,
+      "method_args.alpha": 1.5908691895413618
+    },
+    "scores": [
+      0.21091614029137418,
+      0.21092110767494887,
+      0.21068742376519367,
+      0.21077391796279699,
+      0.2107685340452008,
+      0.21143272292101756,
+      0.2111221618251875,
+      0.21074932353803888,
+      0.21072678826749325,
+      0.2121983752003871,
+      0.21063633472658694,
+      0.21067281090654433,
+      0.21085791569203138,
+      0.21072505175834522,
+      0.21075803332496434,
+      0.21051244577392936,
+      0.21084172243718058,
+      0.21063000377034768,
+      0.21061682206345722,
+      0.21084262983640656,
+      0.21081360580865294,
+      0.21068189974175766,
+      0.2105748607427813,
+      0.2106484273681417,
+      0.2109795223805122,
+      0.21078282792586833,
+      0.2107902435818687,
+      0.210664592043031,
+      0.21076771127991378,
+      0.21095175697701052
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.21091614029137418,
+        "params": {
+          "args.learning_rate": 2.288113668475524e-06,
+          "method_args.alpha": 5.190263017695163
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.21092110767494887,
+        "params": {
+          "args.learning_rate": 3.112561709090179e-06,
+          "method_args.alpha": 3.506575410186655
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.21068742376519367,
+        "params": {
+          "args.learning_rate": 1.1205837185064149e-06,
+          "method_args.alpha": 4.424804764191636
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.21077391796279699,
+        "params": {
+          "args.learning_rate": 1.213267549104612e-06,
+          "method_args.alpha": 7.79422611516095
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.2107685340452008,
+        "params": {
+          "args.learning_rate": 2.4384255846226816e-05,
+          "method_args.alpha": 2.417917724332946
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.21143272292101756,
+        "params": {
+          "args.learning_rate": 9.14532028294652e-06,
+          "method_args.alpha": 3.37983049214134
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.2111221618251875,
+        "params": {
+          "args.learning_rate": 2.553378845151234e-06,
+          "method_args.alpha": 8.425518534432111
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.21074932353803888,
+        "params": {
+          "args.learning_rate": 1.4995637370185e-07,
+          "method_args.alpha": 1.2221634728708943
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.21072678826749325,
+        "params": {
+          "args.learning_rate": 1.122233999416814e-07,
+          "method_args.alpha": 6.801737161546002
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.2121983752003871,
+        "params": {
+          "args.learning_rate": 8.464252827630273e-06,
+          "method_args.alpha": 7.413309777968015
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.21063633472658694,
+        "params": {
+          "args.learning_rate": 4.814284616202225e-07,
+          "method_args.alpha": 1.8371209792556071
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.21067281090654433,
+        "params": {
+          "args.learning_rate": 4.904504428472213e-07,
+          "method_args.alpha": 1.7054111158159742
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.21085791569203138,
+        "params": {
+          "args.learning_rate": 4.193826596655607e-07,
+          "method_args.alpha": 1.6880324257666734
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.21072505175834522,
+        "params": {
+          "args.learning_rate": 4.217822813691878e-07,
+          "method_args.alpha": 2.0453990265413293
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.21075803332496434,
+        "params": {
+          "args.learning_rate": 4.615132649721496e-07,
+          "method_args.alpha": 1.1037054000990458
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.21051244577392936,
+        "params": {
+          "args.learning_rate": 2.8229822603662497e-07,
+          "method_args.alpha": 1.5908691895413618
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.21084172243718058,
+        "params": {
+          "args.learning_rate": 2.149911927719004e-07,
+          "method_args.alpha": 1.376284986696006
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.21063000377034768,
+        "params": {
+          "args.learning_rate": 2.34938178137025e-07,
+          "method_args.alpha": 2.111721691746708
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.21061682206345722,
+        "params": {
+          "args.learning_rate": 2.217332981684459e-07,
+          "method_args.alpha": 2.4376144708254888
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.21084262983640656,
+        "params": {
+          "args.learning_rate": 8.587595559769328e-07,
+          "method_args.alpha": 2.420411696905091
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.21081360580865294,
+        "params": {
+          "args.learning_rate": 2.216111778646945e-07,
+          "method_args.alpha": 2.6239844241825736
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.21068189974175766,
+        "params": {
+          "args.learning_rate": 2.0697117650410815e-07,
+          "method_args.alpha": 1.4387489801064726
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.2105748607427813,
+        "params": {
+          "args.learning_rate": 1.1276258155728835e-07,
+          "method_args.alpha": 2.8832298016352067
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.2106484273681417,
+        "params": {
+          "args.learning_rate": 1.0337939240623737e-07,
+          "method_args.alpha": 4.083727444150163
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.2109795223805122,
+        "params": {
+          "args.learning_rate": 2.726933029575451e-07,
+          "method_args.alpha": 2.769701120385578
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.21078282792586833,
+        "params": {
+          "args.learning_rate": 1.3572461035637132e-07,
+          "method_args.alpha": 3.174961298778858
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.2107902435818687,
+        "params": {
+          "args.learning_rate": 6.761224159988411e-07,
+          "method_args.alpha": 5.305158817728584
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.210664592043031,
+        "params": {
+          "args.learning_rate": 2.7332098666837426e-07,
+          "method_args.alpha": 1.0093246802828897
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.21076771127991378,
+        "params": {
+          "args.learning_rate": 1.5287457650829793e-07,
+          "method_args.alpha": 1.4439543049626364
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.21095175697701052,
+        "params": {
+          "args.learning_rate": 1.5587178022433729e-06,
+          "method_args.alpha": 2.164228366603517
+        }
+      }
+    ]
+  },
+  "NPO": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 1.789495915145085e-05,
+      "method_args.alpha": 2.1016492243075366,
+      "method_args.beta": 0.3016471182021464
+    },
+    "scores": [
+      0.20936894282931462,
+      0.20962214760947973,
+      0.2104844413115643,
+      0.21054381172871217,
+      0.2100010776775889,
+      0.21063545200740919,
+      0.2051909290603362,
+      0.20430241827853024,
+      0.21067432343261316,
+      0.21082048688549548,
+      0.21072457544505596,
+      0.20496124896453694,
+      0.20637645130045712,
+      0.20660682138986886,
+      0.21074759552720934,
+      0.20674613729352131,
+      0.21048537449678406,
+      0.21082660713000223,
+      0.20880098384805024,
+      0.21043266518972814,
+      0.2085884476546198,
+      0.21061526495032012,
+      0.20742050954140723,
+      0.21071201545419171,
+      0.21075811062473804,
+      0.20899055746849626,
+      0.2045441714581102,
+      0.20674576913006604,
+      0.21065186918713152,
+      0.20907313702628016
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.20936894282931462,
+        "params": {
+          "args.learning_rate": 4.9716649405247425e-06,
+          "method_args.alpha": 3.1615198615315903,
+          "method_args.beta": 0.20032418309821973
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.20962214760947973,
+        "params": {
+          "args.learning_rate": 4.87269550953546e-06,
+          "method_args.alpha": 1.9775250653293257,
+          "method_args.beta": 0.2212402382095818
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.2104844413115643,
+        "params": {
+          "args.learning_rate": 2.8143224359088173e-06,
+          "method_args.alpha": 4.200708815913997,
+          "method_args.beta": 0.4598675496284058
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.21054381172871217,
+        "params": {
+          "args.learning_rate": 2.1333902889202146e-06,
+          "method_args.alpha": 3.575955068565719,
+          "method_args.beta": 0.16899152460706698
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.2100010776775889,
+        "params": {
+          "args.learning_rate": 5.48567851593386e-06,
+          "method_args.alpha": 4.435721657724908,
+          "method_args.beta": 0.05888518753760857
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.21063545200740919,
+        "params": {
+          "args.learning_rate": 4.684997681663999e-07,
+          "method_args.alpha": 1.0330754791416796,
+          "method_args.beta": 0.34008685807730005
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.2051909290603362,
+        "params": {
+          "args.learning_rate": 1.6071923583490556e-05,
+          "method_args.alpha": 4.056134942841018,
+          "method_args.beta": 0.47597960752699126
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.20430241827853024,
+        "params": {
+          "args.learning_rate": 1.789495915145085e-05,
+          "method_args.alpha": 2.1016492243075366,
+          "method_args.beta": 0.3016471182021464
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.21067432343261316,
+        "params": {
+          "args.learning_rate": 5.49425914788145e-07,
+          "method_args.alpha": 2.8008225802239406,
+          "method_args.beta": 0.06955418910028938
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.21082048688549548,
+        "params": {
+          "args.learning_rate": 3.7673216974566e-05,
+          "method_args.alpha": 2.3160947584241436,
+          "method_args.beta": 0.12990681777331706
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.21072457544505596,
+        "params": {
+          "args.learning_rate": 4.092296493944259e-05,
+          "method_args.alpha": 1.4421494390428735,
+          "method_args.beta": 0.10170567594565004
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.20496124896453694,
+        "params": {
+          "args.learning_rate": 1.552589855626561e-05,
+          "method_args.alpha": 1.866965928119879,
+          "method_args.beta": 0.493029132970472
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.20637645130045712,
+        "params": {
+          "args.learning_rate": 1.4759337206880127e-05,
+          "method_args.alpha": 1.7889071962629624,
+          "method_args.beta": 0.29803760546350067
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.20660682138986886,
+        "params": {
+          "args.learning_rate": 1.343101049792842e-05,
+          "method_args.alpha": 1.4086157715587184,
+          "method_args.beta": 0.3026999601628741
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.21074759552720934,
+        "params": {
+          "args.learning_rate": 2.0395777636041142e-05,
+          "method_args.alpha": 2.430106430323045,
+          "method_args.beta": 0.3556984252073845
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.20674613729352131,
+        "params": {
+          "args.learning_rate": 9.07419449338121e-06,
+          "method_args.alpha": 1.628344076723384,
+          "method_args.beta": 0.2266077341566498
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.21048537449678406,
+        "params": {
+          "args.learning_rate": 1.7121383908331935e-06,
+          "method_args.alpha": 1.125728298819714,
+          "method_args.beta": 0.47784969774533986
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.21082660713000223,
+        "params": {
+          "args.learning_rate": 2.747855350598908e-05,
+          "method_args.alpha": 2.1480947032495092,
+          "method_args.beta": 0.26689822330302865
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.20880098384805024,
+        "params": {
+          "args.learning_rate": 8.750503935989616e-06,
+          "method_args.alpha": 2.5545906888004515,
+          "method_args.beta": 0.3876709273919264
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.21043266518972814,
+        "params": {
+          "args.learning_rate": 1.0524932931034316e-06,
+          "method_args.alpha": 1.3271939366990555,
+          "method_args.beta": 0.12920946447288909
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.2085884476546198,
+        "params": {
+          "args.learning_rate": 8.832847234772425e-06,
+          "method_args.alpha": 1.766912570201777,
+          "method_args.beta": 0.406198983984996
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.21061526495032012,
+        "params": {
+          "args.learning_rate": 2.180817743550092e-05,
+          "method_args.alpha": 3.013083890813032,
+          "method_args.beta": 0.4788753633534175
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.20742050954140723,
+        "params": {
+          "args.learning_rate": 1.4431060708195598e-05,
+          "method_args.alpha": 4.90567396661957,
+          "method_args.beta": 0.39313493426649504
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.21071201545419171,
+        "params": {
+          "args.learning_rate": 2.8768313733917825e-05,
+          "method_args.alpha": 3.5636034334786673,
+          "method_args.beta": 0.2635464295990427
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.21075811062473804,
+        "params": {
+          "args.learning_rate": 4.585416237659584e-05,
+          "method_args.alpha": 2.0145492826170672,
+          "method_args.beta": 0.47790320784689266
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.20899055746849626,
+        "params": {
+          "args.learning_rate": 7.414908535856649e-06,
+          "method_args.alpha": 1.6357089541911896,
+          "method_args.beta": 0.3193180167376896
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.2045441714581102,
+        "params": {
+          "args.learning_rate": 1.7791218047849924e-05,
+          "method_args.alpha": 2.685311473129438,
+          "method_args.beta": 0.40177921337944456
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.20674576913006604,
+        "params": {
+          "args.learning_rate": 1.1664761898256266e-05,
+          "method_args.alpha": 2.6481318023137157,
+          "method_args.beta": 0.2720855627683217
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.21065186918713152,
+        "params": {
+          "args.learning_rate": 2.4125581992666977e-05,
+          "method_args.alpha": 2.1727856844578426,
+          "method_args.beta": 0.3891398759844175
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.20907313702628016,
+        "params": {
+          "args.learning_rate": 5.328612529373105e-06,
+          "method_args.alpha": 3.0679401962581148,
+          "method_args.beta": 0.1895631139607681
+        }
+      }
+    ]
+  },
+  "RMU": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 1.023157079611454e-05,
+      "method_args.module_regex": "model\\.layers\\.16",
+      "method_args.steering_coeff": 0.05891354598906928
+    },
+    "scores": [
+      0.21052548725856468,
+      0.2105734430369921,
+      0.20827659399947152,
+      0.21067866525845602,
+      0.21074707427760586,
+      0.21071057254448533,
+      0.21070056996541098,
+      0.21030019340105355,
+      0.2107700978522189,
+      0.20989676582394168,
+      0.21087759517831728,
+      0.20904162642545998,
+      0.20811165863415226,
+      0.2077858131378889,
+      0.20816685626050457,
+      0.21075960155576468,
+      0.21083588228793815,
+      0.21089410601416603,
+      0.2087492435821332,
+      0.21080433524912223,
+      0.21074539987603202,
+      0.2089396701194346,
+      0.20880979346111417,
+      0.21083560690749437,
+      0.20920185471186414,
+      0.2083793294732459,
+      0.20897645584773272,
+      0.21072413900401443,
+      0.21055729943327606,
+      0.2101198945310898
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.21052548725856468,
+        "params": {
+          "args.learning_rate": 2.288113668475524e-06,
+          "method_args.module_regex": "model\\.layers\\.6",
+          "method_args.steering_coeff": 3.7665768415992953
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.2105734430369921,
+        "params": {
+          "args.learning_rate": 3.980687048299286e-06,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 0.15414734761917095
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.20827659399947152,
+        "params": {
+          "args.learning_rate": 9.14532028294652e-06,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 0.44103656679709863
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.21067866525845602,
+        "params": {
+          "args.learning_rate": 1.6437275723723212e-07,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.001262094828516931
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.21074707427760586,
+        "params": {
+          "args.learning_rate": 2.6555610849989368e-05,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 9.903593841281127
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.21071057254448533,
+        "params": {
+          "args.learning_rate": 3.847352362280735e-06,
+          "method_args.module_regex": "model\\.layers\\.6",
+          "method_args.steering_coeff": 0.00520914488688989
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.21070056996541098,
+        "params": {
+          "args.learning_rate": 4.522060097953616e-07,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 7.433073841273531
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.21030019340105355,
+        "params": {
+          "args.learning_rate": 3.388114022223246e-06,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 1.1494196400307433
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.2107700978522189,
+        "params": {
+          "args.learning_rate": 7.772212421595555e-07,
+          "method_args.module_regex": "model\\.layers\\.6",
+          "method_args.steering_coeff": 0.15316508243748708
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.20989676582394168,
+        "params": {
+          "args.learning_rate": 4.584070847011656e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.01126971168013368
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.21087759517831728,
+        "params": {
+          "args.learning_rate": 2.138744556320131e-05,
+          "method_args.module_regex": "model\\.layers\\.11",
+          "method_args.steering_coeff": 61.810167554531624
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.20904162642545998,
+        "params": {
+          "args.learning_rate": 1.1427384801451576e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.02031915890189807
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.20811165863415226,
+        "params": {
+          "args.learning_rate": 1.0469095923290437e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.03735794243760954
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.2077858131378889,
+        "params": {
+          "args.learning_rate": 1.023157079611454e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.05891354598906928
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.20816685626050457,
+        "params": {
+          "args.learning_rate": 1.007349675259879e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.04889399717081959
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.21075960155576468,
+        "params": {
+          "args.learning_rate": 6.370366555679709e-07,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.048368655634254326
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.21083588228793815,
+        "params": {
+          "args.learning_rate": 1.3054176808241463e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.002333050352373723
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.21089410601416603,
+        "params": {
+          "args.learning_rate": 1.6058211320506495e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.027867896915891793
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.2087492435821332,
+        "params": {
+          "args.learning_rate": 6.824098259161648e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.6804103404932579
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.21080433524912223,
+        "params": {
+          "args.learning_rate": 1.0920703313139949e-07,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.1441447761707608
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.21074539987603202,
+        "params": {
+          "args.learning_rate": 1.8779025131583297e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.0048217180066772005
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.2089396701194346,
+        "params": {
+          "args.learning_rate": 1.1895131307742688e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.05974549714645284
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.20880979346111417,
+        "params": {
+          "args.learning_rate": 7.51852968166127e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.08536749355920695
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.21083560690749437,
+        "params": {
+          "args.learning_rate": 1.6716664109965046e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.01429944066944091
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.20920185471186414,
+        "params": {
+          "args.learning_rate": 5.9112398442924936e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.03665191285878473
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.2083793294732459,
+        "params": {
+          "args.learning_rate": 2.5929273682278285e-05,
+          "method_args.module_regex": "model\\.layers\\.6",
+          "method_args.steering_coeff": 1.4676164743290048
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.20897645584773272,
+        "params": {
+          "args.learning_rate": 1.1906742101163946e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.27473972844941863
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.21072413900401443,
+        "params": {
+          "args.learning_rate": 1.610467517778089e-05,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.007238138289957856
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.21055729943327606,
+        "params": {
+          "args.learning_rate": 2.8481097428711233e-06,
+          "method_args.module_regex": "model\\.layers\\.16",
+          "method_args.steering_coeff": 0.08226384075555916
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.2101198945310898,
+        "params": {
+          "args.learning_rate": 5.640927694140488e-06,
+          "method_args.module_regex": "model\\.layers\\.6",
+          "method_args.steering_coeff": 3.0381006780679107
+        }
+      }
+    ]
+  },
+  "SimNPO": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 1.292384540263439e-06,
+      "method_args.beta": 4.487171096109287,
+      "method_args.delta": 0.5562583716293826,
+      "method_args.gamma": 0.17405515367636493
+    },
+    "scores": [
+      0.2107108516502194,
+      0.21062147605698556,
+      0.21139564242912456,
+      0.21076023281784728,
+      0.2108141063945368,
+      0.2116911164484918,
+      0.21072261553490534,
+      0.21100911096436903,
+      0.21068250254029408,
+      0.21070116106420755,
+      0.2109109663288109,
+      0.21085422375472263,
+      0.2107161691528745,
+      0.21092706342460588,
+      0.21065555547829717,
+      0.21065509872278199,
+      0.21084492444060743,
+      0.2105237526120618,
+      0.21065810654545203,
+      0.21082903817296028,
+      0.21059326856629923,
+      0.2106991763575934,
+      0.21063218684867024,
+      0.21123541344422847,
+      0.21085538167972118,
+      0.21114685747306794,
+      0.21054280077805743,
+      0.2105980542837642,
+      0.21076465072110295,
+      0.2108643823885359
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.2107108516502194,
+        "params": {
+          "args.learning_rate": 8.558894657793078e-07,
+          "method_args.beta": 4.215189366372419,
+          "method_args.delta": 0.6027633760716439,
+          "method_args.gamma": 0.1931103978746121
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.21062147605698556,
+        "params": {
+          "args.learning_rate": 5.245378070737082e-07,
+          "method_args.beta": 4.145894113066656,
+          "method_args.delta": 0.4375872112626925,
+          "method_args.gamma": 0.23647162509776
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.21139564242912456,
+        "params": {
+          "args.learning_rate": 4.337446433452348e-06,
+          "method_args.beta": 3.883441518825778,
+          "method_args.delta": 0.7917250380826646,
+          "method_args.gamma": 0.19111186496911303
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.21076023281784728,
+        "params": {
+          "args.learning_rate": 9.227640583747692e-07,
+          "method_args.beta": 4.425596638292661,
+          "method_args.delta": 0.07103605819788694,
+          "method_args.gamma": 0.1358911624626926
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.2108141063945368,
+        "params": {
+          "args.learning_rate": 1.0823069587789716e-07,
+          "method_args.beta": 4.332619845547938,
+          "method_args.delta": 0.7781567509498505,
+          "method_args.gamma": 0.2337515185308524
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.2116911164484918,
+        "params": {
+          "args.learning_rate": 4.598786090752839e-06,
+          "method_args.beta": 4.299158564216723,
+          "method_args.delta": 0.46147936225293185,
+          "method_args.gamma": 0.22256614703580693
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.21072261553490534,
+        "params": {
+          "args.learning_rate": 1.58834449382056e-07,
+          "method_args.beta": 4.139921021327524,
+          "method_args.delta": 0.1433532874090464,
+          "method_args.gamma": 0.243083614631198
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.21100911096436903,
+        "params": {
+          "args.learning_rate": 7.702020060945161e-07,
+          "method_args.beta": 3.9146619399905234,
+          "method_args.delta": 0.26455561210462697,
+          "method_args.gamma": 0.22177921117927707
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.21068250254029408,
+        "params": {
+          "args.learning_rate": 5.956425742609298e-07,
+          "method_args.beta": 4.068433948868648,
+          "method_args.delta": 0.018789800436355145,
+          "method_args.gamma": 0.20220443713448463
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.21070116106420755,
+        "params": {
+          "args.learning_rate": 1.0963072160039623e-06,
+          "method_args.beta": 4.1169339968747565,
+          "method_args.delta": 0.9437480785146242,
+          "method_args.gamma": 0.21022753738793545
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.2109109663288109,
+        "params": {
+          "args.learning_rate": 2.9384914811877036e-07,
+          "method_args.beta": 3.6243713902168544,
+          "method_args.delta": 0.4087035247151912,
+          "method_args.gamma": 0.15397863617178376
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.21085422375472263,
+        "params": {
+          "args.learning_rate": 3.5726867835888605e-07,
+          "method_args.beta": 3.979237238058979,
+          "method_args.delta": 0.2696479546644156,
+          "method_args.gamma": 0.17684864521784846
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.2107161691528745,
+        "params": {
+          "args.learning_rate": 2.075932591268305e-06,
+          "method_args.beta": 3.693259768222299,
+          "method_args.delta": 0.01074632098011069,
+          "method_args.gamma": 0.2480972543087332
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.21092706342460588,
+        "params": {
+          "args.learning_rate": 3.918550606932078e-07,
+          "method_args.beta": 3.778641673802184,
+          "method_args.delta": 0.5999245842087684,
+          "method_args.gamma": 0.21001332148939017
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.21065555547829717,
+        "params": {
+          "args.learning_rate": 1.765319687956854e-06,
+          "method_args.beta": 3.5055968280962473,
+          "method_args.delta": 0.23111987277218585,
+          "method_args.gamma": 0.16773836068650258
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.21065509872278199,
+        "params": {
+          "args.learning_rate": 1.8022822968579525e-06,
+          "method_args.beta": 3.5851192304781665,
+          "method_args.delta": 0.321019761892654,
+          "method_args.gamma": 0.17512483933865453
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.21084492444060743,
+        "params": {
+          "args.learning_rate": 2.0923292861803735e-06,
+          "method_args.beta": 3.841573381248377,
+          "method_args.delta": 0.3524447493668509,
+          "method_args.gamma": 0.15566692109429425
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.2105237526120618,
+        "params": {
+          "args.learning_rate": 1.292384540263439e-06,
+          "method_args.beta": 4.487171096109287,
+          "method_args.delta": 0.5562583716293826,
+          "method_args.gamma": 0.17405515367636493
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.21065810654545203,
+        "params": {
+          "args.learning_rate": 4.7080135301306955e-07,
+          "method_args.beta": 4.487122995200326,
+          "method_args.delta": 0.5854296324638965,
+          "method_args.gamma": 0.1255038616088032
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.21082903817296028,
+        "params": {
+          "args.learning_rate": 2.2300417305524237e-07,
+          "method_args.beta": 4.321549809050685,
+          "method_args.delta": 0.7076901689436775,
+          "method_args.gamma": 0.15696565862744966
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.21059326856629923,
+        "params": {
+          "args.learning_rate": 1.3200775444649592e-06,
+          "method_args.beta": 4.218866123645817,
+          "method_args.delta": 0.4942135334608295,
+          "method_args.gamma": 0.1822163199418224
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.2106991763575934,
+        "params": {
+          "args.learning_rate": 1.3337666480788649e-06,
+          "method_args.beta": 4.209886759733294,
+          "method_args.delta": 0.490400159296396,
+          "method_args.gamma": 0.17820609984371047
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.21063218684867024,
+        "params": {
+          "args.learning_rate": 6.034684321969248e-07,
+          "method_args.beta": 4.407608856270988,
+          "method_args.delta": 0.5345255519292952,
+          "method_args.gamma": 0.18577077344988763
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.21123541344422847,
+        "params": {
+          "args.learning_rate": 2.7943287967438228e-06,
+          "method_args.beta": 4.007328974563043,
+          "method_args.delta": 0.6952692011313928,
+          "method_args.gamma": 0.1670048578471147
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.21085538167972118,
+        "params": {
+          "args.learning_rate": 1.342516827044896e-06,
+          "method_args.beta": 4.232074416429246,
+          "method_args.delta": 0.41055270460000826,
+          "method_args.gamma": 0.1992701168824049
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.21114685747306794,
+        "params": {
+          "args.learning_rate": 2.7811522301915424e-06,
+          "method_args.beta": 4.416314304950847,
+          "method_args.delta": 0.6719990327404203,
+          "method_args.gamma": 0.1435659248536508
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.21054280077805743,
+        "params": {
+          "args.learning_rate": 5.095338408327784e-07,
+          "method_args.beta": 4.131203494391627,
+          "method_args.delta": 0.5177042438655128,
+          "method_args.gamma": 0.18469267218090235
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.2105980542837642,
+        "params": {
+          "args.learning_rate": 1.255018798625842e-06,
+          "method_args.beta": 4.491693328589511,
+          "method_args.delta": 0.5402630578666932,
+          "method_args.gamma": 0.18239466328583537
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.21076465072110295,
+        "params": {
+          "args.learning_rate": 2.554830791426258e-07,
+          "method_args.beta": 4.032757683559414,
+          "method_args.delta": 0.9085744520806308,
+          "method_args.gamma": 0.1659805632448706
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.2108643823885359,
+        "params": {
+          "args.learning_rate": 9.091030013570174e-07,
+          "method_args.beta": 4.2198220261246915,
+          "method_args.delta": 0.6187579878850259,
+          "method_args.gamma": 0.19737117558502493
+        }
+      }
+    ]
+  },
+  "UNDIAL": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 5.281820643538324e-07,
+      "method_args.alpha": 2.534431122130561,
+      "method_args.beta": 21.977136868489147
+    },
+    "scores": [
+      0.21072686079423875,
+      0.2108630959992297,
+      0.21085078874602914,
+      0.2107329501886852,
+      0.21095484349643812,
+      0.21084530447842553,
+      0.21247179509373382,
+      0.21226922934874892,
+      0.21089193708030507,
+      0.21078346512513235,
+      0.21068191924132407,
+      0.2108558425679803,
+      0.21069161337800324,
+      0.21073111851001158,
+      0.21074772585416213,
+      0.2107725408859551,
+      0.21074863121611997,
+      0.21077640255680308,
+      0.21104831056436524,
+      0.2108553612488322,
+      0.21074565511662513,
+      0.2108033768599853,
+      0.21111186558846384,
+      0.21069411060307175,
+      0.21062749781413004,
+      0.2107479446567595,
+      0.2107763213571161,
+      0.21058042510412633,
+      0.21074771496932954,
+      0.21068413666216657
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.21072686079423875,
+        "params": {
+          "args.learning_rate": 2.288113668475524e-06,
+          "method_args.alpha": 3.1615198615315903,
+          "method_args.beta": 12.019450985893185
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.2108630959992297,
+        "params": {
+          "args.learning_rate": 2.2373901095679733e-06,
+          "method_args.alpha": 1.9775250653293257,
+          "method_args.beta": 13.274414292574908
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.21085078874602914,
+        "params": {
+          "args.learning_rate": 1.213267549104612e-06,
+          "method_args.alpha": 4.200708815913997,
+          "method_args.beta": 27.592052977704352
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.2107329501886852,
+        "params": {
+          "args.learning_rate": 8.909044664452639e-07,
+          "method_args.alpha": 3.575955068565719,
+          "method_args.beta": 10.139491476424018
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.21095484349643812,
+        "params": {
+          "args.learning_rate": 2.553378845151234e-06,
+          "method_args.alpha": 4.435721657724908,
+          "method_args.beta": 3.533111252256514
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.21084530447842553,
+        "params": {
+          "args.learning_rate": 1.6437275723723212e-07,
+          "method_args.alpha": 1.0330754791416796,
+          "method_args.beta": 20.405211484638
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.21247179509373382,
+        "params": {
+          "args.learning_rate": 8.464252827630273e-06,
+          "method_args.alpha": 4.056134942841018,
+          "method_args.beta": 28.55877645161948
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.21226922934874892,
+        "params": {
+          "args.learning_rate": 9.541412354586876e-06,
+          "method_args.alpha": 2.1016492243075366,
+          "method_args.beta": 18.098827092128793
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.21089193708030507,
+        "params": {
+          "args.learning_rate": 1.963270288719837e-07,
+          "method_args.alpha": 2.8008225802239406,
+          "method_args.beta": 4.173251346017364
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.21078346512513235,
+        "params": {
+          "args.learning_rate": 2.188061139858236e-05,
+          "method_args.alpha": 2.3160947584241436,
+          "method_args.beta": 7.794409066399026
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.21068191924132407,
+        "params": {
+          "args.learning_rate": 5.65921436293246e-07,
+          "method_args.alpha": 1.4119393807969656,
+          "method_args.beta": 6.102340556739002
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.2108558425679803,
+        "params": {
+          "args.learning_rate": 6.151379144293256e-07,
+          "method_args.alpha": 1.4143997777132946,
+          "method_args.beta": 6.467052923925717
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.21069161337800324,
+        "params": {
+          "args.learning_rate": 4.6553322271613147e-07,
+          "method_args.alpha": 1.5484040398519556,
+          "method_args.beta": 6.041434614375825
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.21073111851001158,
+        "params": {
+          "args.learning_rate": 3.682917516303286e-07,
+          "method_args.alpha": 1.4855073904336709,
+          "method_args.beta": 5.673120742240973
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.21074772585416213,
+        "params": {
+          "args.learning_rate": 3.784531260810676e-07,
+          "method_args.alpha": 1.449609565371358,
+          "method_args.beta": 4.844205988080665
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.2107725408859551,
+        "params": {
+          "args.learning_rate": 1.009168973721296e-07,
+          "method_args.alpha": 1.059725053287346,
+          "method_args.beta": 3.0389117112696327
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.21074863121611997,
+        "params": {
+          "args.learning_rate": 4.619750416870442e-07,
+          "method_args.alpha": 1.718310086096072,
+          "method_args.beta": 7.390448193894069
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.21077640255680308,
+        "params": {
+          "args.learning_rate": 9.826292682649235e-07,
+          "method_args.alpha": 1.2268958944445123,
+          "method_args.beta": 5.084594934360613
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.21104831056436524,
+        "params": {
+          "args.learning_rate": 4.8243721239886845e-06,
+          "method_args.alpha": 1.7609677130681485,
+          "method_args.beta": 9.318643004761668
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.2108553612488322,
+        "params": {
+          "args.learning_rate": 3.268763397300862e-07,
+          "method_args.alpha": 2.3788117133667894,
+          "method_args.beta": 4.135472066250662
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.21074565511662513,
+        "params": {
+          "args.learning_rate": 2.3223528485185766e-07,
+          "method_args.alpha": 1.1963426617910051,
+          "method_args.beta": 6.489299840163629
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.2108033768599853,
+        "params": {
+          "args.learning_rate": 1.6649269668982144e-06,
+          "method_args.alpha": 2.9326509913014656,
+          "method_args.beta": 11.981626323519093
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.21111186558846384,
+        "params": {
+          "args.learning_rate": 3.651004909568553e-06,
+          "method_args.alpha": 3.007618820901676,
+          "method_args.beta": 9.008915769506755
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.21069411060307175,
+        "params": {
+          "args.learning_rate": 7.850644122327408e-07,
+          "method_args.alpha": 4.984268748510081,
+          "method_args.beta": 13.990252831373516
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.21062749781413004,
+        "params": {
+          "args.learning_rate": 6.947823258153836e-07,
+          "method_args.alpha": 4.843451071477263,
+          "method_args.beta": 16.72170301728704
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.2107479446567595,
+        "params": {
+          "args.learning_rate": 6.632252447100308e-07,
+          "method_args.alpha": 1.7174866345917308,
+          "method_args.beta": 17.75268937203241
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.2107763213571161,
+        "params": {
+          "args.learning_rate": 1.4699724549317252e-06,
+          "method_args.alpha": 1.2543365141344944,
+          "method_args.beta": 7.795085634757039
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.21058042510412633,
+        "params": {
+          "args.learning_rate": 5.281820643538324e-07,
+          "method_args.alpha": 2.534431122130561,
+          "method_args.beta": 21.977136868489147
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.21074771496932954,
+        "params": {
+          "args.learning_rate": 1.1603461596440781e-07,
+          "method_args.alpha": 2.6125081552787655,
+          "method_args.beta": 23.777520458895335
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.21068413666216657,
+        "params": {
+          "args.learning_rate": 2.588444787634142e-07,
+          "method_args.alpha": 3.414754285483202,
+          "method_args.beta": 16.520732916574936
+        }
+      }
+    ]
+  },
+  "RepSelectSimple_forget": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 12.829386736905612,
+      "method_args.lora_lr": 7.319141553558477
+    },
+    "scores": [
+      0.17877696864889003,
+      0.16909088881220669,
+      0.1925955826882273,
+      0.21079104847740382,
+      0.1645337703230325,
+      0.16183546485262923,
+      0.21068407292477787,
+      0.20974853116786107,
+      0.21072495740372688,
+      0.21081625431543216,
+      0.16446900548180565,
+      0.1659797210013494,
+      0.1725559647893533,
+      0.16622000915231183,
+      0.18266450939700007,
+      0.20620533399051055,
+      0.2091439402429387,
+      0.19963820494012907,
+      0.16452568117529154,
+      0.16036418231669813,
+      0.1624231716268696,
+      0.16179146149079315,
+      0.1600504633388482,
+      0.19855201803147793,
+      0.2106616587843746,
+      0.21093176252907142,
+      0.16247022201423533,
+      0.21072108240332454,
+      0.2107717454782687,
+      0.1981009361334145
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.17877696864889003,
+        "params": {
+          "args.learning_rate": 6.2603269074997305,
+          "method_args.lora_lr": 13.469415096427044
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.16909088881220669,
+        "params": {
+          "args.learning_rate": 8.02595566679381,
+          "method_args.lora_lr": 6.148035553662852
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.1925955826882273,
+        "params": {
+          "args.learning_rate": 3.5178685143610724,
+          "method_args.lora_lr": 9.789448600606496
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.21079104847740382,
+        "params": {
+          "args.learning_rate": 3.7509772218100585,
+          "method_args.lora_lr": 30.374980367128448
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.1645337703230325,
+        "params": {
+          "args.learning_rate": 42.29563264024683,
+          "method_args.lora_lr": 2.9231630608217056
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.16183546485262923,
+        "params": {
+          "args.learning_rate": 19.16108425246392,
+          "method_args.lora_lr": 5.711627077804183
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.21068407292477787,
+        "params": {
+          "args.learning_rate": 6.840047639863456,
+          "method_args.lora_lr": 35.494681287029486
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.20974853116786107,
+        "params": {
+          "args.learning_rate": 0.693493062267866,
+          "method_args.lora_lr": 0.7468417772099227
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.21072495740372688,
+        "params": {
+          "args.learning_rate": 0.5487907709690079,
+          "method_args.lora_lr": 23.13181420737792
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.21081625431543216,
+        "params": {
+          "args.learning_rate": 18.00045596455803,
+          "method_args.lora_lr": 27.478580932058065
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.16446900548180565,
+        "params": {
+          "args.learning_rate": 41.58905654275452,
+          "method_args.lora_lr": 2.227180171531105
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.1659797210013494,
+        "params": {
+          "args.learning_rate": 40.22782257996288,
+          "method_args.lora_lr": 2.1675921753524277
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.1725559647893533,
+        "params": {
+          "args.learning_rate": 17.957893686667322,
+          "method_args.lora_lr": 1.2404214234702726
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.16622000915231183,
+        "params": {
+          "args.learning_rate": 20.632899305142303,
+          "method_args.lora_lr": 3.4367562652976384
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.18266450939700007,
+        "params": {
+          "args.learning_rate": 49.211989922044296,
+          "method_args.lora_lr": 1.3949687590580455
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.20620533399051055,
+        "params": {
+          "args.learning_rate": 1.4168915188247782,
+          "method_args.lora_lr": 5.65114541139802
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.2091439402429387,
+        "params": {
+          "args.learning_rate": 11.411896649511522,
+          "method_args.lora_lr": 10.702201183948306
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.19963820494012907,
+        "params": {
+          "args.learning_rate": 23.918344276491545,
+          "method_args.lora_lr": 0.5175755330585436
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.16452568117529154,
+        "params": {
+          "args.learning_rate": 28.647263876976776,
+          "method_args.lora_lr": 1.7656577736504997
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.16036418231669813,
+        "params": {
+          "args.learning_rate": 12.37963189985,
+          "method_args.lora_lr": 3.62521951164126
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.1624231716268696,
+        "params": {
+          "args.learning_rate": 10.35128344518979,
+          "method_args.lora_lr": 4.070517811823492
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.16179146149079315,
+        "params": {
+          "args.learning_rate": 11.868871559293364,
+          "method_args.lora_lr": 4.428517704429542
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.1600504633388482,
+        "params": {
+          "args.learning_rate": 12.829386736905612,
+          "method_args.lora_lr": 7.319141553558477
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.19855201803147793,
+        "params": {
+          "args.learning_rate": 12.768396558304556,
+          "method_args.lora_lr": 8.666913226386892
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.2106616587843746,
+        "params": {
+          "args.learning_rate": 4.368554401461122,
+          "method_args.lora_lr": 14.529412164072376
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.21093176252907142,
+        "params": {
+          "args.learning_rate": 2.2623339282991917,
+          "method_args.lora_lr": 7.365200983048632
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.16247022201423533,
+        "params": {
+          "args.learning_rate": 13.338894872802149,
+          "method_args.lora_lr": 4.552421099607769
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.21072108240332454,
+        "params": {
+          "args.learning_rate": 8.745539741571486,
+          "method_args.lora_lr": 17.608212891548387
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.2107717454782687,
+        "params": {
+          "args.learning_rate": 5.385481528886694,
+          "method_args.lora_lr": 47.34812971365312
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.1981009361334145,
+        "params": {
+          "args.learning_rate": 2.54146423523726,
+          "method_args.lora_lr": 2.671933878188026
+        }
+      }
+    ]
+  },
+  "RepSelect2_forget": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 3.644276202547594,
+      "method_args.cfg.lora_lr": 0.21207557380013004,
+      "method_args.cfg.npo_beta": 0.17428788242366974
+    },
+    "scores": [
+      0.18402619104017504,
+      0.2010258244117722,
+      0.19213484338251874,
+      0.18946704734116793,
+      0.17809809303980728,
+      0.205536495835986,
+      0.17002450702420902,
+      0.21086059731896967,
+      0.20345988764893264,
+      0.21045447001233697,
+      0.21075950982049108,
+      0.17910229756307672,
+      0.17228669892938342,
+      0.16189835043041967,
+      0.21082223142730072,
+      0.19798229361185804,
+      0.20721529459115118,
+      0.2021454016212374,
+      0.20691423065727577,
+      0.1707987257395871,
+      0.19549700274365023,
+      0.16464528893993702,
+      0.21086137735983357,
+      0.1956698668655008,
+      0.19192570843733847,
+      0.17971421038964763,
+      0.16731083305785432,
+      0.19146765710320324,
+      0.17702011880464852,
+      0.15692309106816538
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.18402619104017504,
+        "params": {
+          "args.learning_rate": 1.7692267954532752,
+          "method_args.cfg.lora_lr": 0.22437501128260667,
+          "method_args.cfg.npo_beta": 0.16829006829284254
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.2010258244117722,
+        "params": {
+          "args.learning_rate": 1.753287705093327,
+          "method_args.cfg.lora_lr": 0.09880145529275064,
+          "method_args.cfg.npo_beta": 0.17919179244633052
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.19213484338251874,
+        "params": {
+          "args.learning_rate": 1.3694847976173483,
+          "method_args.cfg.lora_lr": 0.3687508080522317,
+          "method_args.cfg.npo_beta": 0.28454782857765304
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.18946704734116793,
+        "params": {
+          "args.learning_rate": 1.2089588621664729,
+          "method_args.cfg.lora_lr": 0.27828481080032963,
+          "method_args.cfg.npo_beta": 0.1511373862926539
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.17809809303980728,
+        "params": {
+          "args.learning_rate": 1.8493306410514396,
+          "method_args.cfg.lora_lr": 0.40556488911505384,
+          "method_args.cfg.npo_beta": 0.07762372465857086
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.205536495835986,
+        "params": {
+          "args.learning_rate": 0.6110817364354472,
+          "method_args.cfg.lora_lr": 0.031755947724383275,
+          "method_args.cfg.npo_beta": 0.2351435721448644
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.17002450702420902,
+        "params": {
+          "args.learning_rate": 3.000037996805877,
+          "method_args.cfg.lora_lr": 0.3468522453129485,
+          "method_args.cfg.npo_beta": 0.2908088042301249
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.21086059731896967,
+        "params": {
+          "args.learning_rate": 3.1486803115634836,
+          "method_args.cfg.lora_lr": 0.10989532974251962,
+          "method_args.cfg.npo_beta": 0.21797696388998553
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.20345988764893264,
+        "params": {
+          "args.learning_rate": 0.6565146628073566,
+          "method_args.cfg.lora_lr": 0.18155489158292304,
+          "method_args.cfg.npo_beta": 0.0862383911049475
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.21045447001233697,
+        "params": {
+          "args.learning_rate": 4.40188732146278,
+          "method_args.cfg.lora_lr": 0.13023897636227108,
+          "method_args.cfg.npo_beta": 0.12798940271018577
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.21075950982049108,
+        "params": {
+          "args.learning_rate": 3.0732590533473685,
+          "method_args.cfg.lora_lr": 0.05186039640823992,
+          "method_args.cfg.npo_beta": 0.10964739458071308
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.17910229756307672,
+        "params": {
+          "args.learning_rate": 2.6396772345377304,
+          "method_args.cfg.lora_lr": 0.4712795302237483,
+          "method_args.cfg.npo_beta": 0.07081282443224261
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.17228669892938342,
+        "params": {
+          "args.learning_rate": 2.338430589477963,
+          "method_args.cfg.lora_lr": 0.46601928017311767,
+          "method_args.cfg.npo_beta": 0.10221326719938936
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.16189835043041967,
+        "params": {
+          "args.learning_rate": 4.930480232815033,
+          "method_args.cfg.lora_lr": 0.2841277405633331,
+          "method_args.cfg.npo_beta": 0.10032690155730488
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.21082223142730072,
+        "params": {
+          "args.learning_rate": 4.990968929953053,
+          "method_args.cfg.lora_lr": 0.16564436684600395,
+          "method_args.cfg.npo_beta": 0.12134043884258876
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.19798229361185804,
+        "params": {
+          "args.learning_rate": 4.023247033087345,
+          "method_args.cfg.lora_lr": 0.27270513077243613,
+          "method_args.cfg.npo_beta": 0.09160450735520936
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.20721529459115118,
+        "params": {
+          "args.learning_rate": 3.612229554895523,
+          "method_args.cfg.lora_lr": 0.07728501366102321,
+          "method_args.cfg.npo_beta": 0.2804179392490481
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.2021454016212374,
+        "params": {
+          "args.learning_rate": 0.8220407288881724,
+          "method_args.cfg.lora_lr": 0.2828818360070447,
+          "method_args.cfg.npo_beta": 0.19371301818888545
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.20691423065727577,
+        "params": {
+          "args.learning_rate": 2.2029106988141742,
+          "method_args.cfg.lora_lr": 0.18920552480616148,
+          "method_args.cfg.npo_beta": 0.14172036375626595
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.1707987257395871,
+        "params": {
+          "args.learning_rate": 3.2705336229174047,
+          "method_args.cfg.lora_lr": 0.33768953379480365,
+          "method_args.cfg.npo_beta": 0.24102320328160615
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.19549700274365023,
+        "params": {
+          "args.learning_rate": 1.0635633333984371,
+          "method_args.cfg.lora_lr": 0.1437491459266708,
+          "method_args.cfg.npo_beta": 0.10300160241733884
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.16464528893993702,
+        "params": {
+          "args.learning_rate": 3.4417947083463125,
+          "method_args.cfg.lora_lr": 0.3313977890344079,
+          "method_args.cfg.npo_beta": 0.25141802911783684
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.21086137735983357,
+        "params": {
+          "args.learning_rate": 4.685661988012043,
+          "method_args.cfg.lora_lr": 0.2313278725780521,
+          "method_args.cfg.npo_beta": 0.28829705039860615
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.1956698668655008,
+        "params": {
+          "args.learning_rate": 3.84388268699576,
+          "method_args.cfg.lora_lr": 0.33632484048639905,
+          "method_args.cfg.npo_beta": 0.21120911313489
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.19192570843733847,
+        "params": {
+          "args.learning_rate": 2.6932636748415204,
+          "method_args.cfg.lora_lr": 0.23549829563708444,
+          "method_args.cfg.npo_beta": 0.25185032438025934
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.17971421038964763,
+        "params": {
+          "args.learning_rate": 2.1655092604810156,
+          "method_args.cfg.lora_lr": 0.49672754560876464,
+          "method_args.cfg.npo_beta": 0.2610447815912111
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.16731083305785432,
+        "params": {
+          "args.learning_rate": 3.7765985754446656,
+          "method_args.cfg.lora_lr": 0.3186928756242063,
+          "method_args.cfg.npo_beta": 0.15749533438597757
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.19146765710320324,
+        "params": {
+          "args.learning_rate": 3.8895931317416856,
+          "method_args.cfg.lora_lr": 0.2169129378317185,
+          "method_args.cfg.npo_beta": 0.15907913187843808
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.17702011880464852,
+        "params": {
+          "args.learning_rate": 4.948113060238024,
+          "method_args.cfg.lora_lr": 0.29666451411844197,
+          "method_args.cfg.npo_beta": 0.13615423142461222
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.15692309106816538,
+        "params": {
+          "args.learning_rate": 3.644276202547594,
+          "method_args.cfg.lora_lr": 0.21207557380013004,
+          "method_args.cfg.npo_beta": 0.17428788242366974
+        }
+      }
+    ]
+  },
+  "RepSelectSimple_forget_no_lora": {
+    "optimal_hyperparameters": {
+      "args.learning_rate": 8.267847138940915,
+      "method_args.lora_lr": 44.728963954782216
+    },
+    "scores": [
+      0.19297036132775247,
+      0.19150324683869258,
+      0.1952755523379892,
+      0.19411380478413776,
+      0.21061853785067797,
+      0.19210773915983737,
+      0.1912617355119437,
+      0.20979158504633233,
+      0.2103185550076887,
+      0.19343701313482597,
+      0.20327593880938366,
+      0.19181234878487885,
+      0.20579672849271446,
+      0.19580999808385968,
+      0.1950045021949336,
+      0.20052739238599315,
+      0.20243428781395778,
+      0.2082773291040212,
+      0.19211902766255662,
+      0.19615691539365798,
+      0.1932968546752818,
+      0.19100075267488137,
+      0.19164604472462088,
+      0.1976710640010424,
+      0.1928712282096967,
+      0.19286154152359813,
+      0.1966480200062506,
+      0.1938964735600166,
+      0.1991237280308269,
+      0.19104337797034532
+    ],
+    "trials": [
+      {
+        "trial": 0,
+        "value": 0.19297036132775247,
+        "params": {
+          "args.learning_rate": 6.2603269074997305,
+          "method_args.lora_lr": 13.469415096427044
+        }
+      },
+      {
+        "trial": 1,
+        "value": 0.19150324683869258,
+        "params": {
+          "args.learning_rate": 8.02595566679381,
+          "method_args.lora_lr": 6.148035553662852
+        }
+      },
+      {
+        "trial": 2,
+        "value": 0.1952755523379892,
+        "params": {
+          "args.learning_rate": 3.5178685143610724,
+          "method_args.lora_lr": 9.789448600606496
+        }
+      },
+      {
+        "trial": 3,
+        "value": 0.19411380478413776,
+        "params": {
+          "args.learning_rate": 3.7509772218100585,
+          "method_args.lora_lr": 30.374980367128448
+        }
+      },
+      {
+        "trial": 4,
+        "value": 0.21061853785067797,
+        "params": {
+          "args.learning_rate": 42.29563264024683,
+          "method_args.lora_lr": 2.9231630608217056
+        }
+      },
+      {
+        "trial": 5,
+        "value": 0.19210773915983737,
+        "params": {
+          "args.learning_rate": 19.16108425246392,
+          "method_args.lora_lr": 5.711627077804183
+        }
+      },
+      {
+        "trial": 6,
+        "value": 0.1912617355119437,
+        "params": {
+          "args.learning_rate": 6.840047639863456,
+          "method_args.lora_lr": 35.494681287029486
+        }
+      },
+      {
+        "trial": 7,
+        "value": 0.20979158504633233,
+        "params": {
+          "args.learning_rate": 0.693493062267866,
+          "method_args.lora_lr": 0.7468417772099227
+        }
+      },
+      {
+        "trial": 8,
+        "value": 0.2103185550076887,
+        "params": {
+          "args.learning_rate": 0.5487907709690079,
+          "method_args.lora_lr": 23.13181420737792
+        }
+      },
+      {
+        "trial": 9,
+        "value": 0.19343701313482597,
+        "params": {
+          "args.learning_rate": 18.00045596455803,
+          "method_args.lora_lr": 27.478580932058065
+        }
+      },
+      {
+        "trial": 10,
+        "value": 0.20327593880938366,
+        "params": {
+          "args.learning_rate": 2.142383081836741,
+          "method_args.lora_lr": 1.900891718235863
+        }
+      },
+      {
+        "trial": 11,
+        "value": 0.19181234878487885,
+        "params": {
+          "args.learning_rate": 9.817657952561738,
+          "method_args.lora_lr": 41.67652659533773
+        }
+      },
+      {
+        "trial": 12,
+        "value": 0.20579672849271446,
+        "params": {
+          "args.learning_rate": 1.667755167572657,
+          "method_args.lora_lr": 0.5662603582311231
+        }
+      },
+      {
+        "trial": 13,
+        "value": 0.19580999808385968,
+        "params": {
+          "args.learning_rate": 10.579913746422388,
+          "method_args.lora_lr": 9.13931166076864
+        }
+      },
+      {
+        "trial": 14,
+        "value": 0.1950045021949336,
+        "params": {
+          "args.learning_rate": 8.301411887858029,
+          "method_args.lora_lr": 1.675014781686451
+        }
+      },
+      {
+        "trial": 15,
+        "value": 0.20052739238599315,
+        "params": {
+          "args.learning_rate": 22.537549260321217,
+          "method_args.lora_lr": 4.5793609630360095
+        }
+      },
+      {
+        "trial": 16,
+        "value": 0.20243428781395778,
+        "params": {
+          "args.learning_rate": 2.329397887502365,
+          "method_args.lora_lr": 12.4948589681343
+        }
+      },
+      {
+        "trial": 17,
+        "value": 0.2082773291040212,
+        "params": {
+          "args.learning_rate": 1.0927805691529489,
+          "method_args.lora_lr": 47.19715068262448
+        }
+      },
+      {
+        "trial": 18,
+        "value": 0.19211902766255662,
+        "params": {
+          "args.learning_rate": 5.03130597410968,
+          "method_args.lora_lr": 1.171213806769958
+        }
+      },
+      {
+        "trial": 19,
+        "value": 0.19615691539365798,
+        "params": {
+          "args.learning_rate": 30.65345983664065,
+          "method_args.lora_lr": 5.247366242047401
+        }
+      },
+      {
+        "trial": 20,
+        "value": 0.1932968546752818,
+        "params": {
+          "args.learning_rate": 12.192319907399876,
+          "method_args.lora_lr": 19.355159657641178
+        }
+      },
+      {
+        "trial": 21,
+        "value": 0.19100075267488137,
+        "params": {
+          "args.learning_rate": 8.267847138940915,
+          "method_args.lora_lr": 44.728963954782216
+        }
+      },
+      {
+        "trial": 22,
+        "value": 0.19164604472462088,
+        "params": {
+          "args.learning_rate": 6.752362558773657,
+          "method_args.lora_lr": 16.43676324346412
+        }
+      },
+      {
+        "trial": 23,
+        "value": 0.1976710640010424,
+        "params": {
+          "args.learning_rate": 14.008614814864586,
+          "method_args.lora_lr": 35.678614695313144
+        }
+      },
+      {
+        "trial": 24,
+        "value": 0.1928712282096967,
+        "params": {
+          "args.learning_rate": 3.9992358255290186,
+          "method_args.lora_lr": 49.748308106555655
+        }
+      },
+      {
+        "trial": 25,
+        "value": 0.19286154152359813,
+        "params": {
+          "args.learning_rate": 6.3534586766239665,
+          "method_args.lora_lr": 6.8716447568127546
+        }
+      },
+      {
+        "trial": 26,
+        "value": 0.1966480200062506,
+        "params": {
+          "args.learning_rate": 14.987632615527303,
+          "method_args.lora_lr": 2.978646682216915
+        }
+      },
+      {
+        "trial": 27,
+        "value": 0.1938964735600166,
+        "params": {
+          "args.learning_rate": 8.859499076841347,
+          "method_args.lora_lr": 25.407835588082968
+        }
+      },
+      {
+        "trial": 28,
+        "value": 0.1991237280308269,
+        "params": {
+          "args.learning_rate": 2.844676683907136,
+          "method_args.lora_lr": 19.156821302956494
+        }
+      },
+      {
+        "trial": 29,
+        "value": 0.19104337797034532,
+        "params": {
+          "args.learning_rate": 5.292267602573048,
+          "method_args.lora_lr": 13.926131759241024
+        }
+      }
+    ]
+  }
+}
