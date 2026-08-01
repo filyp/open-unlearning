@@ -44,11 +44,11 @@ PRE_ATTACK = False  # plot epoch-0 (pre-attack) probs instead of max over the at
 SHOW_MIXED = False  # include "r. act, f. grad" row in the AA benchmark
 SHOW_FR = False  # include the "f+r" (forget_and_retain SVD) rows
 
+# Same rows as the main 3x5 grid (gemma dropped).
 MODELS = [
     ("Llama-3.1-8B", "Llama-3.1-8B"),
-    ("Gemma-4-E4B", "gemma-4-E4B"),
-    ("DeepSeek-V2-Lite", "DeepSeek-V2-Lite"),
     ("Qwen3.5-9B", "Qwen3.5-9B"),
+    ("DeepSeek-V2-Lite", "DeepSeek-V2-Lite"),
 ]
 
 # (exp_name_in_task, display, reference_benchmark_tag, metric)
@@ -148,9 +148,10 @@ if missing:
 # %%
 # === CELL 2: plot ===
 
-nrows = len(BENCHMARKS)
-ncols = len(MODELS)
-fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.35 * nrows))
+# 3x5 layout like the main grid: rows = models, columns = benchmarks.
+nrows = len(MODELS)
+ncols = len(BENCHMARKS)
+fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.0 + 1.35 * nrows))
 if nrows == 1:
     axes = [axes]
 if ncols == 1:
@@ -168,14 +169,14 @@ def style_for(suffix):
     hatch = {"forget": "", "retain": "///", "forget_and_retain": "xx"}[dist]
     return collapse_color[coll], hatch
 
-for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARKS):
-    configs = BENCH_CONFIGS[exp_name]
-    bar_colors = [style_for(s)[0] for _, s in configs]
-    bar_hatches = [style_for(s)[1] for _, s in configs]
-    # Top-to-bottom: first config is on top.
-    y_positions = list(range(len(configs) - 1, -1, -1))
+for row_idx, (model_display, model_field) in enumerate(MODELS):
+    for col_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARKS):
+        configs = BENCH_CONFIGS[exp_name]
+        bar_colors = [style_for(s)[0] for _, s in configs]
+        bar_hatches = [style_for(s)[1] for _, s in configs]
+        # Top-to-bottom: first config is on top.
+        y_positions = list(range(len(configs) - 1, -1, -1))
 
-    for col_idx, (model_display, model_field) in enumerate(MODELS):
         ax = axes[row_idx][col_idx]
         # the pre-attack plot anchors at the base model's own epoch-0 prob
         _tag = f"{bench_tag}_initial" if PRE_ATTACK else bench_tag
@@ -184,6 +185,7 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
 
         maxes = []
         initials = []
+        n_found = 0
         for _, suffix in configs:
             t = task_name(exp_name, model_field, suffix)
             hist = cache.get(t)
@@ -199,6 +201,19 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
                 continue
             maxes.append(head.max() * 100)
             initials.append(head.iloc[0] * 100)
+            n_found += 1
+
+        # Blank panel for cells with no runs yet
+        if n_found == 0:
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            if row_idx == 0:
+                ax.set_title(bench_display)
+            if col_idx == 0:
+                ax.set_ylabel(model_display)
+            continue
 
         values = initials if PRE_ATTACK else maxes
         widths = [v - baseline for v in values]
@@ -224,9 +239,9 @@ for row_idx, (exp_name, bench_display, bench_tag, metric) in enumerate(BENCHMARK
                 patch.set_edgecolor("white")
 
         if row_idx == 0:
-            ax.set_title(model_display)
+            ax.set_title(bench_display)
         if col_idx == 0:
-            ax.set_ylabel(bench_display)
+            ax.set_ylabel(model_display)
 
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
