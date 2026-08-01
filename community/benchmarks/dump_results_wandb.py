@@ -45,7 +45,7 @@ BENCHMARKS = [
     # (subdir, results_dir, dataset, legacy_v, new_v, metric, models)
     ("wmdp_low_mi", "results_bio", "bio", "v5", "v5.3", "train/recall_prob", ALL_MODELS),
     ("wmdp_low_mi", "results_cyber", "cyber", "v5.3", "v5.3", "train/recall_prob", REDUCED_MODELS),
-    ("rwku", "results", "rwku", "v1", "v1", "train/recall_cloze_prob", REDUCED_MODELS),
+    ("rwku", "results", "rwku", "v1", "v1", "train/recall_cloze_prob", REDUCED_MODELS + ["DeepSeek-V2-Lite"]),
     ("sycophancy", "results", "sycophancy", "v1", "v1", "train/recall_prob", REDUCED_MODELS),
     ("beavertails", "results", "animal_abuse", "v7", "v7.3", "train/holdout_harmful_prob", ALL_MODELS),
 ]
