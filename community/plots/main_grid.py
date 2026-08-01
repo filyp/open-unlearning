@@ -131,6 +131,19 @@ def plot_grid(
 
         for col_idx, (method_stats, baseline) in enumerate(row):
             ax = axes[row_idx][col_idx]
+
+            # Blank panel for cells with no results yet
+            if not method_stats:
+                ax.set_xticks([])
+                ax.set_yticks([])
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
+                if row_idx == 0 and col_titles:
+                    ax.set_title(col_titles[col_idx])
+                if col_idx == 0 and row_titles:
+                    ax.set_ylabel(row_titles[row_idx])
+                continue
+
             baseline_pct = baseline * 100
             means = [
                 method_stats[m][0] * 100 if m in method_stats else baseline_pct

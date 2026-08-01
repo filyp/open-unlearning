@@ -1,5 +1,6 @@
 # %%
-# 2x5 grid: rows = Llama + Qwen, columns = all 5 datasets.
+# 3x5 grid: rows = Llama + Qwen + DeepSeek, columns = all 5 datasets.
+# Cells without dumped results yet (e.g. DeepSeek on cyber/rwku/sycophancy) render blank.
 # Trial scores come from the per-model jsons written by dump_results_wandb.py.
 from typing import Dict, List, Tuple
 
@@ -9,7 +10,7 @@ from scipy import stats
 
 from main_grid import baselines, load_trial_scores, plot_grid, titles_dict
 
-MODELS = ["Llama-3.1-8B", "Qwen3.5-9B"]
+MODELS = ["Llama-3.1-8B", "Qwen3.5-9B", "DeepSeek-V2-Lite"]
 
 # (subdir, results_dir, dataset_key, display_name)
 DATASETS = [
@@ -39,13 +40,15 @@ def get_stats(
             continue  # not run on this reduced grid; plot_grid renders an empty bar
         top = sorted(by_model[model])[:top_n]
         method_stats[method] = (np.mean(top), stats.sem(top), np.std(top))
+    if not method_stats:
+        return {}, None  # nothing dumped yet; plot_grid renders a blank panel
     return method_stats, baselines[dataset][model]
 
 
 # %%
 
 if __name__ == "__main__":
-    height = 1.0 + 0.9 * len(MODELS)
+    height = 1.0 + 1.1 * len(MODELS)
     fig = plot_grid(
         rows=[
             [get_stats(model, dataset) for _, _, dataset, _ in DATASETS]
@@ -54,7 +57,7 @@ if __name__ == "__main__":
         col_titles=[display for _, _, _, display in DATASETS],
         row_titles=MODELS,
         figsize=(5.5, height),
-        save_path="2_5_grid.pdf",
+        save_path="3_5_grid.pdf",
     )
 
     plt.show()
