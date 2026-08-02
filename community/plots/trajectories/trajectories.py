@@ -63,6 +63,10 @@ for key, value in titles_dict.items():
 # SELECT_BY = "unlearn"
 SELECT_BY = "relearn"
 
+# True -> 3.03in-wide version sized for a single column ({model}_column.*),
+# False -> original 5.5in-wide version (full-width appendix use)
+COLUMN_WIDTH = True
+
 TOP_N = 10
 REL_STEPS = 5
 UNL_PROJECT = "filyp/selective-unlearning"
@@ -256,8 +260,10 @@ benchmark_display = {"bio": "WMDP-Bio", "animal_abuse": "Animal Abuse"}
 for model in MODELS:
     nrows = len(BENCHMARKS)
     fig, axes = plt.subplots(
-        nrows, 2, figsize=(5.5, 1.6 * nrows),
-        sharey="row", gridspec_kw={"wspace": 0.08, "hspace": 0.4},
+        nrows, 2,
+        figsize=(3.03, 0.9 * nrows) if COLUMN_WIDTH else (5.5, 1.6 * nrows),
+        sharey="row", 
+        gridspec_kw={"wspace": 0.15, "hspace": 0.5} if COLUMN_WIDTH else {"wspace": 0.08, "hspace": 0.5},
     )
     if nrows == 1:
         axes = [axes]
@@ -357,17 +363,21 @@ for model in MODELS:
         handles,
         labels,
         loc="lower center",
-        ncol=4,
-        bbox_to_anchor=(0.5, -0.15),
+        ncol=2 if COLUMN_WIDTH else 4,
+        bbox_to_anchor=(0.5, -0.45) if COLUMN_WIDTH else (0.5, -0.15),
         frameon=False,
     )
 
     plt.tight_layout(rect=[0.04, 0.04, 1, 1])
-    fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
+    if COLUMN_WIDTH:
+        fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=-0.02, y=0.36)
+    else:
+        fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
 
-    save_path = OUT_DIR / f"{model}.pdf"
+    suffix = "_column" if COLUMN_WIDTH else ""
+    save_path = OUT_DIR / f"{model}{suffix}.pdf"
     fig.savefig(save_path, bbox_inches="tight")
-    save_path_png = OUT_DIR_PNG / f"{model}.png"
+    save_path_png = OUT_DIR_PNG / f"{model}{suffix}.png"
     fig.savefig(save_path_png, bbox_inches="tight", dpi=200)
     print(f"  saved {save_path} and {save_path_png}")
     plt.close(fig)
