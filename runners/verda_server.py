@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-default_repo = "https://github.com/filyp/open-unlearning.git"
+default_repo = "https://github.com/anonymous/open-unlearning.git"
 
 load_dotenv("/secrets/.env")
 

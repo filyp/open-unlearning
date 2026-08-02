@@ -6,7 +6,7 @@ Measures disruption via cosine similarity of weight gradients.
 Visualizes per-token activations and gradients at a gate_proj module.
 
 Ported from Filip's script at:
-  https://github.com/filyp/unlearning/blob/main/src/plotting/1_capitals.py
+  https://github.com/anonymous/unlearning/blob/main/src/plotting/1_capitals.py
 
 Usage:
     python scripts/capitals_disruption.py

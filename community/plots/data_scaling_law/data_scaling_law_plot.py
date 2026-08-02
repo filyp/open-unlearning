@@ -17,8 +17,8 @@ plt.rcParams["axes.titlesize"] = 10
 SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "data_scaling_law.pkl"
 
-UNL_PROJECT = "filyp/selective-unlearning"
-REL_PROJECT = "filyp/rel-selective-unlearning"
+UNL_PROJECT = "anonymous/selective-unlearning"
+REL_PROJECT = "anonymous/rel-selective-unlearning"
 
 # (range_size, color) — rainbow by range size
 RANGES = [

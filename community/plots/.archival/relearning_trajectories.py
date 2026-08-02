@@ -15,8 +15,8 @@ plt.style.use("default")
 # === CELL 1: Load runs from wandb ===
 
 api = wandb.Api(timeout=3600)
-unlearn_project_name = "filyp/open-unlearning"
-relearn_project_name = "filyp/rel-open-unlearning"
+unlearn_project_name = "anonymous/open-unlearning"
+relearn_project_name = "anonymous/rel-open-unlearning"
 
 # %%
 method_names = [

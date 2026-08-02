@@ -7,8 +7,7 @@ with open("requirements.txt") as f:
 setup(
     name="open-unlearning",
     version="0.1.0",
-    author="Vineeth Dorna, Anmol Mekala",
-    author_email="vineethdorna@gmail.com, m.anmolreddy@gmail.com",
+    author="Anonymous",
     description="A library for machine unlearning in LLMs.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

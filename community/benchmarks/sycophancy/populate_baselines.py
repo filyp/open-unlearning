@@ -11,7 +11,7 @@ import wandb
 
 load_dotenv(Path(__file__).parents[2].parent / ".env")
 
-REL_PROJECT = "filyp/rel-selective-unlearning"
+REL_PROJECT = "anonymous/rel-selective-unlearning"
 REL_STEPS = 11  # all relearn eval points (epochs 0-10), like the optuna objective
 # "sycophancy" (sycophantic-response prob) is the robustness metric used by the
 # plots; "sycophancy_normal" is the normal-response probe, populated for reference

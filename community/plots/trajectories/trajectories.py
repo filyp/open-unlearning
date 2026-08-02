@@ -65,8 +65,8 @@ SELECT_BY = "relearn"
 
 TOP_N = 10
 REL_STEPS = 5
-UNL_PROJECT = "filyp/selective-unlearning"
-REL_PROJECT = "filyp/rel-selective-unlearning"
+UNL_PROJECT = "anonymous/selective-unlearning"
+REL_PROJECT = "anonymous/rel-selective-unlearning"
 DISR_METRIC = "train/wikitext_kl"
 DISR_THRESHOLD = 0.01
 N_TRIALS = 30

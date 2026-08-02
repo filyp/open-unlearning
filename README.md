@@ -2,11 +2,8 @@
 
 # RepSelect: Robust LLM Unlearning via Representation Selectivity
 
-**Filip Sondej**<sup>\*</sup> (Independent) &nbsp;·&nbsp; **Yushi Yang**<sup>\*</sup> (University of Oxford) &nbsp;·&nbsp; **Adam Mahdi** (University of Oxford)
+*Anonymous code release for double-blind review.*
 
-<sub><sup>\*</sup>Equal contribution, author order alphabetical.</sub>
-
-[![Paper](https://img.shields.io/badge/arXiv-2606.17168-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2606.17168)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![Built on OpenUnlearning](https://img.shields.io/badge/built%20on-OpenUnlearning-informational)](https://github.com/locuslab/open-unlearning)
 
@@ -82,9 +79,6 @@ python setup_data.py --eval
 > kernel (`pip install causal_conv1d`). Without it, Qwen 3.5 falls back to a pure-PyTorch
 > implementation that can OOM even on an 80 GB GPU.
 
-A [Docker image](https://hub.docker.com/r/filyp/open-unlearning) with the environment preinstalled
-is also available.
-
 ---
 
 ## 🔬 Reproducing the paper
@@ -133,24 +127,9 @@ the upstream OpenUnlearning docs under [`docs/`](docs/).
 
 ---
 
-## 📝 Citing this work
-
-```bibtex
-@misc{sondej2026repselect,
-  title     = {{RepSelect}: Robust {LLM} Unlearning via Representation Selectivity},
-  author    = {Sondej, Filip and Yang, Yushi and Mahdi, Adam},
-  year      = {2026},
-  publisher = {arXiv},
-  doi       = {10.48550/arXiv.2606.17168},
-  url       = {https://arxiv.org/abs/2606.17168},
-}
-```
-
----
-
 ## 🤝 Built on OpenUnlearning
 
-This repository is a fork of and built on top of
+This repository is built on top of
 [**OpenUnlearning**](https://github.com/locuslab/open-unlearning), an easily extensible framework
 unifying LLM unlearning benchmarks and methods. RepSelect reuses its benchmark harness, baseline
 implementations, and evaluation pipeline. We are grateful to its authors and maintainers.

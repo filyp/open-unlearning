@@ -15,7 +15,7 @@ plt.rcParams["axes.titlesize"] = 10
 SCRIPT_DIR = Path(__file__).parent
 CACHE_FILE = SCRIPT_DIR / "hard_vs_soft_collapse.pkl"
 
-REL_PROJECT = "filyp/rel-selective-unlearning"
+REL_PROJECT = "anonymous/rel-selective-unlearning"
 REL_STEPS = 10
 
 # (display, field)

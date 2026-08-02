@@ -25,8 +25,8 @@ import wandb
 
 load_dotenv(Path(__file__).parents[2] / ".env")
 
-UNL_PROJECT = "filyp/selective-unlearning"
-REL_PROJECT = "filyp/rel-selective-unlearning"
+UNL_PROJECT = "anonymous/selective-unlearning"
+REL_PROJECT = "anonymous/rel-selective-unlearning"
 N_TRIALS = 30
 
 ALL_MODELS = ["Llama-3.1-8B", "gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"]

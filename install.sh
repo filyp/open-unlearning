@@ -1,4 +1,4 @@
-# git clone https://github.com/filyp/open-unlearning.git && cd open-unlearning && bash install.sh
+# git clone https://github.com/anonymous/open-unlearning.git && cd open-unlearning && bash install.sh
 apt install python3-pip python3-venv -y
 python3 -m venv .venv
 source .venv/bin/activate
