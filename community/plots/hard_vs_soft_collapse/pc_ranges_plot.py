@@ -32,8 +32,12 @@ RANGES = [(0, 4), (4, 16), (16, 64), (64, 256), (256, 1024)]
 TAIL_LABEL = "1024-"
 TAIL_TASK_TEMPLATE = "hardvssoft_{exp}_{model}_1024_hard{suffix}"
 
+SHOW_RETAIN = True  # False -> forget-only pc_ranges_without_retain.pdf
+
 # (label, suffix, linestyle)
-DISTRIBUTIONS = [("forget", "", "-"), ("retain", "_retain", "--")]
+DISTRIBUTIONS = [("forget", "", "-")]
+if SHOW_RETAIN:
+    DISTRIBUTIONS += [("retain", "_retain", "--")]
 
 # (exp_name_in_task, display, metric)
 BENCHMARKS = [
@@ -98,8 +102,8 @@ if missing:
 # %%
 # === CELL 2: plot ===
 
-nrows = len(BENCHMARKS)
-ncols = len(MODELS)
+nrows = len(MODELS)
+ncols = len(BENCHMARKS)
 fig, axes = plt.subplots(nrows, ncols, figsize=(5.5, 1.8 * nrows))
 if nrows == 1:
     axes = [axes]
@@ -107,8 +111,8 @@ if nrows == 1:
 range_labels = [f"{lo}-{hi}" for lo, hi in RANGES] + [TAIL_LABEL]
 xs = list(range(len(range_labels)))
 
-for row_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
-    for col_idx, (model_display, model_field) in enumerate(MODELS):
+for row_idx, (model_display, model_field) in enumerate(MODELS):
+    for col_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
         ax = axes[row_idx][col_idx]
         for dist_label, suffix, linestyle in DISTRIBUTIONS:
             task_names = [
@@ -130,20 +134,28 @@ for row_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
                 plot_xs.append(x)
                 max_ys.append(head.max() * 100)
                 init_ys.append(head.iloc[0] * 100)
+            dist_suffix = f" ({dist_label})" if SHOW_RETAIN else ""
             ax.plot(
                 plot_xs, init_ys, color="tab:blue", linestyle=linestyle,
-                label=f"initial pre-attack ({dist_label})",
+                label=f"initial pre-attack{dist_suffix}",
             )
             ax.plot(
                 plot_xs, max_ys, color="tab:orange", linestyle=linestyle,
-                label=f"post-attack max ({dist_label})",
+                label=f"post-attack max{dist_suffix}",
             )
+            if not SHOW_RETAIN:
+                # grey arrows from pre-attack up to post-attack, signifying relearning
+                for x, y0, y1 in zip(plot_xs, init_ys, max_ys):
+                    ax.annotate(
+                        "", xy=(x, y1), xytext=(x, y0),
+                        arrowprops=dict(arrowstyle="->", color="gray", lw=0.7),
+                    )
 
         ax.set_xticks(xs)
         ax.set_xticklabels(range_labels, rotation=45)
 
         if row_idx == 0:
-            ax.set_title(model_display)
+            ax.set_title(bench_display)
         if row_idx == nrows - 1:
             ax.set_xlabel("PC range")
         else:
@@ -151,20 +163,20 @@ for row_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
 
         if col_idx == ncols - 1:
             ax.text(
-                1.03, 0.5, bench_display,
+                1.03, 0.5, model_display,
                 transform=ax.transAxes, rotation=-90, ha="left", va="center",
             )
 
 handles, labels = axes[0][0].get_legend_handles_labels()
 fig.legend(
-    handles, labels, loc="lower center", ncol=len(DISTRIBUTIONS),
-    bbox_to_anchor=(0.5, -0.09), frameon=False,
+    handles, labels, loc="lower center", ncol=2,
+    bbox_to_anchor=(0.5, -0.04), frameon=False,
 )
 
 plt.tight_layout(rect=[0.04, 0.04, 1, 1])
-fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
+fig.supylabel("Answer Probability (%) ↓", fontsize=10, x=0.03)
 
-save_path = SCRIPT_DIR / "pc_ranges.pdf"
+save_path = SCRIPT_DIR / ("pc_ranges.pdf" if SHOW_RETAIN else "pc_ranges_without_retain.pdf")
 fig.savefig(save_path, bbox_inches="tight")
 print(f"Saved plot to {save_path}")
 plt.show()

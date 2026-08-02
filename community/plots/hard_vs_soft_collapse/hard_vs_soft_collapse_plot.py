@@ -24,7 +24,8 @@ MODELS = [
     ("Qwen3.5-9B", "Qwen3.5-9B"),
 ]
 N_PCS = [4, 8, 16, 32, 64, 128, 256, 512, 1024]
-HARD_SOFT = ["soft", "hard"]
+SHOW_HARD = True  # False -> soft-only soft_collapse.pdf (orange, no "soft" in labels)
+HARD_SOFT = ["soft", "hard"] if SHOW_HARD else ["soft"]
 DISTRIBUTIONS = [("forget", "", "-"), ("retain", "_retain", "--")]  # (label, suffix, linestyle)
 
 # (exp_name_in_task, display, metric)
@@ -93,6 +94,8 @@ if nrows == 1:
     axes = [axes]
 
 hs_color = {"soft": "tab:blue", "hard": "tab:orange"}
+if not SHOW_HARD:
+    hs_color["soft"] = "tab:orange"
 
 for row_idx, (model_display, model_field) in enumerate(MODELS):
     for col_idx, (exp, bench_display, metric) in enumerate(BENCHMARKS):
@@ -115,7 +118,7 @@ for row_idx, (model_display, model_field) in enumerate(MODELS):
                 ax.plot(
                     xs, ys,
                     color=hs_color[hs], linestyle=linestyle,
-                    label=f"{hs} ({dist_label})",
+                    label=f"{hs} ({dist_label})" if SHOW_HARD else f"{dist_label} SVD",
                 )
 
         ax.set_xscale("log")
@@ -146,7 +149,7 @@ fig.legend(
 plt.tight_layout(rect=[0.04, 0.04, 1, 1])
 fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
 
-save_path = SCRIPT_DIR / "hard_vs_soft_collapse.pdf"
+save_path = SCRIPT_DIR / ("hard_vs_soft_collapse.pdf" if SHOW_HARD else "soft_collapse.pdf")
 fig.savefig(save_path, bbox_inches="tight")
 print(f"Saved plot to {save_path}")
 plt.show()
