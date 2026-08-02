@@ -30,7 +30,7 @@ REL_PROJECT = "filyp/rel-selective-unlearning"
 N_TRIALS = 30
 
 ALL_MODELS = ["Llama-3.1-8B", "gemma-4-E4B", "DeepSeek-V2-Lite", "Qwen3.5-9B"]
-REDUCED_MODELS = ["Llama-3.1-8B", "Qwen3.5-9B"]
+REDUCED_MODELS = ["Llama-3.1-8B", "Qwen3.5-9B", "DeepSeek-V2-Lite"]
 
 # Older "legacy" methods: on bio and animal_abuse, Llama uses the bare legacy
 # version prefix; everything else uses the new one.
@@ -45,7 +45,7 @@ BENCHMARKS = [
     # (subdir, results_dir, dataset, legacy_v, new_v, metric, models)
     ("wmdp_low_mi", "results_bio", "bio", "v5", "v5.3", "train/recall_prob", ALL_MODELS),
     ("wmdp_low_mi", "results_cyber", "cyber", "v5.3", "v5.3", "train/recall_prob", REDUCED_MODELS),
-    ("rwku", "results", "rwku", "v1", "v1", "train/recall_cloze_prob", REDUCED_MODELS + ["DeepSeek-V2-Lite"]),
+    ("rwku", "results", "rwku", "v1", "v1", "train/recall_cloze_prob", REDUCED_MODELS),
     ("sycophancy", "results", "sycophancy", "v1", "v1", "train/recall_prob", REDUCED_MODELS),
     ("beavertails", "results", "animal_abuse", "v7", "v7.3", "train/holdout_harmful_prob", ALL_MODELS),
 ]
