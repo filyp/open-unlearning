@@ -6,8 +6,7 @@
 
 <sub><sup>\*</sup>Equal contribution, author order alphabetical.</sub>
 
-<!-- TODO: replace with the real arXiv link once posted -->
-[![Paper](https://img.shields.io/badge/arXiv-coming%20soon-b31b1b?logo=arxiv&logoColor=white)](#-citing-this-work)
+[![Paper](https://img.shields.io/badge/arXiv-2606.17168-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2606.17168)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![Built on OpenUnlearning](https://img.shields.io/badge/built%20on-OpenUnlearning-informational)](https://github.com/locuslab/open-unlearning)
 
@@ -32,9 +31,11 @@ representations, so the method can target them more effectively.
 
 ### Key results
 
-- Evaluated on two harm categories — **biohazardous knowledge (WMDP)** and **abusive tendencies
-  (BeaverTails)** — across **four model families** spanning dense and Mixture-of-Experts
-  architectures: **Llama 3, Qwen 3.5, Gemma 4 E4B, DeepSeek V2 Lite**.
+- Evaluated on five datasets spanning both **knowledge unlearning** — **WMDP-Bio**, **WMDP-Cyber**,
+  and **RWKU** (real-world knowledge about famous people) — and **tendency unlearning** —
+  **BeaverTails animal abuse** and **sycophancy**.
+- Covers **three model families** spanning dense and Mixture-of-Experts architectures:
+  **Llama 3.1 8B, Qwen 3.5 9B, DeepSeek V2 Lite**.
 - Compared to five popular baselines (**GradDiff, NPO, SimNPO, RMU, UNDIAL**), RepSelect reduces
   **post-relearning answer probability 4–50× more**, and achieves **near-perfect robustness to
   few-shot attacks**, while retaining matched general capability.
@@ -51,10 +52,10 @@ documentation). RepSelect is implemented as a trainer within that framework.
 
 | Component | Path |
 |-----------|------|
-| Method implementation | [`src/trainer/unlearn/repselect/`](src/trainer/unlearn/repselect/) (entry: [`repselect_trainer.py`](src/trainer/unlearn/repselect/repselect_trainer.py)) |
-| Trainer configs | [`configs/trainer/RepSelect.yaml`](configs/trainer/RepSelect.yaml), [`configs/trainer/RepSelectCohen.yaml`](configs/trainer/RepSelectCohen.yaml) |
-| Hyperparameter sweeps | [`configs/hydra/sweeper/RepSelect*.yaml`](configs/hydra/sweeper/) |
-| Paper experiment scripts | [`community/benchmarks/wmdp_low_mi/run.sh`](community/benchmarks/wmdp_low_mi/run.sh), [`community/benchmarks/beavertails/run.sh`](community/benchmarks/beavertails/run.sh) |
+| Method implementation | [`src/trainer/unlearn/repselect_simple.py`](src/trainer/unlearn/repselect_simple.py) (multi-epoch variant: [`src/trainer/unlearn/repselect/`](src/trainer/unlearn/repselect/)) |
+| Trainer configs | [`configs/trainer/RepSelectSimple.yaml`](configs/trainer/RepSelectSimple.yaml) (multi-epoch: [`configs/trainer/RepSelect.yaml`](configs/trainer/RepSelect.yaml)) |
+| Hyperparameter sweeps | [`configs/hydra/sweeper/RepSelectSimple.yaml`](configs/hydra/sweeper/RepSelectSimple.yaml), [`RepSelectSimpleMoE.yaml`](configs/hydra/sweeper/RepSelectSimpleMoE.yaml) (for MoE models) |
+| Paper experiment scripts | [`community/benchmarks/{wmdp_low_mi,beavertails,rwku,sycophancy}/run2.sh`](community/benchmarks/) |
 | Unlearn + relearn driver | [`src/unlearn_relearn.py`](src/unlearn_relearn.py) |
 | Few-shot / MMLU eval runners | [`scripts/runs/`](scripts/runs/) |
 | Representation analysis (PCA, subspace attacks, plots) | [`scripts/interpretability/`](scripts/interpretability/) |
@@ -89,28 +90,39 @@ is also available.
 ## 🔬 Reproducing the paper
 
 The full set of runs (RepSelect, all baselines, and ablations) for each benchmark is scripted in
-the `community/benchmarks/*/run.sh` files. To reproduce a benchmark end to end:
+the `community/benchmarks/*/run2.sh` files. Each script takes the model name as its argument:
 
 ```bash
-# WMDP (biohazardous knowledge)
-bash community/benchmarks/wmdp_low_mi/run.sh
+# WMDP (biohazardous / cybersecurity knowledge; edit wmdp_domain in the script for bio vs cyber)
+bash community/benchmarks/wmdp_low_mi/run2.sh Llama-3.1-8B
+
+# RWKU (real-world knowledge)
+bash community/benchmarks/rwku/run2.sh Llama-3.1-8B
 
 # BeaverTails (abusive tendencies)
-bash community/benchmarks/beavertails/run.sh
+bash community/benchmarks/beavertails/run2.sh Llama-3.1-8B
+
+# Sycophancy
+bash community/benchmarks/sycophancy/run2.sh Llama-3.1-8B
 ```
+
+Supported models: `Llama-3.1-8B`, `Qwen3.5-9B`, `DeepSeek-V2-Lite`. The scripts dispatch each run
+through a `run()` wrapper (by default a remote GPU runner); edit it to run locally or on your own
+infrastructure.
 
 To run **just RepSelect** on a single setting (this is the main command from those scripts):
 
 ```bash
 python src/unlearn_relearn.py --config-name=unlearn.yaml --multirun \
   experiment=unlearn/wmdp_low_mi/default \
-  model=Qwen2.5-3B wmdp_domain=bio \
-  trainer=RepSelect hydra/sweeper=RepSelect \
+  model=Llama-3.1-8B wmdp_domain=bio \
+  trainer=RepSelectSimple hydra/sweeper=RepSelectSimple \
   task_name=demo_RepSelect
 ```
 
-- `trainer=RepSelect` — loads [`configs/trainer/RepSelect.yaml`](configs/trainer/RepSelect.yaml), whose `handler` resolves to the `RepSelect` trainer in [`src/trainer/unlearn/repselect/repselect_trainer.py`](src/trainer/unlearn/repselect/repselect_trainer.py).
-- `hydra/sweeper=RepSelect` — the LR / hyperparameter sweep used in the paper. Ablation sweeps are `RepSelect_wide`, `RepSelect_no_lora`, `RepSelect_no_retain`, `RepSelect_no_pcs`, `RepSelect_highdisr`.
+- `trainer=RepSelectSimple` — loads [`configs/trainer/RepSelectSimple.yaml`](configs/trainer/RepSelectSimple.yaml), whose `handler` resolves to the trainer in [`src/trainer/unlearn/repselect_simple.py`](src/trainer/unlearn/repselect_simple.py).
+- `hydra/sweeper=RepSelectSimple` — the hyperparameter sweep used in the paper (`RepSelectSimpleMoE` for MoE models).
+- Ablations are flags on the same trainer: `trainer.method_args.use_lora=false` (no LoRA adversary), `trainer.method_args.distribution=retain|none` (collapse retain PCs / no collapse).
 - `src/unlearn_relearn.py` — unlearns, then runs the relearning (fine-tuning) attack to measure robustness.
 
 Swap `trainer=` for `GradDiff | NPO | SimNPO | RMU | UNDIAL` (with the matching `hydra/sweeper=`)
@@ -123,13 +135,14 @@ the upstream OpenUnlearning docs under [`docs/`](docs/).
 
 ## 📝 Citing this work
 
-<!-- TODO: update with the published arXiv ID / venue once available. -->
 ```bibtex
-@article{sondej2026repselect,
-  title   = {RepSelect: Robust LLM Unlearning via Representation Selectivity},
-  author  = {Sondej, Filip and Yang, Yushi and Mahdi, Adam},
-  year    = {2026},
-  note    = {Preprint}
+@misc{sondej2026repselect,
+  title     = {{RepSelect}: Robust {LLM} Unlearning via Representation Selectivity},
+  author    = {Sondej, Filip and Yang, Yushi and Mahdi, Adam},
+  year      = {2026},
+  publisher = {arXiv},
+  doi       = {10.48550/arXiv.2606.17168},
+  url       = {https://arxiv.org/abs/2606.17168},
 }
 ```
 
