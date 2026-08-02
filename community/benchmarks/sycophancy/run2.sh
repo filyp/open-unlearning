@@ -21,14 +21,14 @@ case "${model}" in
   *)                              rs_sweeper=RepSelectSimple ;;
 esac
 
-# DeepSeek is run in two batches (compute constraints):
-#   1st pass: 10 trials per study (line below)
-#   2nd pass: comment the first line, uncomment the resume line ->
-#             20 more trials per study, wandb run names continue at _10
-if [ "${model}" = "DeepSeek-V2-Lite" ]; then
-  common="${common} hydra.sweeper.n_trials=10"
-  # common="${common} hydra.sweeper.n_trials=20 run_name_offset=10"  # resume
-fi
+# # DeepSeek is run in two batches (compute constraints):
+# #   1st pass: 10 trials per study (line below)
+# #   2nd pass: comment the first line, uncomment the resume line ->
+# #             20 more trials per study, wandb run names continue at _10
+# if [ "${model}" = "DeepSeek-V2-Lite" ]; then
+#   common="${common} hydra.sweeper.n_trials=10"
+#   # common="${common} hydra.sweeper.n_trials=20 run_name_offset=10"  # resume
+# fi
 
 ###############################################################
 
