@@ -56,7 +56,7 @@ if __name__ == "__main__":
         ],
         col_titles=[display for _, _, _, display in DATASETS],
         row_titles=MODELS,
-        figsize=(5.5, height),
+        figsize=(6.3, height),
         save_path="3_5_grid.pdf",
     )
 
