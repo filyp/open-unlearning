@@ -370,9 +370,9 @@ for model in MODELS:
 
     plt.tight_layout(rect=[0.04, 0.04, 1, 1])
     if COLUMN_WIDTH:
-        fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=-0.02, y=0.36)
+        fig.supylabel("Answer Probability (%) ↓", fontsize=10, x=-0.02, y=0.36)
     else:
-        fig.supylabel("Post-Attack Answer Probability (%) ↓", fontsize=10, x=0.03)
+        fig.supylabel("Answer Probability (%) ↓", fontsize=10, x=0.03)
 
     suffix = "_column" if COLUMN_WIDTH else ""
     save_path = OUT_DIR / f"{model}{suffix}.pdf"
