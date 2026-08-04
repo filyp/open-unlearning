@@ -90,6 +90,7 @@ def plot_grid(
     save_path: str = None,
     gap_before: List[str] = None,
     xlabel: str = "Post-Attack Answer Probability (%) ↓",
+    asym: bool = False,
 ):
     """
     Create a grid of horizontal bar plots. Each row is a model, columns are benchmarks.
@@ -97,6 +98,11 @@ def plot_grid(
     Each entry in `rows` is a list of (method_stats, baseline) tuples, one per column.
 
     Bars extend left from baseline (lower = better = longer bar).
+
+    With asym=False, method_stats maps method -> (centre, sem, std) and the bar
+    carries a symmetric std error bar. With asym=True it maps
+    method -> (centre, err_low, err_high) and the error bar is drawn
+    asymmetrically, e.g. a median bar with a whisker reaching the best trial.
     """
     if gap_before is None:
         gap_before = []
@@ -149,16 +155,29 @@ def plot_grid(
                 method_stats[m][0] * 100 if m in method_stats else baseline_pct
                 for m in common_methods
             ]
-            stds = [
-                method_stats[m][2] * 100 if m in method_stats else 0.0
-                for m in common_methods
-            ]
+            if asym:
+                lows = [
+                    method_stats[m][1] * 100 if m in method_stats else 0.0
+                    for m in common_methods
+                ]
+                highs = [
+                    method_stats[m][2] * 100 if m in method_stats else 0.0
+                    for m in common_methods
+                ]
+                xerr = np.array([lows, highs])
+                stds = lows  # used only for the x-limit margin below
+            else:
+                stds = [
+                    method_stats[m][2] * 100 if m in method_stats else 0.0
+                    for m in common_methods
+                ]
+                xerr = stds
             widths = [m - baseline_pct for m in means]
 
             ax.barh(
                 y_positions,
                 widths,
-                xerr=stds,
+                xerr=xerr,
                 height=1.0,
                 capsize=3,
                 color=[method_to_color[m] for m in common_methods],
